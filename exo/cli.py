@@ -9,7 +9,7 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
-from exo.orchestrator.worker import DistributedWorker
+from exo.orchestrator import AgentSessionManager, DistributedWorker
 from exo.stdlib.engine import KernelEngine
 
 
@@ -207,12 +207,38 @@ def _build_parser() -> argparse.ArgumentParser:
     distill_cmd.add_argument("--statement")
     distill_cmd.add_argument("--confidence", type=float, default=0.7)
 
+    session_start_cmd = sub.add_parser("session-start", help="Bootstrap an agent session with bounded context metadata")
+    session_start_cmd.add_argument("--ticket-id")
+    session_start_cmd.add_argument("--vendor", default="unknown")
+    session_start_cmd.add_argument("--model", default="unknown")
+    session_start_cmd.add_argument("--context-window", type=int)
+    session_start_cmd.add_argument("--role")
+    session_start_cmd.add_argument("--task")
+    session_start_cmd.add_argument("--topic", dest="topic_id")
+    session_start_cmd.add_argument("--acquire-lock", action="store_true")
+    session_start_cmd.add_argument("--distributed", action="store_true")
+    session_start_cmd.add_argument("--remote", default="origin")
+    session_start_cmd.add_argument("--hours", type=int, default=2)
+
+    session_finish_cmd = sub.add_parser("session-finish", help="Close active agent session and write memento")
+    session_finish_cmd.add_argument("--ticket-id")
+    session_finish_cmd.add_argument("--summary", required=True)
+    session_finish_cmd.add_argument("--set-status", default="review", choices=["keep", "review", "done"])
+    session_finish_cmd.add_argument("--artifact", action="append", default=[])
+    session_finish_cmd.add_argument("--blocker", action="append", default=[])
+    session_finish_cmd.add_argument("--next-step")
+    session_finish_cmd.add_argument("--skip-check", action="store_true")
+    session_finish_cmd.add_argument("--break-glass-reason")
+    session_finish_cmd.add_argument("--release-lock", action="store_true")
+    session_finish_cmd.add_argument("--no-release-lock", action="store_true")
+
     worker_poll_cmd = sub.add_parser("worker-poll", help="Poll ledger topic once and execute pending intents")
     worker_poll_cmd.add_argument("--topic", dest="topic_id")
     worker_poll_cmd.add_argument("--since", dest="since_cursor")
     worker_poll_cmd.add_argument("--limit", type=int, default=100)
     worker_poll_cmd.add_argument("--cursor-file")
     worker_poll_cmd.add_argument("--no-cursor", action="store_true")
+    worker_poll_cmd.add_argument("--require-session", action="store_true")
 
     worker_loop_cmd = sub.add_parser("worker-loop", help="Run repeated ledger polling loop")
     worker_loop_cmd.add_argument("--topic", dest="topic_id")
@@ -223,6 +249,7 @@ def _build_parser() -> argparse.ArgumentParser:
     worker_loop_cmd.add_argument("--stop-when-idle", action="store_true")
     worker_loop_cmd.add_argument("--cursor-file")
     worker_loop_cmd.add_argument("--no-cursor", action="store_true")
+    worker_loop_cmd.add_argument("--require-session", action="store_true")
 
     return parser
 
@@ -450,6 +477,50 @@ def main(argv: list[str] | None = None) -> int:
             response = engine.apply_proposal(args.proposal_id)
         elif cmd == "distill":
             response = engine.distill(args.proposal_id, statement=args.statement, confidence=args.confidence)
+        elif cmd == "session-start":
+            manager = AgentSessionManager(args.repo, actor=actor)
+            data = manager.start(
+                ticket_id=args.ticket_id,
+                vendor=args.vendor,
+                model=args.model,
+                context_window_tokens=args.context_window,
+                role=args.role,
+                task=args.task,
+                topic_id=args.topic_id,
+                acquire_lock=bool(args.acquire_lock),
+                distributed=bool(args.distributed),
+                remote=args.remote,
+                duration_hours=args.hours,
+            )
+            response = _ok(data)
+        elif cmd == "session-finish":
+            if bool(args.release_lock) and bool(args.no_release_lock):
+                raise ExoError(
+                    code="SESSION_RELEASE_FLAGS_CONFLICT",
+                    message="Cannot pass both --release-lock and --no-release-lock",
+                    blocked=True,
+                )
+            release_lock: bool | None
+            if bool(args.release_lock):
+                release_lock = True
+            elif bool(args.no_release_lock):
+                release_lock = False
+            else:
+                release_lock = None
+
+            manager = AgentSessionManager(args.repo, actor=actor)
+            data = manager.finish(
+                ticket_id=args.ticket_id,
+                summary=args.summary,
+                set_status=args.set_status,
+                skip_check=bool(args.skip_check),
+                break_glass_reason=args.break_glass_reason,
+                artifacts=args.artifact,
+                blockers=args.blocker,
+                next_step=args.next_step,
+                release_lock=release_lock,
+            )
+            response = _ok(data)
         elif cmd == "worker-poll":
             worker = DistributedWorker(
                 args.repo,
@@ -457,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
                 topic_id=args.topic_id,
                 cursor_path=args.cursor_file,
                 use_cursor=not bool(args.no_cursor),
+                require_session=bool(args.require_session),
             )
             data = worker.poll_once(
                 since_cursor=args.since_cursor,
@@ -471,6 +543,7 @@ def main(argv: list[str] | None = None) -> int:
                 topic_id=args.topic_id,
                 cursor_path=args.cursor_file,
                 use_cursor=not bool(args.no_cursor),
+                require_session=bool(args.require_session),
             )
             loop_iterations = args.iterations if args.iterations > 0 else None
             data = worker.run_loop(

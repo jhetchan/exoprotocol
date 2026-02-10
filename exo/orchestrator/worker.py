@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.orchestrator.session import AgentSessionManager
 
 WorkerExecutor = Callable[[dict[str, Any]], dict[str, Any] | None]
 _ALLOWED_RESULT_STATUSES = {"OK", "FAIL", "RETRYABLE_FAIL", "CANCELED"}
@@ -23,11 +24,14 @@ class DistributedWorker:
         topic_id: str | None = None,
         cursor_path: Path | str | None = None,
         use_cursor: bool = True,
+        require_session: bool = False,
     ) -> None:
         self.root = Path(root).resolve()
         self.actor = actor
         self.topic_id = topic_id or f"repo:{self.root.as_posix()}"
         self._syscalls = KernelSyscalls(self.root, actor=actor)
+        self.require_session = require_session
+        self._session_manager = AgentSessionManager(self.root, actor=actor)
         self.use_cursor = use_cursor
         if cursor_path is not None:
             raw_cursor_path = Path(cursor_path)
@@ -36,6 +40,32 @@ class DistributedWorker:
             self.cursor_path = raw_cursor_path.resolve()
         else:
             self.cursor_path = self._default_cursor_path()
+
+    def _require_active_session(self) -> dict[str, Any] | None:
+        session = self._session_manager.get_active()
+        if not self.require_session:
+            return session
+        if not session:
+            raise ExoError(
+                code="SESSION_NOT_ACTIVE",
+                message=f"Worker actor {self.actor} requires active session; run exo session-start first",
+                blocked=True,
+            )
+        status = str(session.get("status", "")).strip().lower()
+        if status != "active":
+            raise ExoError(
+                code="SESSION_NOT_ACTIVE",
+                message=f"Worker actor {self.actor} has non-active session status: {status}",
+                blocked=True,
+            )
+        session_topic = str(session.get("topic_id", "")).strip()
+        if session_topic and session_topic != self.topic_id:
+            raise ExoError(
+                code="SESSION_TOPIC_MISMATCH",
+                message=f"Active session topic is {session_topic}; worker topic is {self.topic_id}",
+                blocked=True,
+            )
+        return session
 
     def _default_cursor_path(self) -> Path:
         token = re.sub(r"[^A-Za-z0-9._-]+", "-", self.actor).strip(".-") or "worker"
@@ -150,6 +180,7 @@ class DistributedWorker:
         limit: int = 100,
         persist_cursor: bool = True,
     ) -> dict[str, Any]:
+        active_session = self._require_active_session()
         start_cursor = since_cursor if isinstance(since_cursor, str) and since_cursor.strip() else self._read_cursor()
         stream = self._syscalls.subscribe(topic_id=self.topic_id, since_cursor=start_cursor, limit=max(int(limit), 1))
         events = stream.get("events") if isinstance(stream.get("events"), list) else []
@@ -318,6 +349,8 @@ class DistributedWorker:
             "topic_id": self.topic_id,
             "actor": self.actor,
             "cursor_file": str(self.cursor_path),
+            "require_session": self.require_session,
+            "active_session": active_session,
             "since_cursor": start_cursor,
             "next_cursor": next_cursor,
             "events_seen": len(events),
