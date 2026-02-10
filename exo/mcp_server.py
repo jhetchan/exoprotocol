@@ -5,7 +5,7 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
-from exo.orchestrator.worker import DistributedWorker
+from exo.orchestrator import AgentSessionManager, DistributedWorker
 from exo.stdlib.engine import KernelEngine
 
 try:
@@ -345,6 +345,7 @@ if FastMCP:
         limit: int = 100,
         cursor_file: str | None = None,
         use_cursor: bool = True,
+        require_session: bool = False,
     ) -> dict[str, Any]:
         worker = DistributedWorker(
             Path(repo).resolve(),
@@ -352,12 +353,121 @@ if FastMCP:
             topic_id=topic_id,
             cursor_path=cursor_file,
             use_cursor=use_cursor,
+            require_session=require_session,
         )
         try:
             data = worker.poll_once(
                 since_cursor=since_cursor,
                 limit=limit,
                 persist_cursor=use_cursor,
+            )
+            return {
+                "ok": True,
+                "data": data,
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {
+                "ok": False,
+                "error": err.to_dict(),
+                "events": [],
+                "blocked": err.blocked,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {
+                    "code": "UNHANDLED_EXCEPTION",
+                    "message": str(exc),
+                    "details": {},
+                    "blocked": False,
+                },
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_session_start(
+        repo: str = ".",
+        ticket_id: str | None = None,
+        vendor: str = "unknown",
+        model: str = "unknown",
+        context_window_tokens: int | None = None,
+        role: str | None = None,
+        task: str | None = None,
+        topic_id: str | None = None,
+        acquire_lock: bool = False,
+        distributed: bool = False,
+        remote: str = "origin",
+        duration_hours: int = 2,
+    ) -> dict[str, Any]:
+        manager = AgentSessionManager(Path(repo).resolve(), actor="agent:mcp")
+        try:
+            data = manager.start(
+                ticket_id=ticket_id,
+                vendor=vendor,
+                model=model,
+                context_window_tokens=context_window_tokens,
+                role=role,
+                task=task,
+                topic_id=topic_id,
+                acquire_lock=acquire_lock,
+                distributed=distributed,
+                remote=remote,
+                duration_hours=duration_hours,
+            )
+            return {
+                "ok": True,
+                "data": data,
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {
+                "ok": False,
+                "error": err.to_dict(),
+                "events": [],
+                "blocked": err.blocked,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {
+                    "code": "UNHANDLED_EXCEPTION",
+                    "message": str(exc),
+                    "details": {},
+                    "blocked": False,
+                },
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_session_finish(
+        summary: str,
+        repo: str = ".",
+        ticket_id: str | None = None,
+        set_status: str = "review",
+        artifacts: list[str] | None = None,
+        blockers: list[str] | None = None,
+        next_step: str | None = None,
+        skip_check: bool = False,
+        break_glass_reason: str | None = None,
+        release_lock: bool | None = None,
+    ) -> dict[str, Any]:
+        manager = AgentSessionManager(Path(repo).resolve(), actor="agent:mcp")
+        try:
+            data = manager.finish(
+                summary=summary,
+                ticket_id=ticket_id,
+                set_status=set_status,
+                skip_check=skip_check,
+                break_glass_reason=break_glass_reason,
+                artifacts=artifacts or [],
+                blockers=blockers or [],
+                next_step=next_step,
+                release_lock=release_lock,
             )
             return {
                 "ok": True,

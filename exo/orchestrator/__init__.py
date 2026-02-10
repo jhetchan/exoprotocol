@@ -2,9 +2,11 @@
 
 from .engine import Orchestrator
 from .models import AgentRun, OrchestratorTask, Workflow
+from .session import AgentSessionManager
 from .worker import DistributedWorker
 
 __all__ = [
+    "AgentSessionManager",
     "Orchestrator",
     "DistributedWorker",
     "OrchestratorTask",
