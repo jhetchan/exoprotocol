@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+try:
+    import fcntl
+except ModuleNotFoundError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
 
 from .errors import ExoError
 from . import ledger
@@ -14,6 +20,7 @@ from .utils import dump_json, dump_yaml, load_json, load_yaml, now_iso
 
 TICKETS_DIR = Path(".exo/tickets")
 LOCK_FILE = Path(".exo/locks/ticket.lock.json")
+LOCK_GUARD_FILE = Path(".exo/locks/.ticket.lock.guard")
 
 
 TICKET_ID_RE = re.compile(r"^TICKET-(\d+)(?:-EPIC)?$")
@@ -113,8 +120,38 @@ def lock_path(repo: Path) -> Path:
     return repo / LOCK_FILE
 
 
+def lock_guard_path(repo: Path) -> Path:
+    return repo / LOCK_GUARD_FILE
+
+
+@contextmanager
+def _lock_guard(repo: Path):
+    if fcntl is None:
+        yield
+        return
+    guard = lock_guard_path(repo)
+    guard.parent.mkdir(parents=True, exist_ok=True)
+    with guard.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _load_lock_from_path(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    lock = load_json(path)
+    if is_lock_expired(lock):
+        path.unlink(missing_ok=True)
+        return None
+    return lock
+
+
 def write_lock(repo: Path, lock: dict[str, Any]) -> dict[str, Any]:
-    dump_json(lock_path(repo), lock)
+    with _lock_guard(repo):
+        dump_json(lock_path(repo), lock)
     return lock
 
 
@@ -148,14 +185,7 @@ def is_lock_expired(lock: dict[str, Any]) -> bool:
 
 
 def load_lock(repo: Path) -> dict[str, Any] | None:
-    path = lock_path(repo)
-    if not path.exists():
-        return None
-    lock = load_json(path)
-    if is_lock_expired(lock):
-        path.unlink(missing_ok=True)
-        return None
-    return lock
+    return _load_lock_from_path(lock_path(repo))
 
 
 def acquire_lock(
@@ -168,72 +198,74 @@ def acquire_lock(
     base: str = "main",
 ) -> dict[str, Any]:
     normalized_duration = _normalize_duration_hours(duration_hours)
-    existing = load_lock(repo)
-    if existing and existing.get("ticket_id") != ticket_id:
-        raise ExoError(
-            code="LOCK_HELD",
-            message=f"Ticket lock already held by {existing.get('owner')}",
-            details=existing,
-            blocked=True,
-        )
-    if existing and existing.get("ticket_id") == ticket_id:
-        existing_owner = str(existing.get("owner", "")).strip()
-        if existing_owner and existing_owner != owner:
+    lock_file = lock_path(repo)
+    with _lock_guard(repo):
+        existing = _load_lock_from_path(lock_file)
+        if existing and existing.get("ticket_id") != ticket_id:
             raise ExoError(
-                code="LOCK_COLLISION",
-                message=f"Ticket lock collision on {ticket_id}: held by {existing_owner}",
+                code="LOCK_HELD",
+                message=f"Ticket lock already held by {existing.get('owner')}",
                 details=existing,
                 blocked=True,
             )
+        if existing and existing.get("ticket_id") == ticket_id:
+            existing_owner = str(existing.get("owner", "")).strip()
+            if existing_owner and existing_owner != owner:
+                raise ExoError(
+                    code="LOCK_COLLISION",
+                    message=f"Ticket lock collision on {ticket_id}: held by {existing_owner}",
+                    details=existing,
+                    blocked=True,
+                )
 
-        renewed_at = datetime.now().astimezone()
-        renewed_expires = renewed_at + timedelta(hours=normalized_duration)
-        workspace = existing.get("workspace") if isinstance(existing.get("workspace"), dict) else {}
-        branch = str(workspace.get("branch") or f"codex/{ticket_id}")
-        base_branch = str(workspace.get("base") or base)
-        fencing_raw = existing.get("fencing_token", 0)
-        try:
-            fencing_token = int(fencing_raw) + 1
-        except (TypeError, ValueError):
-            fencing_token = 1
+            renewed_at = datetime.now().astimezone()
+            renewed_expires = renewed_at + timedelta(hours=normalized_duration)
+            workspace = existing.get("workspace") if isinstance(existing.get("workspace"), dict) else {}
+            branch = str(workspace.get("branch") or f"codex/{ticket_id}")
+            base_branch = str(workspace.get("base") or base)
+            fencing_raw = existing.get("fencing_token", 0)
+            try:
+                fencing_token = int(fencing_raw) + 1
+            except (TypeError, ValueError):
+                fencing_token = 1
 
-        renewed = {
+            renewed = {
+                "ticket_id": ticket_id,
+                "owner": owner,
+                "role": role,
+                "created_at": str(existing.get("created_at") or renewed_at.isoformat(timespec="seconds")),
+                "updated_at": renewed_at.isoformat(timespec="seconds"),
+                "heartbeat_at": renewed_at.isoformat(timespec="seconds"),
+                "expires_at": renewed_expires.isoformat(timespec="seconds"),
+                "lease_expires_at": renewed_expires.isoformat(timespec="seconds"),
+                "fencing_token": fencing_token,
+                "workspace": {
+                    "branch": branch,
+                    "base": base_branch,
+                },
+            }
+            dump_json(lock_file, renewed)
+            return renewed
+
+        created = datetime.now().astimezone()
+        expires = created + timedelta(hours=normalized_duration)
+        lock = {
             "ticket_id": ticket_id,
             "owner": owner,
             "role": role,
-            "created_at": str(existing.get("created_at") or renewed_at.isoformat(timespec="seconds")),
-            "updated_at": renewed_at.isoformat(timespec="seconds"),
-            "heartbeat_at": renewed_at.isoformat(timespec="seconds"),
-            "expires_at": renewed_expires.isoformat(timespec="seconds"),
-            "lease_expires_at": renewed_expires.isoformat(timespec="seconds"),
-            "fencing_token": fencing_token,
+            "created_at": created.isoformat(timespec="seconds"),
+            "updated_at": created.isoformat(timespec="seconds"),
+            "heartbeat_at": created.isoformat(timespec="seconds"),
+            "expires_at": expires.isoformat(timespec="seconds"),
+            "lease_expires_at": expires.isoformat(timespec="seconds"),
+            "fencing_token": 1,
             "workspace": {
-                "branch": branch,
-                "base": base_branch,
+                "branch": f"codex/{ticket_id}",
+                "base": base,
             },
         }
-        dump_json(lock_path(repo), renewed)
-        return renewed
-
-    created = datetime.now().astimezone()
-    expires = created + timedelta(hours=normalized_duration)
-    lock = {
-        "ticket_id": ticket_id,
-        "owner": owner,
-        "role": role,
-        "created_at": created.isoformat(timespec="seconds"),
-        "updated_at": created.isoformat(timespec="seconds"),
-        "heartbeat_at": created.isoformat(timespec="seconds"),
-        "expires_at": expires.isoformat(timespec="seconds"),
-        "lease_expires_at": expires.isoformat(timespec="seconds"),
-        "fencing_token": 1,
-        "workspace": {
-            "branch": f"codex/{ticket_id}",
-            "base": base,
-        },
-    }
-    dump_json(lock_path(repo), lock)
-    return lock
+        dump_json(lock_file, lock)
+        return lock
 
 
 def ensure_lock(repo: Path, ticket_id: str | None = None) -> dict[str, Any]:
@@ -262,45 +294,62 @@ def heartbeat_lock(
     duration_hours: int = 2,
 ) -> dict[str, Any]:
     normalized_duration = _normalize_duration_hours(duration_hours)
-    existing = ensure_lock(repo, ticket_id=ticket_id)
+    lock_file = lock_path(repo)
+    with _lock_guard(repo):
+        existing = _load_lock_from_path(lock_file)
+        if not existing:
+            raise ExoError(
+                code="LOCK_REQUIRED",
+                message="No active ticket lock found",
+                blocked=True,
+            )
+        if ticket_id and existing.get("ticket_id") != ticket_id:
+            raise ExoError(
+                code="LOCK_MISMATCH",
+                message=f"Active lock is for {existing.get('ticket_id')}, not {ticket_id}",
+                details=existing,
+                blocked=True,
+            )
 
-    existing_owner = str(existing.get("owner", "")).strip()
-    requested_owner = owner.strip() if isinstance(owner, str) and owner.strip() else ""
-    if requested_owner and existing_owner and requested_owner != existing_owner:
-        raise ExoError(
-            code="LOCK_OWNER_MISMATCH",
-            message=f"Active lock owner is {existing_owner}; heartbeat owner {requested_owner} is not allowed",
-            details=existing,
-            blocked=True,
-        )
+        existing_owner = str(existing.get("owner", "")).strip()
+        requested_owner = owner.strip() if isinstance(owner, str) and owner.strip() else ""
+        if requested_owner and existing_owner and requested_owner != existing_owner:
+            raise ExoError(
+                code="LOCK_OWNER_MISMATCH",
+                message=f"Active lock owner is {existing_owner}; heartbeat owner {requested_owner} is not allowed",
+                details=existing,
+                blocked=True,
+            )
 
-    now = datetime.now().astimezone()
-    candidate_expiry = now + timedelta(hours=normalized_duration)
-    current_expiry_raw = existing.get("expires_at")
-    try:
-        current_expiry = _parse_dt(str(current_expiry_raw)) if current_expiry_raw else now
-    except Exception:
-        current_expiry = now
-    next_expiry = candidate_expiry if candidate_expiry >= current_expiry else current_expiry
+        now = datetime.now().astimezone()
+        candidate_expiry = now + timedelta(hours=normalized_duration)
+        current_expiry_raw = existing.get("expires_at")
+        try:
+            current_expiry = _parse_dt(str(current_expiry_raw)) if current_expiry_raw else now
+        except Exception:
+            current_expiry = now
+        next_expiry = candidate_expiry if candidate_expiry >= current_expiry else current_expiry
 
-    updated = dict(existing)
-    updated["updated_at"] = now.isoformat(timespec="seconds")
-    updated["heartbeat_at"] = now.isoformat(timespec="seconds")
-    updated["expires_at"] = next_expiry.isoformat(timespec="seconds")
-    updated["lease_expires_at"] = next_expiry.isoformat(timespec="seconds")
+        updated = dict(existing)
+        updated["updated_at"] = now.isoformat(timespec="seconds")
+        updated["heartbeat_at"] = now.isoformat(timespec="seconds")
+        updated["expires_at"] = next_expiry.isoformat(timespec="seconds")
+        updated["lease_expires_at"] = next_expiry.isoformat(timespec="seconds")
 
-    dump_json(lock_path(repo), updated)
-    return updated
+        dump_json(lock_file, updated)
+        return updated
 
 
 def release_lock(repo: Path, ticket_id: str | None = None) -> bool:
-    existing = load_lock(repo)
-    if not existing:
-        return False
-    if ticket_id and existing.get("ticket_id") != ticket_id:
-        return False
-    lock_path(repo).unlink(missing_ok=True)
-    return True
+    lock_file = lock_path(repo)
+    with _lock_guard(repo):
+        existing = _load_lock_from_path(lock_file)
+        if not existing:
+            return False
+        if ticket_id and existing.get("ticket_id") != ticket_id:
+            return False
+        lock_file.unlink(missing_ok=True)
+        return True
 
 
 def blockers_resolved(ticket: dict[str, Any], index: dict[str, dict[str, Any]]) -> bool:
