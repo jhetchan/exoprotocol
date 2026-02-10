@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,11 +11,17 @@ from exo.kernel.engine import check_action, open_session
 from exo.kernel.errors import ExoError
 from exo.kernel.utils import load_yaml
 
+try:
+    import fcntl as _fcntl
+except Exception:  # pragma: no cover - platform-specific
+    _fcntl = None
+
 DEFAULT_CONTROL_CAPS: dict[str, list[str]] = {
     "decide_override": ["cap:override"],
     "policy_set": ["cap:policy-set"],
     "cas_head": ["cap:cas-head"],
 }
+DECISION_LOCK_PATH = Path(".exo/logs/ledger.decision.lock")
 
 
 def _now_iso() -> str:
@@ -32,6 +39,34 @@ class KernelSyscalls:
         self.root = repo
         self.actor = actor
         self._session = open_session(repo, actor)
+
+    @contextlib.contextmanager
+    def _decision_lock(self):
+        lock_path = self.root / DECISION_LOCK_PATH
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = lock_path.open("a+", encoding="utf-8")
+        try:
+            if _fcntl is not None:
+                _fcntl.flock(handle.fileno(), _fcntl.LOCK_EX)
+            yield
+        finally:
+            if _fcntl is not None:
+                _fcntl.flock(handle.fileno(), _fcntl.LOCK_UN)
+            handle.close()
+
+    def _find_latest_decision_id(self, intent_id: str) -> str | None:
+        rows = ledger.read_records(
+            self.root,
+            record_type="DecisionRecorded",
+            intent_id=intent_id,
+            limit=200,
+        )
+        if not rows:
+            return None
+        decision_id = rows[-1].get("decision_id")
+        if isinstance(decision_id, str) and decision_id.strip():
+            return decision_id.strip()
+        return None
 
     def _load_control_caps(self) -> dict[str, list[str]]:
         config_path = self.root / ".exo" / "config.yaml"
@@ -149,51 +184,58 @@ class KernelSyscalls:
 
     def check(self, intent_id: str, context_refs: list[str] | None = None) -> str:
         _ = context_refs
-        intent = self._resolve_intent_record(intent_id)
-        metadata = intent.get("metadata") if isinstance(intent.get("metadata"), dict) else {}
+        with self._decision_lock():
+            existing_decision_id = self._find_latest_decision_id(intent_id)
+            if isinstance(existing_decision_id, str) and existing_decision_id:
+                return existing_decision_id
 
-        action = metadata.get("action") if isinstance(metadata.get("action"), dict) else {}
-        scope = metadata.get("scope") if isinstance(metadata.get("scope"), dict) else {"allow": ["**"], "deny": []}
+            intent = self._resolve_intent_record(intent_id)
+            metadata = intent.get("metadata") if isinstance(intent.get("metadata"), dict) else {}
 
-        created_at = str(metadata.get("created_at") or _now_iso())
-        expires_at = str(metadata.get("expires_at") or (datetime.now().astimezone() + timedelta(hours=1)).isoformat(timespec="seconds"))
-        nonce = str(metadata.get("nonce") or intent_id)
+            action = metadata.get("action") if isinstance(metadata.get("action"), dict) else {}
+            scope = metadata.get("scope") if isinstance(metadata.get("scope"), dict) else {"allow": ["**"], "deny": []}
 
-        ticket = {
-            "id": intent_id,
-            "intent": str(metadata.get("intent") or "syscall.intent"),
-            "scope": scope,
-            "ttl_hours": int(metadata.get("ttl_hours", 1) or 1),
-            "created_at": created_at,
-            "expires_at": expires_at,
-            "nonce": nonce,
-            "metadata": {
-                "origin": "syscall",
-            },
-        }
-
-        gov = governance.load_governance(self.root)
-        decision = check_action(
-            gov,
-            self._session,
-            ticket,
-            {
-                "kind": str(action.get("kind") or "read_file"),
-                "target": action.get("target"),
-                "params": action.get("params") if isinstance(action.get("params"), dict) else {},
-                "mode": str(action.get("mode") or "execute"),
-            },
-        )
-
-        decision_id = decision.constraints.get("decision_id") if isinstance(decision.constraints, dict) else None
-        if not isinstance(decision_id, str) or not decision_id.strip():
-            raise ExoError(
-                code="DECISION_ID_MISSING",
-                message=f"Decision ID missing for intent {intent_id}",
-                details={"status": decision.status, "reasons": decision.reasons},
-                blocked=True,
+            created_at = str(metadata.get("created_at") or _now_iso())
+            expires_at = str(
+                metadata.get("expires_at") or (datetime.now().astimezone() + timedelta(hours=1)).isoformat(timespec="seconds")
             )
-        return decision_id
+            nonce = str(metadata.get("nonce") or intent_id)
+
+            ticket = {
+                "id": intent_id,
+                "intent": str(metadata.get("intent") or "syscall.intent"),
+                "scope": scope,
+                "ttl_hours": int(metadata.get("ttl_hours", 1) or 1),
+                "created_at": created_at,
+                "expires_at": expires_at,
+                "nonce": nonce,
+                "metadata": {
+                    "origin": "syscall",
+                },
+            }
+
+            gov = governance.load_governance(self.root)
+            decision = check_action(
+                gov,
+                self._session,
+                ticket,
+                {
+                    "kind": str(action.get("kind") or "read_file"),
+                    "target": action.get("target"),
+                    "params": action.get("params") if isinstance(action.get("params"), dict) else {},
+                    "mode": str(action.get("mode") or "execute"),
+                },
+            )
+
+            decision_id = decision.constraints.get("decision_id") if isinstance(decision.constraints, dict) else None
+            if not isinstance(decision_id, str) or not decision_id.strip():
+                raise ExoError(
+                    code="DECISION_ID_MISSING",
+                    message=f"Decision ID missing for intent {intent_id}",
+                    details={"status": decision.status, "reasons": decision.reasons},
+                    blocked=True,
+                )
+            return decision_id
 
     def decide_override(self, intent_id: str, override_cap: str, rationale_ref: str, outcome: str = "ALLOW") -> str:
         cap = self._require_control_cap("decide_override", override_cap)

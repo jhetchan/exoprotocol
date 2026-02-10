@@ -5,6 +5,7 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.orchestrator.worker import DistributedWorker
 from exo.stdlib.engine import KernelEngine
 
 try:
@@ -335,6 +336,54 @@ if FastMCP:
         if response.get("ok"):
             response["data"] = {"intent_id": intent_id, "kind": kind, "ctx_refs": ctx_refs or []}
         return response
+
+    @mcp.tool()
+    def exo_worker_poll(
+        repo: str = ".",
+        topic_id: str | None = None,
+        since_cursor: str | None = None,
+        limit: int = 100,
+        cursor_file: str | None = None,
+        use_cursor: bool = True,
+    ) -> dict[str, Any]:
+        worker = DistributedWorker(
+            Path(repo).resolve(),
+            actor="agent:mcp",
+            topic_id=topic_id,
+            cursor_path=cursor_file,
+            use_cursor=use_cursor,
+        )
+        try:
+            data = worker.poll_once(
+                since_cursor=since_cursor,
+                limit=limit,
+                persist_cursor=use_cursor,
+            )
+            return {
+                "ok": True,
+                "data": data,
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {
+                "ok": False,
+                "error": err.to_dict(),
+                "events": [],
+                "blocked": err.blocked,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {
+                    "code": "UNHANDLED_EXCEPTION",
+                    "message": str(exc),
+                    "details": {},
+                    "blocked": False,
+                },
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_observe(

@@ -40,6 +40,8 @@ python3 -m exo.cli do
 - `exo check-intent <intent-id>`
 - `exo begin-effect <decision-id> --executor-ref <name> --idem-key <key>`
 - `exo commit-effect <effect-id> --status OK|FAIL|RETRYABLE_FAIL|CANCELED [--artifact-ref <ref>]`
+- `exo worker-poll [--topic <topic-id>] [--since <line:N>] [--limit N] [--cursor-file <path>] [--no-cursor]`
+- `exo worker-loop [--topic <topic-id>] [--since <line:N>] [--limit N] [--iterations N] [--sleep-seconds N] [--stop-when-idle] [--cursor-file <path>] [--no-cursor]`
 - `exo read-ledger [ref-id] [--type <record-type>] [--since <line:N>] [--topic <topic-id>] [--intent <intent-id>]`
 - `exo escalate-intent <intent-id> --kind <kind> [--ctx-ref <ref>]`
 - `exo observe --ticket <id> --tag <tag> --msg "..."`
@@ -230,6 +232,22 @@ python3 -m exo.cli lease-heartbeat --owner agent-a --distributed --remote origin
 python3 -m exo.cli lease-renew --owner agent-a --distributed --remote origin --hours 2
 python3 -m exo.cli lease-release --owner agent-a --distributed --remote origin
 ```
+
+Distributed execution worker loop:
+
+```bash
+# one-shot poll/execute cycle
+EXO_ACTOR=agent:worker-a python3 -m exo.cli worker-poll --limit 50
+
+# continuous polling loop (stops after idle cycle)
+EXO_ACTOR=agent:worker-a python3 -m exo.cli worker-loop --iterations 20 --sleep-seconds 1 --stop-when-idle
+```
+
+Worker behavior:
+- consumes `IntentSubmitted` records from a topic stream
+- reuses existing `DecisionRecorded` per intent (idempotent check)
+- claims execution via deterministic idempotency key (`intent:<id>:decision:<id>`)
+- commits `ExecutionResult`; completed intents are skipped on subsequent polls
 
 ## MCP server
 
