@@ -18,9 +18,10 @@ python3 -m exo.cli do
 - `exo build-governance`
 - `exo audit`
 - `exo plan <input>`
-- `exo next`
-- `exo lease-renew [--ticket-id <id>] [--owner <owner>] [--role <role>] [--hours N]`
-- `exo lease-heartbeat [--ticket-id <id>] [--owner <owner>] [--hours N]`
+- `exo next [--hours N] [--distributed --remote <name>]`
+- `exo lease-renew [--ticket-id <id>] [--owner <owner>] [--role <role>] [--hours N] [--distributed --remote <name>]`
+- `exo lease-heartbeat [--ticket-id <id>] [--owner <owner>] [--hours N] [--distributed --remote <name>]`
+- `exo lease-release [--ticket-id <id>] [--owner <owner>] [--distributed --remote <name>]`
 - `exo do [TICKET-ID]`
 - `exo check`
 - `exo status`
@@ -218,6 +219,16 @@ Lease upkeep commands (active lock only):
 ```bash
 python3 -m exo.cli lease-renew --hours 2
 python3 -m exo.cli lease-heartbeat --hours 2
+python3 -m exo.cli lease-release
+```
+
+Distributed workflow (shared git remote required):
+
+```bash
+python3 -m exo.cli next --owner agent-a --distributed --remote origin
+python3 -m exo.cli lease-heartbeat --owner agent-a --distributed --remote origin --hours 2
+python3 -m exo.cli lease-renew --owner agent-a --distributed --remote origin --hours 2
+python3 -m exo.cli lease-release --owner agent-a --distributed --remote origin
 ```
 
 ## MCP server

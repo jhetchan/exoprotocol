@@ -23,7 +23,14 @@ from exo.kernel.utils import (
     now_iso,
     relative_posix,
 )
-from exo.stdlib import dispatch, evolution, recall as recall_mod, scratchpad, sidecar as sidecar_mod
+from exo.stdlib import (
+    dispatch,
+    distributed_leases as distributed_leases_mod,
+    evolution,
+    recall as recall_mod,
+    scratchpad,
+    sidecar as sidecar_mod,
+)
 from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION, seed_kernel_tickets
 
 
@@ -1470,7 +1477,15 @@ class KernelEngine:
             }
         )
 
-    def next(self, *, owner: str = "human", role: str = "developer") -> dict[str, Any]:
+    def next(
+        self,
+        *,
+        owner: str = "human",
+        role: str = "developer",
+        distributed: bool = False,
+        remote: str = "origin",
+        duration_hours: int = 2,
+    ) -> dict[str, Any]:
         self._begin()
         self._verify_integrity()
 
@@ -1491,17 +1506,35 @@ class KernelEngine:
         if not chosen:
             raise ExoError(code="NO_TICKET", message="No dispatchable todo ticket found")
 
-        lock = tickets.acquire_lock(self.repo, str(chosen["id"]), owner=owner, role=role)
+        distributed_result: dict[str, Any] | None = None
+        if distributed:
+            manager = distributed_leases_mod.GitDistributedLeaseManager(self.repo)
+            distributed_result = manager.claim(
+                str(chosen["id"]),
+                owner=owner,
+                role=role,
+                duration_hours=duration_hours,
+                remote=remote,
+            )
+            lock = dict(distributed_result.get("lock", {}))
+        else:
+            lock = tickets.acquire_lock(self.repo, str(chosen["id"]), owner=owner, role=role, duration_hours=duration_hours)
         if chosen.get("status") == "todo":
             chosen["status"] = "active"
             tickets.save_ticket(self.repo, chosen)
             self._audit("update_ticket", "ok", ticket=str(chosen["id"]), details={"status": "active"})
 
-        self._audit("acquire_lock", "ok", ticket=str(chosen["id"]), details={"owner": owner})
+        self._audit(
+            "acquire_lock",
+            "ok",
+            ticket=str(chosen["id"]),
+            details={"owner": owner, "distributed": distributed, "remote": (remote if distributed else None)},
+        )
         return self._response(
             {
                 "ticket_id": chosen["id"],
                 "lock": lock,
+                "distributed": (distributed_result.get("distributed") if distributed_result else None),
                 "reasoning": reasoning,
                 "script": script_out.get("_script_source"),
             }
@@ -1514,6 +1547,8 @@ class KernelEngine:
         owner: str | None = None,
         role: str | None = None,
         duration_hours: int = 2,
+        distributed: bool = False,
+        remote: str = "origin",
     ) -> dict[str, Any]:
         self._begin()
         lock = tickets.ensure_lock(self.repo, ticket_id=ticket_id)
@@ -1525,24 +1560,46 @@ class KernelEngine:
         if not effective_owner:
             effective_owner = self.actor
         effective_role = role.strip() if isinstance(role, str) and role.strip() else str(lock.get("role", "developer"))
-        workspace = lock.get("workspace") if isinstance(lock.get("workspace"), dict) else {}
-        base_branch = str(workspace.get("base") or "main")
-
-        renewed = tickets.acquire_lock(
-            self.repo,
-            target_ticket_id,
-            owner=effective_owner,
-            role=effective_role,
-            duration_hours=duration_hours,
-            base=base_branch,
-        )
+        distributed_result: dict[str, Any] | None = None
+        if distributed:
+            manager = distributed_leases_mod.GitDistributedLeaseManager(self.repo)
+            distributed_result = manager.renew(
+                target_ticket_id,
+                owner=effective_owner,
+                role=effective_role,
+                duration_hours=duration_hours,
+                remote=remote,
+            )
+            renewed = dict(distributed_result.get("lock", {}))
+        else:
+            workspace = lock.get("workspace") if isinstance(lock.get("workspace"), dict) else {}
+            base_branch = str(workspace.get("base") or "main")
+            renewed = tickets.acquire_lock(
+                self.repo,
+                target_ticket_id,
+                owner=effective_owner,
+                role=effective_role,
+                duration_hours=duration_hours,
+                base=base_branch,
+            )
         self._audit(
             "renew_lock",
             "ok",
             ticket=target_ticket_id,
-            details={"owner": effective_owner, "fencing_token": renewed.get("fencing_token")},
+            details={
+                "owner": effective_owner,
+                "fencing_token": renewed.get("fencing_token"),
+                "distributed": distributed,
+                "remote": (remote if distributed else None),
+            },
         )
-        return self._response({"ticket_id": target_ticket_id, "lock": renewed})
+        return self._response(
+            {
+                "ticket_id": target_ticket_id,
+                "lock": renewed,
+                "distributed": (distributed_result.get("distributed") if distributed_result else None),
+            }
+        )
 
     def lease_heartbeat(
         self,
@@ -1550,17 +1607,110 @@ class KernelEngine:
         *,
         owner: str | None = None,
         duration_hours: int = 2,
+        distributed: bool = False,
+        remote: str = "origin",
     ) -> dict[str, Any]:
         self._begin()
-        refreshed = tickets.heartbeat_lock(self.repo, ticket_id=ticket_id, owner=owner, duration_hours=duration_hours)
+        distributed_result: dict[str, Any] | None = None
+        if distributed:
+            effective_owner = owner.strip() if isinstance(owner, str) and owner.strip() else str(self.actor)
+            target_ticket = ticket_id
+            if not target_ticket:
+                lock = tickets.ensure_lock(self.repo)
+                target_ticket = str(lock.get("ticket_id", "")).strip()
+            if not target_ticket:
+                raise ExoError(code="LOCK_TICKET_INVALID", message="Active lock missing ticket_id", blocked=True)
+            manager = distributed_leases_mod.GitDistributedLeaseManager(self.repo)
+            distributed_result = manager.heartbeat(
+                target_ticket,
+                owner=effective_owner,
+                duration_hours=duration_hours,
+                remote=remote,
+            )
+            refreshed = dict(distributed_result.get("lock", {}))
+        else:
+            refreshed = tickets.heartbeat_lock(self.repo, ticket_id=ticket_id, owner=owner, duration_hours=duration_hours)
         target_ticket_id = str(refreshed.get("ticket_id", "")).strip() or ticket_id
         self._audit(
             "heartbeat_lock",
             "ok",
             ticket=(target_ticket_id or None),
-            details={"owner": refreshed.get("owner"), "expires_at": refreshed.get("expires_at")},
+            details={
+                "owner": refreshed.get("owner"),
+                "expires_at": refreshed.get("expires_at"),
+                "distributed": distributed,
+                "remote": (remote if distributed else None),
+            },
         )
-        return self._response({"ticket_id": target_ticket_id, "lock": refreshed})
+        return self._response(
+            {
+                "ticket_id": target_ticket_id,
+                "lock": refreshed,
+                "distributed": (distributed_result.get("distributed") if distributed_result else None),
+            }
+        )
+
+    def lease_release(
+        self,
+        ticket_id: str | None = None,
+        *,
+        owner: str | None = None,
+        distributed: bool = False,
+        remote: str = "origin",
+        ignore_missing: bool = False,
+    ) -> dict[str, Any]:
+        self._begin()
+        target_ticket = ticket_id
+        if not target_ticket:
+            lock = tickets.load_lock(self.repo)
+            if lock:
+                target_ticket = str(lock.get("ticket_id", "")).strip()
+        if not target_ticket:
+            if ignore_missing:
+                return self._response({"ticket_id": None, "released": False, "distributed": None})
+            raise ExoError(code="LOCK_REQUIRED", message="No active ticket lock found", blocked=True)
+
+        if distributed:
+            manager = distributed_leases_mod.GitDistributedLeaseManager(self.repo)
+            out = manager.release(
+                target_ticket,
+                owner=owner,
+                remote=remote,
+                ignore_missing=ignore_missing,
+            )
+            self._audit(
+                "release_lock",
+                "ok",
+                ticket=target_ticket,
+                details={"distributed": True, "remote": remote, "released": out.get("released")},
+            )
+            return self._response(out)
+
+        current = tickets.load_lock(self.repo)
+        if not current:
+            if ignore_missing:
+                return self._response({"ticket_id": target_ticket, "released": False, "distributed": None})
+            raise ExoError(code="LOCK_REQUIRED", message="No active ticket lock found", blocked=True)
+        if str(current.get("ticket_id", "")).strip() != target_ticket:
+            raise ExoError(
+                code="LOCK_MISMATCH",
+                message=f"Active lock is for {current.get('ticket_id')}, not {target_ticket}",
+                details=current,
+                blocked=True,
+            )
+        owner_value = owner.strip() if isinstance(owner, str) and owner.strip() else ""
+        current_owner = str(current.get("owner", "")).strip()
+        if owner_value and current_owner and owner_value != current_owner:
+            raise ExoError(
+                code="LOCK_OWNER_MISMATCH",
+                message=f"Active lock owner is {current_owner}; release owner {owner_value} is not allowed",
+                details=current,
+                blocked=True,
+            )
+
+        released = tickets.release_lock(self.repo, ticket_id=target_ticket)
+        self._audit("release_lock", "ok", ticket=target_ticket, details={"distributed": False, "released": released})
+        return self._response({"ticket_id": target_ticket, "released": released, "distributed": None})
 
     def _load_patch_spec(self, patch_file: str) -> dict[str, Any]:
         path = self._resolve_repo_path(patch_file)
