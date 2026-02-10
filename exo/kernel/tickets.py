@@ -153,7 +153,43 @@ def acquire_lock(
             blocked=True,
         )
     if existing and existing.get("ticket_id") == ticket_id:
-        return existing
+        existing_owner = str(existing.get("owner", "")).strip()
+        if existing_owner and existing_owner != owner:
+            raise ExoError(
+                code="LOCK_COLLISION",
+                message=f"Ticket lock collision on {ticket_id}: held by {existing_owner}",
+                details=existing,
+                blocked=True,
+            )
+
+        renewed_at = datetime.now().astimezone()
+        renewed_expires = renewed_at + timedelta(hours=duration_hours)
+        workspace = existing.get("workspace") if isinstance(existing.get("workspace"), dict) else {}
+        branch = str(workspace.get("branch") or f"codex/{ticket_id}")
+        base_branch = str(workspace.get("base") or base)
+        fencing_raw = existing.get("fencing_token", 0)
+        try:
+            fencing_token = int(fencing_raw) + 1
+        except (TypeError, ValueError):
+            fencing_token = 1
+
+        renewed = {
+            "ticket_id": ticket_id,
+            "owner": owner,
+            "role": role,
+            "created_at": str(existing.get("created_at") or renewed_at.isoformat(timespec="seconds")),
+            "updated_at": renewed_at.isoformat(timespec="seconds"),
+            "heartbeat_at": renewed_at.isoformat(timespec="seconds"),
+            "expires_at": renewed_expires.isoformat(timespec="seconds"),
+            "lease_expires_at": renewed_expires.isoformat(timespec="seconds"),
+            "fencing_token": fencing_token,
+            "workspace": {
+                "branch": branch,
+                "base": base_branch,
+            },
+        }
+        dump_json(lock_path(repo), renewed)
+        return renewed
 
     created = datetime.now().astimezone()
     expires = created + timedelta(hours=duration_hours)
@@ -162,7 +198,11 @@ def acquire_lock(
         "owner": owner,
         "role": role,
         "created_at": created.isoformat(timespec="seconds"),
+        "updated_at": created.isoformat(timespec="seconds"),
+        "heartbeat_at": created.isoformat(timespec="seconds"),
         "expires_at": expires.isoformat(timespec="seconds"),
+        "lease_expires_at": expires.isoformat(timespec="seconds"),
+        "fencing_token": 1,
         "workspace": {
             "branch": f"codex/{ticket_id}",
             "base": base,
