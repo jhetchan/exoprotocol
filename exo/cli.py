@@ -45,6 +45,17 @@ def _build_parser() -> argparse.ArgumentParser:
     next_cmd.add_argument("--owner", default="human")
     next_cmd.add_argument("--role", default="developer")
 
+    renew_cmd = sub.add_parser("lease-renew", help="Renew active ticket lease and increment fencing token")
+    renew_cmd.add_argument("--ticket-id")
+    renew_cmd.add_argument("--owner")
+    renew_cmd.add_argument("--role")
+    renew_cmd.add_argument("--hours", type=int, default=2)
+
+    heartbeat_cmd = sub.add_parser("lease-heartbeat", help="Heartbeat active ticket lease without changing fencing token")
+    heartbeat_cmd.add_argument("--ticket-id")
+    heartbeat_cmd.add_argument("--owner")
+    heartbeat_cmd.add_argument("--hours", type=int, default=2)
+
     do_cmd = sub.add_parser("do", help="Run controlled execution pipeline")
     do_cmd.add_argument("ticket_id", nargs="?")
     do_cmd.add_argument("--patch", dest="patch_file", help="Patch spec (yaml/json) with patches[]")
@@ -239,6 +250,19 @@ def main(argv: list[str] | None = None) -> int:
             response = engine.plan(args.input)
         elif cmd == "next":
             response = engine.next(owner=args.owner, role=args.role)
+        elif cmd == "lease-renew":
+            response = engine.lease_renew(
+                args.ticket_id,
+                owner=args.owner,
+                role=args.role,
+                duration_hours=args.hours,
+            )
+        elif cmd == "lease-heartbeat":
+            response = engine.lease_heartbeat(
+                args.ticket_id,
+                owner=args.owner,
+                duration_hours=args.hours,
+            )
         elif cmd == "do":
             response = engine.do(args.ticket_id, patch_file=args.patch_file, mark_done=not bool(args.no_mark_done))
         elif cmd == "check":
