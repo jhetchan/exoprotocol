@@ -117,6 +117,24 @@ def _parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def _normalize_duration_hours(duration_hours: int) -> int:
+    try:
+        value = int(duration_hours)
+    except (TypeError, ValueError):
+        raise ExoError(
+            code="LOCK_DURATION_INVALID",
+            message="duration_hours must be an integer >= 1",
+            blocked=True,
+        ) from None
+    if value < 1:
+        raise ExoError(
+            code="LOCK_DURATION_INVALID",
+            message="duration_hours must be an integer >= 1",
+            blocked=True,
+        )
+    return value
+
+
 def is_lock_expired(lock: dict[str, Any]) -> bool:
     expires = lock.get("expires_at")
     if not expires:
@@ -144,6 +162,7 @@ def acquire_lock(
     duration_hours: int = 2,
     base: str = "main",
 ) -> dict[str, Any]:
+    normalized_duration = _normalize_duration_hours(duration_hours)
     existing = load_lock(repo)
     if existing and existing.get("ticket_id") != ticket_id:
         raise ExoError(
@@ -163,7 +182,7 @@ def acquire_lock(
             )
 
         renewed_at = datetime.now().astimezone()
-        renewed_expires = renewed_at + timedelta(hours=duration_hours)
+        renewed_expires = renewed_at + timedelta(hours=normalized_duration)
         workspace = existing.get("workspace") if isinstance(existing.get("workspace"), dict) else {}
         branch = str(workspace.get("branch") or f"codex/{ticket_id}")
         base_branch = str(workspace.get("base") or base)
@@ -192,7 +211,7 @@ def acquire_lock(
         return renewed
 
     created = datetime.now().astimezone()
-    expires = created + timedelta(hours=duration_hours)
+    expires = created + timedelta(hours=normalized_duration)
     lock = {
         "ticket_id": ticket_id,
         "owner": owner,
@@ -228,6 +247,45 @@ def ensure_lock(repo: Path, ticket_id: str | None = None) -> dict[str, Any]:
             blocked=True,
         )
     return lock
+
+
+def heartbeat_lock(
+    repo: Path,
+    ticket_id: str | None = None,
+    *,
+    owner: str | None = None,
+    duration_hours: int = 2,
+) -> dict[str, Any]:
+    normalized_duration = _normalize_duration_hours(duration_hours)
+    existing = ensure_lock(repo, ticket_id=ticket_id)
+
+    existing_owner = str(existing.get("owner", "")).strip()
+    requested_owner = owner.strip() if isinstance(owner, str) and owner.strip() else ""
+    if requested_owner and existing_owner and requested_owner != existing_owner:
+        raise ExoError(
+            code="LOCK_OWNER_MISMATCH",
+            message=f"Active lock owner is {existing_owner}; heartbeat owner {requested_owner} is not allowed",
+            details=existing,
+            blocked=True,
+        )
+
+    now = datetime.now().astimezone()
+    candidate_expiry = now + timedelta(hours=normalized_duration)
+    current_expiry_raw = existing.get("expires_at")
+    try:
+        current_expiry = _parse_dt(str(current_expiry_raw)) if current_expiry_raw else now
+    except Exception:
+        current_expiry = now
+    next_expiry = candidate_expiry if candidate_expiry >= current_expiry else current_expiry
+
+    updated = dict(existing)
+    updated["updated_at"] = now.isoformat(timespec="seconds")
+    updated["heartbeat_at"] = now.isoformat(timespec="seconds")
+    updated["expires_at"] = next_expiry.isoformat(timespec="seconds")
+    updated["lease_expires_at"] = next_expiry.isoformat(timespec="seconds")
+
+    dump_json(lock_path(repo), updated)
+    return updated
 
 
 def release_lock(repo: Path, ticket_id: str | None = None) -> bool:

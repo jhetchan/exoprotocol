@@ -19,6 +19,8 @@ python3 -m exo.cli do
 - `exo audit`
 - `exo plan <input>`
 - `exo next`
+- `exo lease-renew [--ticket-id <id>] [--owner <owner>] [--role <role>] [--hours N]`
+- `exo lease-heartbeat [--ticket-id <id>] [--owner <owner>] [--hours N]`
 - `exo do [TICKET-ID]`
 - `exo check`
 - `exo status`
@@ -209,6 +211,13 @@ Run safety checks before ending a session:
 ```bash
 python3 -m exo.cli audit
 PYTHONPATH=. /tmp/build-exo-test-venv/bin/pytest -q
+```
+
+Lease upkeep commands (active lock only):
+
+```bash
+python3 -m exo.cli lease-renew --hours 2
+python3 -m exo.cli lease-heartbeat --hours 2
 ```
 
 ## MCP server

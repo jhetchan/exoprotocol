@@ -1507,6 +1507,61 @@ class KernelEngine:
             }
         )
 
+    def lease_renew(
+        self,
+        ticket_id: str | None = None,
+        *,
+        owner: str | None = None,
+        role: str | None = None,
+        duration_hours: int = 2,
+    ) -> dict[str, Any]:
+        self._begin()
+        lock = tickets.ensure_lock(self.repo, ticket_id=ticket_id)
+        target_ticket_id = str(lock.get("ticket_id", "")).strip()
+        if not target_ticket_id:
+            raise ExoError(code="LOCK_TICKET_INVALID", message="Active lock missing ticket_id", blocked=True)
+
+        effective_owner = owner.strip() if isinstance(owner, str) and owner.strip() else str(lock.get("owner", "")).strip()
+        if not effective_owner:
+            effective_owner = self.actor
+        effective_role = role.strip() if isinstance(role, str) and role.strip() else str(lock.get("role", "developer"))
+        workspace = lock.get("workspace") if isinstance(lock.get("workspace"), dict) else {}
+        base_branch = str(workspace.get("base") or "main")
+
+        renewed = tickets.acquire_lock(
+            self.repo,
+            target_ticket_id,
+            owner=effective_owner,
+            role=effective_role,
+            duration_hours=duration_hours,
+            base=base_branch,
+        )
+        self._audit(
+            "renew_lock",
+            "ok",
+            ticket=target_ticket_id,
+            details={"owner": effective_owner, "fencing_token": renewed.get("fencing_token")},
+        )
+        return self._response({"ticket_id": target_ticket_id, "lock": renewed})
+
+    def lease_heartbeat(
+        self,
+        ticket_id: str | None = None,
+        *,
+        owner: str | None = None,
+        duration_hours: int = 2,
+    ) -> dict[str, Any]:
+        self._begin()
+        refreshed = tickets.heartbeat_lock(self.repo, ticket_id=ticket_id, owner=owner, duration_hours=duration_hours)
+        target_ticket_id = str(refreshed.get("ticket_id", "")).strip() or ticket_id
+        self._audit(
+            "heartbeat_lock",
+            "ok",
+            ticket=(target_ticket_id or None),
+            details={"owner": refreshed.get("owner"), "expires_at": refreshed.get("expires_at")},
+        )
+        return self._response({"ticket_id": target_ticket_id, "lock": refreshed})
+
     def _load_patch_spec(self, patch_file: str) -> dict[str, Any]:
         path = self._resolve_repo_path(patch_file)
         if not path.exists():

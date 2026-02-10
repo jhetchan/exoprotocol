@@ -163,6 +163,27 @@ def test_lock_reentrant_owner_renews_and_increments_fencing_token(tmp_path: Path
     assert second["workspace"]["branch"] == first["workspace"]["branch"]
 
 
+def test_lock_heartbeat_updates_timestamps_without_fencing_increment(tmp_path: Path) -> None:
+    repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
+
+    first = tickets_mod.acquire_lock(repo, "TICKET-903", owner="agent:a", role="developer", duration_hours=1)
+    second = tickets_mod.heartbeat_lock(repo, "TICKET-903", owner="agent:a", duration_hours=3)
+
+    assert second["ticket_id"] == "TICKET-903"
+    assert int(second["fencing_token"]) == int(first["fencing_token"])
+    assert datetime.fromisoformat(second["heartbeat_at"]) >= datetime.fromisoformat(first["heartbeat_at"])
+    assert datetime.fromisoformat(second["expires_at"]) >= datetime.fromisoformat(first["expires_at"])
+
+
+def test_lock_heartbeat_rejects_owner_mismatch(tmp_path: Path) -> None:
+    repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
+
+    _ = tickets_mod.acquire_lock(repo, "TICKET-904", owner="agent:a", role="developer")
+    with pytest.raises(ExoError) as owner_err:
+        tickets_mod.heartbeat_lock(repo, "TICKET-904", owner="agent:b", duration_hours=2)
+    assert owner_err.value.code == "LOCK_OWNER_MISMATCH"
+
+
 def test_check_action_denies_memory_index_mutation(tmp_path: Path) -> None:
     repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
     gov = load_governance(repo)
