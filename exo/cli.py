@@ -44,17 +44,31 @@ def _build_parser() -> argparse.ArgumentParser:
     next_cmd = sub.add_parser("next", help="Dispatch next ticket and acquire lock")
     next_cmd.add_argument("--owner", default="human")
     next_cmd.add_argument("--role", default="developer")
+    next_cmd.add_argument("--hours", type=int, default=2)
+    next_cmd.add_argument("--distributed", action="store_true")
+    next_cmd.add_argument("--remote", default="origin")
 
     renew_cmd = sub.add_parser("lease-renew", help="Renew active ticket lease and increment fencing token")
     renew_cmd.add_argument("--ticket-id")
     renew_cmd.add_argument("--owner")
     renew_cmd.add_argument("--role")
     renew_cmd.add_argument("--hours", type=int, default=2)
+    renew_cmd.add_argument("--distributed", action="store_true")
+    renew_cmd.add_argument("--remote", default="origin")
 
     heartbeat_cmd = sub.add_parser("lease-heartbeat", help="Heartbeat active ticket lease without changing fencing token")
     heartbeat_cmd.add_argument("--ticket-id")
     heartbeat_cmd.add_argument("--owner")
     heartbeat_cmd.add_argument("--hours", type=int, default=2)
+    heartbeat_cmd.add_argument("--distributed", action="store_true")
+    heartbeat_cmd.add_argument("--remote", default="origin")
+
+    release_cmd = sub.add_parser("lease-release", help="Release active ticket lease")
+    release_cmd.add_argument("--ticket-id")
+    release_cmd.add_argument("--owner")
+    release_cmd.add_argument("--distributed", action="store_true")
+    release_cmd.add_argument("--remote", default="origin")
+    release_cmd.add_argument("--ignore-missing", action="store_true")
 
     do_cmd = sub.add_parser("do", help="Run controlled execution pipeline")
     do_cmd.add_argument("ticket_id", nargs="?")
@@ -249,19 +263,37 @@ def main(argv: list[str] | None = None) -> int:
         elif cmd == "plan":
             response = engine.plan(args.input)
         elif cmd == "next":
-            response = engine.next(owner=args.owner, role=args.role)
+            response = engine.next(
+                owner=args.owner,
+                role=args.role,
+                distributed=bool(args.distributed),
+                remote=args.remote,
+                duration_hours=args.hours,
+            )
         elif cmd == "lease-renew":
             response = engine.lease_renew(
                 args.ticket_id,
                 owner=args.owner,
                 role=args.role,
                 duration_hours=args.hours,
+                distributed=bool(args.distributed),
+                remote=args.remote,
             )
         elif cmd == "lease-heartbeat":
             response = engine.lease_heartbeat(
                 args.ticket_id,
                 owner=args.owner,
                 duration_hours=args.hours,
+                distributed=bool(args.distributed),
+                remote=args.remote,
+            )
+        elif cmd == "lease-release":
+            response = engine.lease_release(
+                args.ticket_id,
+                owner=args.owner,
+                distributed=bool(args.distributed),
+                remote=args.remote,
+                ignore_missing=bool(args.ignore_missing),
             )
         elif cmd == "do":
             response = engine.do(args.ticket_id, patch_file=args.patch_file, mark_done=not bool(args.no_mark_done))

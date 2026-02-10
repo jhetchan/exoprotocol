@@ -113,6 +113,11 @@ def lock_path(repo: Path) -> Path:
     return repo / LOCK_FILE
 
 
+def write_lock(repo: Path, lock: dict[str, Any]) -> dict[str, Any]:
+    dump_json(lock_path(repo), lock)
+    return lock
+
+
 def _parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
