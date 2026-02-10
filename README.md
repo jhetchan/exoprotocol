@@ -180,6 +180,37 @@ What this does:
 - mounts `.exo/` to that branch,
 - migrates existing `.exo/` content into governance timeline.
 
+### Local dev routine (no remote push)
+
+Inspect both lanes:
+
+```bash
+git status --short --branch
+git -C .exo status --short --branch
+git worktree list
+```
+
+Commit app/code lane (`main`):
+
+```bash
+git add -A
+git commit -m "feat: <app change>"
+```
+
+Commit governance lane (`exo-governance`):
+
+```bash
+git -C .exo add -A
+git -C .exo commit -m "chore(governance): <rule/ticket/memory change>"
+```
+
+Run safety checks before ending a session:
+
+```bash
+python3 -m exo.cli audit
+PYTHONPATH=. /tmp/build-exo-test-venv/bin/pytest -q
+```
+
 ## MCP server
 
 Install extra deps and run:
