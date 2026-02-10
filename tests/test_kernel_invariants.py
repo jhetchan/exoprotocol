@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -133,6 +134,33 @@ def test_check_action_denies_kernel_path_and_missing_lock(tmp_path: Path) -> Non
     )
     assert deny_lock.status == "DENY"
     assert deny_lock.reasons[0].startswith("lock required:")
+
+
+def test_lock_collision_blocks_different_owner_on_same_ticket(tmp_path: Path) -> None:
+    repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
+
+    first = tickets_mod.acquire_lock(repo, "TICKET-901", owner="agent:a", role="developer")
+    assert first["ticket_id"] == "TICKET-901"
+    assert first["owner"] == "agent:a"
+    assert int(first["fencing_token"]) == 1
+
+    with pytest.raises(ExoError) as collision_err:
+        tickets_mod.acquire_lock(repo, "TICKET-901", owner="agent:b", role="developer")
+    assert collision_err.value.code == "LOCK_COLLISION"
+    assert collision_err.value.blocked is True
+
+
+def test_lock_reentrant_owner_renews_and_increments_fencing_token(tmp_path: Path) -> None:
+    repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
+
+    first = tickets_mod.acquire_lock(repo, "TICKET-902", owner="agent:a", role="developer", duration_hours=1)
+    second = tickets_mod.acquire_lock(repo, "TICKET-902", owner="agent:a", role="developer", duration_hours=3)
+
+    assert second["ticket_id"] == first["ticket_id"]
+    assert second["owner"] == "agent:a"
+    assert int(second["fencing_token"]) == int(first["fencing_token"]) + 1
+    assert datetime.fromisoformat(second["expires_at"]) >= datetime.fromisoformat(first["expires_at"])
+    assert second["workspace"]["branch"] == first["workspace"]["branch"]
 
 
 def test_check_action_denies_memory_index_mutation(tmp_path: Path) -> None:
