@@ -9,6 +9,7 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.orchestrator.worker import DistributedWorker
 from exo.stdlib.engine import KernelEngine
 
 
@@ -205,6 +206,23 @@ def _build_parser() -> argparse.ArgumentParser:
     distill_cmd.add_argument("proposal_id")
     distill_cmd.add_argument("--statement")
     distill_cmd.add_argument("--confidence", type=float, default=0.7)
+
+    worker_poll_cmd = sub.add_parser("worker-poll", help="Poll ledger topic once and execute pending intents")
+    worker_poll_cmd.add_argument("--topic", dest="topic_id")
+    worker_poll_cmd.add_argument("--since", dest="since_cursor")
+    worker_poll_cmd.add_argument("--limit", type=int, default=100)
+    worker_poll_cmd.add_argument("--cursor-file")
+    worker_poll_cmd.add_argument("--no-cursor", action="store_true")
+
+    worker_loop_cmd = sub.add_parser("worker-loop", help="Run repeated ledger polling loop")
+    worker_loop_cmd.add_argument("--topic", dest="topic_id")
+    worker_loop_cmd.add_argument("--since", dest="since_cursor")
+    worker_loop_cmd.add_argument("--limit", type=int, default=100)
+    worker_loop_cmd.add_argument("--iterations", type=int, default=1)
+    worker_loop_cmd.add_argument("--sleep-seconds", type=float, default=1.0)
+    worker_loop_cmd.add_argument("--stop-when-idle", action="store_true")
+    worker_loop_cmd.add_argument("--cursor-file")
+    worker_loop_cmd.add_argument("--no-cursor", action="store_true")
 
     return parser
 
@@ -432,6 +450,38 @@ def main(argv: list[str] | None = None) -> int:
             response = engine.apply_proposal(args.proposal_id)
         elif cmd == "distill":
             response = engine.distill(args.proposal_id, statement=args.statement, confidence=args.confidence)
+        elif cmd == "worker-poll":
+            worker = DistributedWorker(
+                args.repo,
+                actor=actor,
+                topic_id=args.topic_id,
+                cursor_path=args.cursor_file,
+                use_cursor=not bool(args.no_cursor),
+            )
+            data = worker.poll_once(
+                since_cursor=args.since_cursor,
+                limit=args.limit,
+                persist_cursor=not bool(args.no_cursor),
+            )
+            response = _ok(data)
+        elif cmd == "worker-loop":
+            worker = DistributedWorker(
+                args.repo,
+                actor=actor,
+                topic_id=args.topic_id,
+                cursor_path=args.cursor_file,
+                use_cursor=not bool(args.no_cursor),
+            )
+            loop_iterations = args.iterations if args.iterations > 0 else None
+            data = worker.run_loop(
+                iterations=loop_iterations,
+                sleep_seconds=float(args.sleep_seconds),
+                since_cursor=args.since_cursor,
+                limit=args.limit,
+                persist_cursor=not bool(args.no_cursor),
+                stop_when_idle=bool(args.stop_when_idle),
+            )
+            response = _ok(data)
         else:
             raise ExoError(code="CMD_UNKNOWN", message=f"Unknown command: {cmd}")
 
