@@ -137,6 +137,11 @@ DEFAULT_CONFIG = {
         "trusted_approvers": ["agent:trusted"],
         "governance_cooldown_hours": 24,
     },
+    "scheduler": {
+        "enabled": False,
+        "global_concurrency_limit": None,
+        "lanes": [],
+    },
     "control_caps": {
         "decide_override": ["cap:override"],
         "policy_set": ["cap:policy-set"],

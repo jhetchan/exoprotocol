@@ -1387,6 +1387,9 @@ class KernelEngine:
                 }
             )
 
+        config = self._config()
+        scheduler = config.get("scheduler") if isinstance(config.get("scheduler"), dict) else None
+
         integrity_ok = True
         integrity_error: str | None = None
         try:
@@ -1402,7 +1405,7 @@ class KernelEngine:
             counts[status] = counts.get(status, 0) + 1
 
         lock = tickets.load_lock(self.repo)
-        result = dispatch.choose_next_ticket(all_tickets)
+        result = dispatch.choose_next_ticket(all_tickets, scheduler=scheduler, active_lock=lock)
 
         self._audit("status", "ok", details={"tickets": len(all_tickets)})
 
@@ -1414,6 +1417,7 @@ class KernelEngine:
                 "ticket_counts": counts,
                 "active_lock": lock,
                 "next_candidate": result.get("ticket", {}).get("id") if result.get("ticket") else None,
+                "dispatch_reasoning": result.get("reasoning", {}),
             }
         )
 
@@ -1489,8 +1493,19 @@ class KernelEngine:
         self._begin()
         self._verify_integrity()
 
+        config = self._config()
+        scheduler = config.get("scheduler") if isinstance(config.get("scheduler"), dict) else None
         all_tickets = tickets.load_all_tickets(self.repo)
-        script_out = self._run_script("dispatch", {"tickets": all_tickets, "repo": str(self.repo)})
+        active_lock = tickets.load_lock(self.repo)
+        script_out = self._run_script(
+            "dispatch",
+            {
+                "tickets": all_tickets,
+                "repo": str(self.repo),
+                "scheduler": scheduler,
+                "active_lock": active_lock,
+            },
+        )
 
         chosen_id = script_out.get("ticket_id")
         reasoning = script_out.get("reasoning") or {}
@@ -1498,7 +1513,7 @@ class KernelEngine:
         if chosen_id:
             chosen = tickets.load_ticket(self.repo, str(chosen_id))
         else:
-            fallback = dispatch.choose_next_ticket(all_tickets)
+            fallback = dispatch.choose_next_ticket(all_tickets, scheduler=scheduler, active_lock=active_lock)
             chosen = fallback.get("ticket")
             if not reasoning:
                 reasoning = fallback.get("reasoning") or {}
