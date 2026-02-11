@@ -5,7 +5,7 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
-from exo.orchestrator import AgentSessionManager, DistributedWorker
+from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
 from exo.stdlib.engine import KernelEngine
 
 try:
@@ -439,6 +439,133 @@ if FastMCP:
                     "details": {},
                     "blocked": False,
                 },
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_session_suspend(
+        reason: str,
+        repo: str = ".",
+        ticket_id: str | None = None,
+        release_lock: bool = True,
+        stash_changes: bool = False,
+    ) -> dict[str, Any]:
+        manager = AgentSessionManager(Path(repo).resolve(), actor="agent:mcp")
+        try:
+            data = manager.suspend(
+                reason=reason,
+                ticket_id=ticket_id,
+                release_lock=release_lock,
+                stash_changes=stash_changes,
+            )
+            return {
+                "ok": True,
+                "data": data,
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {
+                "ok": False,
+                "error": err.to_dict(),
+                "events": [],
+                "blocked": err.blocked,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {
+                    "code": "UNHANDLED_EXCEPTION",
+                    "message": str(exc),
+                    "details": {},
+                    "blocked": False,
+                },
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_session_resume(
+        repo: str = ".",
+        ticket_id: str | None = None,
+        acquire_lock: bool = True,
+        pop_stash: bool = False,
+        distributed: bool = False,
+        remote: str = "origin",
+        duration_hours: int = 2,
+        role: str | None = None,
+    ) -> dict[str, Any]:
+        manager = AgentSessionManager(Path(repo).resolve(), actor="agent:mcp")
+        try:
+            data = manager.resume(
+                ticket_id=ticket_id,
+                acquire_lock=acquire_lock,
+                pop_stash=pop_stash,
+                distributed=distributed,
+                remote=remote,
+                duration_hours=duration_hours,
+                role=role,
+            )
+            return {
+                "ok": True,
+                "data": data,
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {
+                "ok": False,
+                "error": err.to_dict(),
+                "events": [],
+                "blocked": err.blocked,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {
+                    "code": "UNHANDLED_EXCEPTION",
+                    "message": str(exc),
+                    "details": {},
+                    "blocked": False,
+                },
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_session_scan(repo: str = ".", stale_hours: float = 48.0) -> dict[str, Any]:
+        try:
+            data = scan_sessions(Path(repo).resolve(), stale_hours=stale_hours)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc), "details": {}, "blocked": False},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_session_cleanup(
+        repo: str = ".",
+        stale_hours: float = 48.0,
+        force: bool = False,
+        release_lock: bool = False,
+    ) -> dict[str, Any]:
+        try:
+            data = cleanup_sessions(
+                Path(repo).resolve(),
+                stale_hours=stale_hours,
+                force=force,
+                release_lock=release_lock,
+                actor="agent:mcp",
+            )
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc), "details": {}, "blocked": False},
                 "events": [],
                 "blocked": False,
             }
