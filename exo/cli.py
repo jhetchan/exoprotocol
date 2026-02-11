@@ -9,7 +9,7 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
-from exo.orchestrator import AgentSessionManager, DistributedWorker
+from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
 from exo.stdlib.engine import KernelEngine
 
 
@@ -219,6 +219,29 @@ def _build_parser() -> argparse.ArgumentParser:
     session_start_cmd.add_argument("--distributed", action="store_true")
     session_start_cmd.add_argument("--remote", default="origin")
     session_start_cmd.add_argument("--hours", type=int, default=2)
+
+    suspend_cmd = sub.add_parser("session-suspend", help="Suspend active agent session, release lock, and snapshot context")
+    suspend_cmd.add_argument("--ticket-id")
+    suspend_cmd.add_argument("--reason", required=True)
+    suspend_cmd.add_argument("--no-release-lock", action="store_true")
+    suspend_cmd.add_argument("--stash", action="store_true", help="Git-stash uncommitted changes")
+
+    resume_cmd = sub.add_parser("session-resume", help="Resume a suspended agent session and reacquire lock")
+    resume_cmd.add_argument("--ticket-id")
+    resume_cmd.add_argument("--no-acquire-lock", action="store_true")
+    resume_cmd.add_argument("--pop-stash", action="store_true", help="Pop git stash on resume")
+    resume_cmd.add_argument("--distributed", action="store_true")
+    resume_cmd.add_argument("--remote", default="origin")
+    resume_cmd.add_argument("--hours", type=int, default=2)
+    resume_cmd.add_argument("--role")
+
+    scan_cmd = sub.add_parser("session-scan", help="List all active and suspended sessions, flag stale ones")
+    scan_cmd.add_argument("--stale-hours", type=float, default=48.0)
+
+    cleanup_cmd = sub.add_parser("session-cleanup", help="Remove stale/orphaned sessions and optionally release locks")
+    cleanup_cmd.add_argument("--stale-hours", type=float, default=48.0)
+    cleanup_cmd.add_argument("--force", action="store_true", help="Remove ALL sessions, not just stale ones")
+    cleanup_cmd.add_argument("--release-lock", action="store_true", help="Also release orphaned lock")
 
     session_finish_cmd = sub.add_parser("session-finish", help="Close active agent session and write memento")
     session_finish_cmd.add_argument("--ticket-id")
@@ -491,6 +514,39 @@ def main(argv: list[str] | None = None) -> int:
                 distributed=bool(args.distributed),
                 remote=args.remote,
                 duration_hours=args.hours,
+            )
+            response = _ok(data)
+        elif cmd == "session-suspend":
+            manager = AgentSessionManager(args.repo, actor=actor)
+            data = manager.suspend(
+                reason=args.reason,
+                ticket_id=args.ticket_id,
+                release_lock=not bool(args.no_release_lock),
+                stash_changes=bool(args.stash),
+            )
+            response = _ok(data)
+        elif cmd == "session-resume":
+            manager = AgentSessionManager(args.repo, actor=actor)
+            data = manager.resume(
+                ticket_id=args.ticket_id,
+                acquire_lock=not bool(args.no_acquire_lock),
+                pop_stash=bool(args.pop_stash),
+                distributed=bool(args.distributed),
+                remote=args.remote,
+                duration_hours=args.hours,
+                role=args.role,
+            )
+            response = _ok(data)
+        elif cmd == "session-scan":
+            data = scan_sessions(args.repo, stale_hours=args.stale_hours)
+            response = _ok(data)
+        elif cmd == "session-cleanup":
+            data = cleanup_sessions(
+                args.repo,
+                stale_hours=args.stale_hours,
+                force=bool(args.force),
+                release_lock=bool(args.release_lock),
+                actor=actor,
             )
             response = _ok(data)
         elif cmd == "session-finish":
