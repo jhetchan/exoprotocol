@@ -1,14 +1,84 @@
 # ExoProtocol Kernel (MVP)
 
-Local, repo-native governance kernel with a strict ticket lock + policy compiler loop.
+Repo-native governance kernel for multi-agent development. Enforces ticket locks, policy compilation, session lifecycle, and audit trails — all stored in your git repo, no external services needed.
 
-## Quick start
+## Install
 
 ```bash
-python3 -m exo.cli init --seed
-python3 -m exo.cli status
-python3 -m exo.cli next
-python3 -m exo.cli do
+pip install -e .          # or: pipx install .
+```
+
+## 5-minute quickstart
+
+### 1. Initialize a governed repo
+
+```bash
+exo init --seed
+```
+
+This creates `.exo/` with a constitution, governance lock, starter SPEC, and seed tickets.
+
+### 2. Check status
+
+```bash
+exo status
+```
+
+Shows ticket counts, active lock, dispatch candidate, and integrity check results.
+
+### 3. Pick up a ticket
+
+```bash
+exo next --owner your-name
+```
+
+Dispatches the highest-priority todo ticket with resolved blockers, acquires a lock, and prints what to work on.
+
+### 4. Do the work (governed execution)
+
+```bash
+exo do
+```
+
+Runs the controlled execution pipeline: scope check, action validation, audit trail.
+
+### 5. Run checks and finish
+
+```bash
+exo check
+exo session-finish --summary "What I did" --set-status review
+```
+
+### Full agent session flow (recommended)
+
+```bash
+# Start a session (creates bootstrap context for the agent)
+EXO_ACTOR=agent:claude exo session-start \
+  --ticket-id TICKET-001 \
+  --vendor anthropic --model claude-code \
+  --context-window 200000 \
+  --task "implement the feature described in the ticket"
+
+# ... agent does work ...
+
+# If context runs out, suspend and resume later
+EXO_ACTOR=agent:claude exo session-suspend --reason "context window exhausted"
+EXO_ACTOR=agent:claude exo session-resume
+
+# Finish and hand off for review
+EXO_ACTOR=agent:claude exo session-finish \
+  --summary "implemented feature, added tests" \
+  --set-status review
+```
+
+### Recovery after crashes
+
+```bash
+# Scan for orphaned sessions
+exo session-scan --stale-hours 24
+
+# Clean up stale sessions and release orphaned locks
+exo session-cleanup --stale-hours 24 --release-lock
 ```
 
 ## CLI verbs
@@ -41,6 +111,10 @@ python3 -m exo.cli do
 - `exo begin-effect <decision-id> --executor-ref <name> --idem-key <key>`
 - `exo commit-effect <effect-id> --status OK|FAIL|RETRYABLE_FAIL|CANCELED [--artifact-ref <ref>]`
 - `exo session-start [--ticket-id <id>] [--vendor <vendor>] [--model <model>] [--context-window <tokens>] [--role <role>] [--task "<text>"] [--acquire-lock] [--distributed --remote <name>]`
+- `exo session-suspend --reason "<why>" [--ticket-id <id>] [--no-release-lock] [--stash]`
+- `exo session-resume [--ticket-id <id>] [--no-acquire-lock] [--pop-stash] [--distributed --remote <name>] [--hours N] [--role <role>]`
+- `exo session-scan [--stale-hours N]`
+- `exo session-cleanup [--stale-hours N] [--force] [--release-lock]`
 - `exo session-finish --summary "<text>" [--ticket-id <id>] [--set-status keep|review|done] [--artifact <ref>] [--blocker <text>] [--next-step <text>] [--skip-check --break-glass-reason "<why>"] [--release-lock|--no-release-lock]`
 - `exo worker-poll [--topic <topic-id>] [--since <line:N>] [--limit N] [--cursor-file <path>] [--no-cursor] [--require-session]`
 - `exo worker-loop [--topic <topic-id>] [--since <line:N>] [--limit N] [--iterations N] [--sleep-seconds N] [--stop-when-idle] [--cursor-file <path>] [--no-cursor] [--require-session]`
@@ -55,6 +129,33 @@ python3 -m exo.cli do
 ## JSON mode
 
 All commands support `--format json`.
+
+## Lane-aware dispatch (optional)
+
+`exo next` supports lane-aware scheduling via `.exo/config.yaml`:
+
+```yaml
+scheduler:
+  enabled: true
+  global_concurrency_limit: 3
+  lanes:
+    - name: Feature Lane
+      allowed_types: [feature, refactor]
+      count: 1
+    - name: Bug Lane
+      allowed_types: [bug, security]
+      count: 1
+    - name: Chore Lane
+      allowed_types: [docs, test]
+      count: 1
+```
+
+Behavior:
+- picks highest-scoring `todo` ticket with resolved blockers,
+- skips tickets whose lane is at capacity,
+- returns explicit reasoning when all candidates are lane-blocked or global capacity is reached.
+
+Note: local kernel lock is still single-active-lock per repo. Lane scheduling primarily helps queue selection and distributed/multi-actor coordination.
 
 ## Self-evolving loop
 
@@ -265,6 +366,24 @@ Worker behavior:
 - commits `ExecutionResult`; completed intents are skipped on subsequent polls
 - `session-start` writes actor/vendor/model/context bootstrap packet under `.exo/cache/sessions/`
 - `session-finish` enforces verify gate by default, writes closeout memento under `.exo/memory/sessions/`, and clears lock unless `--set-status keep`
+- `session-suspend` snapshots active session context to `.exo/memory/suspended/`, transitions ticket to `paused`, releases lock (by default), and optionally git-stashes uncommitted changes
+- `session-resume` restores a suspended session, transitions ticket back to `active`, reacquires lock (by default), and optionally pops a git stash
+
+Session suspend/resume lifecycle:
+
+```bash
+# suspend current session (releases lock, pauses ticket)
+EXO_ACTOR=agent:worker-a python3 -m exo.cli session-suspend \
+  --reason "Context window exhausted, handing off."
+
+# resume suspended session (reacquires lock, reactivates ticket)
+EXO_ACTOR=agent:worker-a python3 -m exo.cli session-resume
+
+# suspend with git stash and resume with pop
+EXO_ACTOR=agent:worker-a python3 -m exo.cli session-suspend \
+  --reason "Rate limited" --stash
+EXO_ACTOR=agent:worker-a python3 -m exo.cli session-resume --pop-stash
+```
 
 ## MCP server
 
@@ -273,4 +392,48 @@ Install extra deps and run:
 ```bash
 pip install -e .[mcp]
 exo-mcp
+```
+
+### Example MCP configs
+
+**Claude Desktop / Claude Code** (`~/.claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "exo": {
+      "command": "exo-mcp",
+      "args": [],
+      "env": { "EXO_ACTOR": "agent:claude" }
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "exo": {
+      "command": "exo-mcp",
+      "args": [],
+      "env": { "EXO_ACTOR": "agent:cursor" }
+    }
+  }
+}
+```
+
+**Generic (any MCP-compatible client)**:
+
+```json
+{
+  "mcpServers": {
+    "exo": {
+      "command": "python3",
+      "args": ["-m", "exo.mcp_server"],
+      "env": { "EXO_ACTOR": "agent:generic" }
+    }
+  }
+}
 ```
