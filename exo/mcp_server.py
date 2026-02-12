@@ -1294,6 +1294,51 @@ if FastMCP:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
 
+    @server.tool(
+        name="exo_doctor",
+        description="Run unified governance health check: scaffold, config validation, drift, and scan freshness.",
+    )
+    def exo_doctor(repo: str = ".", stale_hours: float = 48.0) -> dict[str, Any]:
+        try:
+            from exo.stdlib.doctor import doctor as run_doctor, doctor_to_dict
+            repo_path = Path(repo).resolve()
+            report = run_doctor(repo_path, stale_hours=stale_hours)
+            return {"ok": True, "data": doctor_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @server.tool(
+        name="exo_config_validate",
+        description="Validate .exo/config.yaml structure, types, and value ranges.",
+    )
+    def exo_config_validate(repo: str = ".") -> dict[str, Any]:
+        try:
+            from exo.stdlib.config_schema import validate_config, validation_to_dict
+            repo_path = Path(repo).resolve()
+            result = validate_config(repo_path)
+            return {"ok": True, "data": validation_to_dict(result), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @server.tool(
+        name="exo_upgrade",
+        description="Upgrade .exo/ directory to latest schema version. Backfills missing config keys, creates missing dirs, recompiles governance, regenerates adapters.",
+    )
+    def exo_upgrade(repo: str = ".", dry_run: bool = False) -> dict[str, Any]:
+        try:
+            from exo.stdlib.upgrade import upgrade as run_upgrade
+            repo_path = Path(repo).resolve()
+            data = run_upgrade(repo_path, dry_run=dry_run)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
 
 def main() -> int:
     if not FastMCP:
