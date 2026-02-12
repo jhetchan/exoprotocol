@@ -1279,6 +1279,21 @@ if FastMCP:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
 
+    @server.tool(
+        name="exo_scan",
+        description="Scan repository and detect languages, sensitive files, build dirs, CI systems, and existing governance. Read-only preview of what 'exo init' would customize.",
+    )
+    def exo_scan(repo: str = ".") -> dict[str, Any]:
+        try:
+            from exo.stdlib.scan import scan_repo, scan_to_dict
+            repo_path = Path(repo).resolve()
+            report = scan_repo(repo_path)
+            return {"ok": True, "data": scan_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
 
 def main() -> int:
     if not FastMCP:
