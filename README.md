@@ -13,18 +13,20 @@ pip install -e .          # or: pipx install .
 ### 1. Initialize a governed repo
 
 ```bash
-exo init --seed
+exo init
 ```
 
-This creates `.exo/` with a constitution, governance lock, starter SPEC, and seed tickets.
+Scans your repo to detect language, sensitive files, build directories, and CI systems. Generates a project-aware constitution, config, and agent adapter files (CLAUDE.md, .cursorrules, AGENTS.md) so governance adds value from day one.
 
-### 2. Check status
+Use `exo init --no-scan` for generic defaults, or `exo init --seed` to also create starter tickets.
+
+### 2. Check health
 
 ```bash
-exo status
+exo doctor
 ```
 
-Shows ticket counts, active lock, dispatch candidate, and integrity check results.
+Runs scaffold check, config validation, governance drift detection, and scan freshness in one pass.
 
 ### 3. Pick up a ticket
 
@@ -34,103 +36,191 @@ exo next --owner your-name
 
 Dispatches the highest-priority todo ticket with resolved blockers, acquires a lock, and prints what to work on.
 
-### 4. Do the work (governed execution)
+### 4. Start a governed session
 
 ```bash
-exo do
-```
-
-Runs the controlled execution pipeline: scope check, action validation, audit trail.
-
-### 5. Run checks and finish
-
-```bash
-exo check
-exo session-finish --summary "What I did" --set-status review
-```
-
-### Full agent session flow (recommended)
-
-```bash
-# Start a session (creates bootstrap context for the agent)
 EXO_ACTOR=agent:claude exo session-start \
   --ticket-id TICKET-001 \
   --vendor anthropic --model claude-code \
   --context-window 200000 \
   --task "implement the feature described in the ticket"
+```
 
-# ... agent does work ...
+Creates a bootstrap context file with governance rules, scope constraints, and operational learnings from prior sessions.
 
-# If context runs out, suspend and resume later
-EXO_ACTOR=agent:claude exo session-suspend --reason "context window exhausted"
-EXO_ACTOR=agent:claude exo session-resume
+### 5. Do the work, then finish
 
-# Finish and hand off for review
+```bash
+# ... agent does work within ticket scope ...
+
 EXO_ACTOR=agent:claude exo session-finish \
   --summary "implemented feature, added tests" \
   --set-status review
 ```
 
-### Recovery after crashes
+Session finish runs drift detection, feature tracing, and verification. Writes a closeout memento and releases the lock.
+
+### 6. Suspend and resume (if context runs out)
 
 ```bash
-# Scan for orphaned sessions
-exo session-scan --stale-hours 24
+EXO_ACTOR=agent:claude exo session-suspend --reason "context window exhausted"
+EXO_ACTOR=agent:claude exo session-resume
+```
 
-# Clean up stale sessions and release orphaned locks
+### 7. Recovery after crashes
+
+```bash
+exo session-scan --stale-hours 24
 exo session-cleanup --stale-hours 24 --release-lock
 ```
 
+Dead-PID sessions are auto-detected and flagged as stale.
+
 ## CLI verbs
 
-- `exo init`
-- `exo sidecar-init`
-- `exo build-governance`
-- `exo audit`
-- `exo plan <input>`
-- `exo next [--hours N] [--distributed --remote <name>]`
-- `exo lease-renew [--ticket-id <id>] [--owner <owner>] [--role <role>] [--hours N] [--distributed --remote <name>]`
-- `exo lease-heartbeat [--ticket-id <id>] [--owner <owner>] [--hours N] [--distributed --remote <name>]`
-- `exo lease-release [--ticket-id <id>] [--owner <owner>] [--distributed --remote <name>]`
-- `exo do [TICKET-ID]`
-- `exo check`
-- `exo status`
-- `exo jot "..."`
-- `exo thread "..."`
-- `exo promote <thread-id> --to ticket`
-- `exo recall "query"`
-- `exo subscribe [--topic <topic-id>] [--since <line:N>] [--limit N]`
-- `exo ack <ref-id> [--required N] [--actor-cap <cap>]`
-- `exo quorum <ref-id> [--required N]`
-- `exo head --topic <topic-id>`
-- `exo cas-head --topic <topic-id> --cap <cap> [--expected <ref>] [--new <ref>] [--max-attempts N]`
-- `exo decide-override <intent-id> --override-cap <cap> --rationale-ref <ref> [--outcome ALLOW|DENY|ESCALATE|SANDBOX]`
-- `exo policy-set --policy-cap <cap> [--bundle <path>] [--version <v>]`
-- `exo submit-intent --intent "<text>" [--topic <topic-id>] [--scope-allow <glob>] [--scope-deny <glob>] [--action-kind <kind>] [--target <path>]`
-- `exo check-intent <intent-id>`
-- `exo begin-effect <decision-id> --executor-ref <name> --idem-key <key>`
-- `exo commit-effect <effect-id> --status OK|FAIL|RETRYABLE_FAIL|CANCELED [--artifact-ref <ref>]`
-- `exo session-start [--ticket-id <id>] [--vendor <vendor>] [--model <model>] [--context-window <tokens>] [--role <role>] [--task "<text>"] [--acquire-lock] [--distributed --remote <name>]`
-- `exo session-suspend --reason "<why>" [--ticket-id <id>] [--no-release-lock] [--stash]`
-- `exo session-resume [--ticket-id <id>] [--no-acquire-lock] [--pop-stash] [--distributed --remote <name>] [--hours N] [--role <role>]`
-- `exo session-scan [--stale-hours N]`
-- `exo session-cleanup [--stale-hours N] [--force] [--release-lock]`
-- `exo session-finish --summary "<text>" [--ticket-id <id>] [--set-status keep|review|done] [--artifact <ref>] [--blocker <text>] [--next-step <text>] [--skip-check --break-glass-reason "<why>"] [--release-lock|--no-release-lock]`
-- `exo worker-poll [--topic <topic-id>] [--since <line:N>] [--limit N] [--cursor-file <path>] [--no-cursor] [--require-session]`
-- `exo worker-loop [--topic <topic-id>] [--since <line:N>] [--limit N] [--iterations N] [--sleep-seconds N] [--stop-when-idle] [--cursor-file <path>] [--no-cursor] [--require-session]`
-- `exo read-ledger [ref-id] [--type <record-type>] [--since <line:N>] [--topic <topic-id>] [--intent <intent-id>]`
-- `exo escalate-intent <intent-id> --kind <kind> [--ctx-ref <ref>]`
-- `exo observe --ticket <id> --tag <tag> --msg "..."`
-- `exo propose --ticket <id> --kind <practice_change|governance_change|tooling_change> --symptom "..." --root-cause "..."`
-- `exo approve <PROP-ID> [--decision approved|rejected]`
-- `exo apply <PROP-ID>`
-- `exo distill <PROP-ID>`
+### Core lifecycle
 
-## JSON mode
+| Command | Description |
+|---|---|
+| `exo init [--seed] [--no-scan]` | Create .exo scaffold (scans repo by default) |
+| `exo status` | Show ticket counts, active lock, dispatch candidate |
+| `exo next [--owner] [--distributed]` | Dispatch next ticket and acquire lock |
+| `exo do [TICKET-ID]` | Run controlled execution pipeline |
+| `exo check` | Run allowlisted checks |
+| `exo plan <input>` | Generate SPEC + tickets from input |
+
+### Session lifecycle
+
+| Command | Description |
+|---|---|
+| `exo session-start [--ticket-id] [--vendor] [--model] [--task]` | Start governed session with bootstrap |
+| `exo session-finish --summary "..." [--set-status] [--error "tool:msg"]` | Finish session, write memento |
+| `exo session-suspend --reason "..."` | Suspend session, release lock |
+| `exo session-resume` | Resume suspended session |
+| `exo session-audit [--ticket-id] [--pr-base] [--pr-head]` | Start audit session (adversarial review) |
+| `exo session-scan [--stale-hours N]` | Scan for active/stale/orphaned sessions |
+| `exo session-cleanup [--stale-hours N] [--release-lock]` | Clean up stale sessions |
+
+### Governance and integrity
+
+| Command | Description |
+|---|---|
+| `exo build-governance` | Compile constitution into governance lock |
+| `exo audit` | Run integrity/rule/lock audit |
+| `exo doctor [--stale-hours N]` | Unified health check (scaffold + config + drift + scan) |
+| `exo config-validate` | Validate .exo/config.yaml structure and values |
+| `exo drift [--skip-adapters] [--skip-features] ...` | Composite governance drift check |
+| `exo pr-check [--base] [--head] [--drift-threshold]` | PR governance check (commit-to-session coverage) |
+| `exo upgrade [--dry-run]` | Upgrade .exo/ to latest schema (backfill config, create dirs) |
+
+### Intent accountability
+
+| Command | Description |
+|---|---|
+| `exo intent-create --brain-dump "..." [--boundary] [--success-condition]` | Create intent ticket |
+| `exo ticket-create --title "..." [--kind task\|epic] [--parent]` | Create task/epic ticket |
+| `exo intents [--status] [--drift-above N]` | List intents with timeline |
+| `exo validate-hierarchy <ticket-id>` | Validate intent hierarchy |
+
+### Feature and requirement traceability
+
+| Command | Description |
+|---|---|
+| `exo features [--status active\|deprecated\|...]` | List features from manifest |
+| `exo trace [--glob "..."]` | Scan code for @feature tags, report violations |
+| `exo prune [--include-deprecated] [--dry-run]` | Remove deleted/deprecated feature code blocks |
+| `exo requirements [--status]` | List requirements from manifest |
+| `exo trace-reqs [--glob "..."]` | Scan code for @req/@implements tags |
+
+### Adapter generation
+
+| Command | Description |
+|---|---|
+| `exo adapter-generate [--target claude\|cursor\|agents\|ci] [--dry-run]` | Generate agent config files from governance |
+| `exo scan` | Preview what init would detect (read-only) |
+
+### Error reflection and learning
+
+| Command | Description |
+|---|---|
+| `exo reflect --pattern "..." --insight "..."` | Record operational learning |
+| `exo reflections [--status] [--scope] [--severity]` | List stored reflections |
+| `exo reflect-dismiss <REF-ID>` | Dismiss a reflection |
+
+### Infrastructure
+
+| Command | Description |
+|---|---|
+| `exo gc [--max-age-days N] [--dry-run]` | Garbage collect old mementos and caches |
+| `exo gc-locks [--remote origin] [--dry-run] [--list]` | Clean up expired distributed leases |
+
+### Lease management
+
+| Command | Description |
+|---|---|
+| `exo lease-renew [--ticket-id] [--hours N] [--distributed]` | Renew active ticket lease |
+| `exo lease-heartbeat [--ticket-id] [--hours N] [--distributed]` | Heartbeat lease without token change |
+| `exo lease-release [--ticket-id] [--distributed]` | Release active lease |
+
+### Scratchpad and recall
+
+| Command | Description |
+|---|---|
+| `exo jot "..."` | Append to scratchpad inbox |
+| `exo thread "topic"` | Create scratchpad thread |
+| `exo promote <thread-id> --to ticket` | Promote thread to ticket |
+| `exo recall "query"` | Search local memory paths |
+
+### Self-evolution
+
+| Command | Description |
+|---|---|
+| `exo observe --ticket <id> --tag <tag> --msg "..."` | Record observation |
+| `exo propose --ticket <id> --kind <kind> --symptom "..."` | Propose change |
+| `exo approve <PROP-ID>` | Approve proposal |
+| `exo apply <PROP-ID>` | Apply approved proposal |
+| `exo distill <PROP-ID>` | Distill learnings to memory |
+
+### Ledger and control plane
+
+| Command | Description |
+|---|---|
+| `exo subscribe [--topic] [--since]` | Subscribe to ledger events |
+| `exo read-ledger [ref-id] [--type] [--topic]` | Read ledger records |
+| `exo head --topic <id>` | Inspect topic head pointer |
+| `exo cas-head --topic <id> --cap <cap>` | Compare-and-swap topic head |
+| `exo submit-intent --intent "..." [--topic]` | Submit intent to ledger |
+| `exo check-intent <intent-id>` | Check intent decision |
+| `exo begin-effect <decision-id> --executor-ref --idem-key` | Claim execution |
+| `exo commit-effect <effect-id> --status OK\|FAIL` | Commit execution result |
+| `exo ack <ref-id>` | Acknowledge a ledger ref |
+| `exo quorum <ref-id> [--required N]` | Check quorum status |
+| `exo decide-override <intent-id> --override-cap <cap>` | Override decision (cap-gated) |
+| `exo policy-set --policy-cap <cap>` | Install policy bundle (cap-gated) |
 
 All commands support `--format json`.
 
-## Lane-aware dispatch (optional)
+## Key concepts
+
+### Smart Init (brownfield on-ramp)
+
+`exo init` scans the repo and generates project-aware governance:
+- **Language detection**: Python, Node, Go, Rust, Java, Ruby — sets checks, budgets, and ignore paths
+- **Sensitive files**: Detects .pem, .key, credentials — adds RULE-SEC-002 deny rules
+- **Build dirs**: Detects node_modules, target, dist — adds to git ignore paths
+- **Source dirs**: Detects src/, lib/, app/ — customizes delete protection rules
+- **Adapters**: Auto-generates CLAUDE.md, .cursorrules, AGENTS.md with governance rules
+- **CI**: Detects GitHub Actions, GitLab CI, Jenkins
+
+### Operational learnings (.exo/LEARNINGS.md)
+
+Accumulated knowledge from governed sessions lives in `.exo/LEARNINGS.md` — a vendor-neutral, portable file that any agent can read. It's auto-generated from:
+- Active reflections (patterns + insights from `exo reflect`)
+- Failure modes from the memory index
+
+All adapter files (CLAUDE.md, .cursorrules, AGENTS.md) reference it. Refreshed on `exo adapter-generate` and `exo upgrade`.
+
+### Lane-aware dispatch
 
 `exo next` supports lane-aware scheduling via `.exo/config.yaml`:
 
@@ -145,245 +235,78 @@ scheduler:
     - name: Bug Lane
       allowed_types: [bug, security]
       count: 1
-    - name: Chore Lane
-      allowed_types: [docs, test]
-      count: 1
 ```
 
-Behavior:
-- picks highest-scoring `todo` ticket with resolved blockers,
-- skips tickets whose lane is at capacity,
-- returns explicit reasoning when all candidates are lane-blocked or global capacity is reached.
+Note: the kernel lock is single-active-ticket per `.exo/` instance. Each git worktree (via `exo sidecar-init`) has its own `.exo/` with independent locks, enabling parallel work. For cross-clone coordination, use distributed leases (`--distributed` flag).
 
-Note: local kernel lock is still single-active-lock per repo. Lane scheduling primarily helps queue selection and distributed/multi-actor coordination.
-
-## Self-evolving loop
+### Audit sessions
 
 ```bash
-python3 -m exo.cli observe --ticket TICKET-000-EPIC --tag drift --msg "Observed failure"
-python3 -m exo.cli propose --ticket TICKET-000-EPIC --kind practice_change --summary "..." --symptom "..." --root-cause "..."
-python3 -m exo.cli approve PROP-001
-python3 -m exo.cli apply PROP-001
-python3 -m exo.cli distill PROP-001
+exo session-audit --ticket-id TICKET-001 --vendor anthropic --model claude-code
 ```
 
-Kernel-seeded templates and schema:
-- `.exo/templates/OBS.template.md`
-- `.exo/templates/PROP.template.yaml`
-- `.exo/templates/REV.template.md`
-- `.exo/templates/memory.index.template.yaml`
-- `.exo/schemas/proposal.schema.json`
+Starts an adversarial review session with context isolation (denies .exo/cache, .exo/memory), built-in Red Team Auditor persona, and model-mismatch warnings. For PR reviews:
+
+```bash
+exo session-audit --ticket-id TICKET-001 --pr-base main --pr-head HEAD
+```
+
+Auto-runs `exo pr-check` and injects the governance report into the audit bootstrap.
+
+### Feature manifest
+
+`.exo/features.yaml` declares what code features can exist. Feature lifecycle: `active → experimental → deprecated → deleted`. Code is tagged with `@feature:` / `@endfeature` annotations. `exo trace` scans for violations. `exo prune` removes deleted feature code blocks.
+
+### Requirement registry
+
+`.exo/requirements.yaml` tracks what the system must do. Code uses `@req:` / `@implements:` annotations. `exo trace-reqs` scans for orphan references and uncovered requirements.
 
 ## Architecture boundary
 
-- `exo/kernel/` is the enforcement core only (governance, tickets/locks, audit, error taxonomy, rule checks).
-- `exo/control/` contains transport-neutral control-plane wrappers over kernel primitives.
-- `exo/stdlib/` contains orchestration and userland behaviors (dispatch, recall, scratchpad, evolution protocol, CLI workflow engine).
-- `exo/orchestrator/` is explicit Layer-3 agent/task/workflow orchestration; execution routes through kernel syscall checks (`submit/check/begin/commit`).
+- `exo/kernel/` — Frozen 10-function enforcement core (governance, tickets/locks, audit, errors, rule checks). Do not expand without RFC.
+- `exo/control/` — Transport-neutral control-plane wrappers (12-syscall surface).
+- `exo/stdlib/` — Orchestration and governance subsystems:
+  - `engine.py` — CLI workflow engine (init, plan, do, check, etc.)
+  - `adapters.py` — Agent config generation (CLAUDE.md, .cursorrules, AGENTS.md, CI)
+  - `scan.py` — Brownfield repo scanner
+  - `drift.py` — Composite governance drift check
+  - `pr_check.py` — PR governance check
+  - `features.py` — Feature manifest and traceability linter
+  - `requirements.py` — Requirement registry and traceability
+  - `reconcile.py` — Intent drift detection
+  - `timeline.py` — Intent timeline builder
+  - `reflect.py` — Error reflection and LEARNINGS.md generation
+  - `doctor.py` — Unified health check
+  - `config_schema.py` — Config validation
+  - `upgrade.py` — Schema migration
+  - `gc.py` — Garbage collection
+  - `distributed_leases.py` — Git-ref-based distributed locks
+  - `evolution.py` — Self-evolution protocol
+  - `dispatch.py` — Lane-aware scheduling
+  - `recall.py` — Memory search
+- `exo/orchestrator/` — Layer-3 session/worker lifecycle, bootstrap/closeout.
 
-Layer-4 memory boundary:
-- governed execution paths (`do` / intent `check`) deny writes to `.exo/memory/**`
-- memory updates must flow through explicit distillation (`exo distill`)
-
-Layer-3 orchestration API example:
-
-```python
-from exo.orchestrator import Orchestrator, OrchestratorTask
-
-orchestrator = Orchestrator(".", actor="agent:builder")
-task = OrchestratorTask(
-    task_id="TASK-001",
-    intent="Write README",
-    action_kind="write_file",
-    target="README.md",
-    scope_allow=["README.md"],
-)
-result = orchestrator.run_task(task)
-```
-
-## Frozen Kernel API
+### Frozen Kernel API
 
 Public kernel surface is intentionally fixed to 10 functions:
 
-- `load_governance(root)`
-- `verify_governance(gov)`
-- `open_session(root, actor)`
-- `mint_ticket(session, intent, scope, ttl)`
-- `validate_ticket(gov, ticket)`
-- `check_action(gov, session, ticket, action)`
-- `resolve_requirements(decision, evidence)`
-- `commit_plan(session, ticket, action)`
-- `append_audit(root, event)`
-- `seal_result(session, ticket, action, result, audit_refs)`
+- `load_governance(root)`, `verify_governance(gov)`
+- `open_session(root, actor)`, `mint_ticket(session, intent, scope, ttl)`
+- `validate_ticket(gov, ticket)`, `check_action(gov, session, ticket, action)`
+- `resolve_requirements(decision, evidence)`, `commit_plan(session, ticket, action)`
+- `append_audit(root, event)`, `seal_result(session, ticket, action, result, audit_refs)`
 
-Import from `exo.kernel` to use this contract.
-
-Kernel evolution guardrail is pinned in:
-- `KERNEL_EVOLUTION_POLICY.md`
-
-Phase A ledger primitives are written to:
-- `.exo/logs/ledger.log.jsonl`
-
-Typed records:
-- `IntentSubmitted`
-- `DecisionRecorded`
-- `ExecutionBegun`
-- `ExecutionResult`
-- `Escalated`
-- `Acked`
-
-Phase B invariants now enforced in ledger:
-- `ExecutionBegun` idempotency uniqueness per `(decision_id, idempotency_key)`
-- `ExecutionResult` write-once per `effect_id` (identical replay returns same record)
-- `ExecutionResult` requires prior `ExecutionBegun`
-
-Phase C ledger primitives now available:
-- topic head pointer via `head(topic_id)` with compare-and-swap updates via `cas_head(...)`
-- topic-scoped ledger reads through `read_records(..., topic_id=..., since_cursor=...)`
-- deterministic intent parent ordering via `intent_causal_order(topic_id)` with cycle detection
-
-Phase D ledger primitives now available:
-- cursor-based event subscription via `subscribe(..., since_cursor=...)`
-- strict `acked(...)` references (cannot ack unknown refs)
-- quorum evaluation via `ack_status(ref_id, required=N)`
-
-Phase E privileged control primitives now available:
-- `decide_override(intent_id, override_cap, rationale_ref, outcome)` writes explicit override decisions with audit + receipt chain
-- `policy_set(policy_cap, policy_bundle, version)` recompiles and installs governance lock with audit + receipt chain
-- both are capability-gated by `.exo/config.yaml` `control_caps`
-
-Phase F multi-writer head controls now available:
-- explicit head inspection via `head(topic_id)`
-- compare-and-swap with retry semantics via `cas_head_retry(...)`
-- governed `cas_head` control path (cap-gated, audited, receipted) with deterministic conflict errors (`CAS_HEAD_CONFLICT`)
-
-Phase G optimistic submit flow now available:
-- `intent_submitted(...)` enforces head compare-and-swap before commit (retryable stale-head detection)
-- `mint_ticket(...)` automatically snapshots topic head and submits with CAS retries
-- automatic parent linkage from prior topic head for intent causality
-
-Phase H 12-syscall surface now available:
-- `exo/control/syscalls.py` provides transport-neutral calls: `submit`, `check`, `decide_override`, `begin`, `commit`, `read`, `head`, `cas_head`, `subscribe`, `ack`, `escalate`, `policy_set`
-- syscall surface is additive and does not change frozen `exo.kernel` 10-function API
-- CLI and MCP control-plane handlers now route through this syscall surface for low-level operations
-
-## Strict git controls
-
-`exo do` now enforces lock-branch lifecycle and budgets from actual `git diff` delta when `git_controls.enabled=true`.
-Defaults are in `.exo/config.yaml` under `git_controls`.
-`exo audit` also reports lock-branch policy violations and stale lock-branch drift signals when a lock is active.
+Import from `exo.kernel` to use this contract. Evolution guardrail in `KERNEL_EVOLUTION_POLICY.md`.
 
 ## Dual timeline sidecar workflow
 
 Use `exo sidecar-init` to mount `.exo/` as a dedicated governance worktree:
 
 ```bash
-python3 -m exo.cli sidecar-init --branch exo-governance --sidecar .exo
+exo sidecar-init --branch exo-governance --sidecar .exo
 ```
 
-What this does:
-- bootstraps git repo locally if missing (unless disabled),
-- ensures `.exo/` is ignored by app timeline,
-- creates/fetches `exo-governance`,
-- mounts `.exo/` to that branch,
-- migrates existing `.exo/` content into governance timeline.
-
-### Local dev routine (no remote push)
-
-Inspect both lanes:
-
-```bash
-git status --short --branch
-git -C .exo status --short --branch
-git worktree list
-```
-
-Commit app/code lane (`main`):
-
-```bash
-git add -A
-git commit -m "feat: <app change>"
-```
-
-Commit governance lane (`exo-governance`):
-
-```bash
-git -C .exo add -A
-git -C .exo commit -m "chore(governance): <rule/ticket/memory change>"
-```
-
-Run safety checks before ending a session:
-
-```bash
-python3 -m exo.cli audit
-PYTHONPATH=. /tmp/build-exo-test-venv/bin/pytest -q
-```
-
-Lease upkeep commands (active lock only):
-
-```bash
-python3 -m exo.cli lease-renew --hours 2
-python3 -m exo.cli lease-heartbeat --hours 2
-python3 -m exo.cli lease-release
-```
-
-Distributed workflow (shared git remote required):
-
-```bash
-python3 -m exo.cli next --owner agent-a --distributed --remote origin
-python3 -m exo.cli lease-heartbeat --owner agent-a --distributed --remote origin --hours 2
-python3 -m exo.cli lease-renew --owner agent-a --distributed --remote origin --hours 2
-python3 -m exo.cli lease-release --owner agent-a --distributed --remote origin
-```
-
-Distributed execution worker loop:
-
-```bash
-# bootstrap agent session context first
-EXO_ACTOR=agent:worker-a python3 -m exo.cli session-start \
-  --ticket-id TICKET-001 \
-  --vendor openai \
-  --model gpt-5 \
-  --context-window 200000 \
-  --task "execute queued intents for this ticket"
-
-# one-shot poll/execute cycle
-EXO_ACTOR=agent:worker-a python3 -m exo.cli worker-poll --require-session --limit 50
-
-# continuous polling loop (stops after idle cycle)
-EXO_ACTOR=agent:worker-a python3 -m exo.cli worker-loop --require-session --iterations 20 --sleep-seconds 1 --stop-when-idle
-
-# close out + write memento
-EXO_ACTOR=agent:worker-a python3 -m exo.cli session-finish \
-  --summary "processed queued intents and committed results" \
-  --set-status review
-```
-
-Worker behavior:
-- consumes `IntentSubmitted` records from a topic stream
-- reuses existing `DecisionRecorded` per intent (idempotent check)
-- claims execution via deterministic idempotency key (`intent:<id>:decision:<id>`)
-- commits `ExecutionResult`; completed intents are skipped on subsequent polls
-- `session-start` writes actor/vendor/model/context bootstrap packet under `.exo/cache/sessions/`
-- `session-finish` enforces verify gate by default, writes closeout memento under `.exo/memory/sessions/`, and clears lock unless `--set-status keep`
-- `session-suspend` snapshots active session context to `.exo/memory/suspended/`, transitions ticket to `paused`, releases lock (by default), and optionally git-stashes uncommitted changes
-- `session-resume` restores a suspended session, transitions ticket back to `active`, reacquires lock (by default), and optionally pops a git stash
-
-Session suspend/resume lifecycle:
-
-```bash
-# suspend current session (releases lock, pauses ticket)
-EXO_ACTOR=agent:worker-a python3 -m exo.cli session-suspend \
-  --reason "Context window exhausted, handing off."
-
-# resume suspended session (reacquires lock, reactivates ticket)
-EXO_ACTOR=agent:worker-a python3 -m exo.cli session-resume
-
-# suspend with git stash and resume with pop
-EXO_ACTOR=agent:worker-a python3 -m exo.cli session-suspend \
-  --reason "Rate limited" --stash
-EXO_ACTOR=agent:worker-a python3 -m exo.cli session-resume --pop-stash
-```
+This gives you parallel git histories: app code on `main`, governance state on `exo-governance`.
 
 ## MCP server
 
