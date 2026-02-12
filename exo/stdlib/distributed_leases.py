@@ -560,6 +560,128 @@ class GitDistributedLeaseManager:
             },
         }
 
+    def list_locks(
+        self,
+        *,
+        remote: str = "origin",
+    ) -> list[dict[str, Any]]:
+        """List all distributed lock refs on the remote.
+
+        Returns a list of lock info dicts with ticket_id, owner, ref,
+        commit_sha, expired status, and parsed payload fields.
+        """
+        remote_name = self._require_remote(remote)
+        prefix = f"{_LEASE_REF_PREFIX}/"
+        proc = self._run_git(["ls-remote", remote_name, f"{prefix}*"], check=False)
+        if proc.returncode != 0:
+            return []
+
+        locks: list[dict[str, Any]] = []
+        for line in (proc.stdout or "").strip().splitlines():
+            if not line.strip():
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            sha = parts[0]
+            ref = parts[1]
+            # Extract ticket_id from ref path
+            ticket_segment = ref[len(prefix):] if ref.startswith(prefix) else ref
+            try:
+                fetched_sha = self._fetch_ref(remote_name, ref)
+                payload = self._parse_lease_payload(self._read_commit_message(fetched_sha))
+                expires = _parse_iso(str(payload["expires_at"]))
+                payload["expired"] = _now() >= expires
+                payload["commit_sha"] = sha
+                payload["remote"] = remote_name
+                payload["ref"] = ref
+                locks.append(payload)
+            except (ExoError, Exception):
+                # If we can't parse a lock, include minimal info
+                locks.append({
+                    "ticket_id": ticket_segment,
+                    "ref": ref,
+                    "commit_sha": sha,
+                    "remote": remote_name,
+                    "expired": None,
+                    "parse_error": True,
+                })
+        return locks
+
+    def cleanup_locks(
+        self,
+        *,
+        remote: str = "origin",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Remove expired distributed locks from the remote.
+
+        Scans all refs under refs/exoprotocol/locks/* on the remote,
+        identifies expired leases, and deletes their refs.
+
+        Args:
+            remote: Git remote name.
+            dry_run: Preview what would be cleaned up without deleting.
+
+        Returns:
+            Dict with lists of expired/active/cleaned locks and counts.
+        """
+        locks = self.list_locks(remote=remote)
+
+        expired: list[dict[str, Any]] = []
+        active: list[dict[str, Any]] = []
+        cleaned: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        for lock in locks:
+            if lock.get("parse_error"):
+                errors.append(lock)
+                continue
+            if lock.get("expired"):
+                expired.append(lock)
+            else:
+                active.append(lock)
+
+        if not dry_run:
+            for lock in expired:
+                ref = str(lock["ref"])
+                expected_sha = str(lock["commit_sha"])
+                try:
+                    self._push_delete(remote, ref, expected_sha)
+                    # Also release local lock if it matches
+                    ticket_id = str(lock.get("ticket_id", "")).strip()
+                    if ticket_id:
+                        tickets.release_lock(self.repo, ticket_id=ticket_id)
+                    cleaned.append(lock)
+                except ExoError:
+                    errors.append(lock)
+
+        return {
+            "remote": remote,
+            "total_locks": len(locks),
+            "expired_count": len(expired),
+            "active_count": len(active),
+            "cleaned_count": len(cleaned) if not dry_run else 0,
+            "error_count": len(errors),
+            "expired": [
+                {"ticket_id": l.get("ticket_id", ""), "owner": l.get("owner", ""), "ref": l.get("ref", ""), "expires_at": l.get("expires_at", "")}
+                for l in expired
+            ],
+            "active": [
+                {"ticket_id": l.get("ticket_id", ""), "owner": l.get("owner", ""), "ref": l.get("ref", ""), "expires_at": l.get("expires_at", "")}
+                for l in active
+            ],
+            "cleaned": [
+                {"ticket_id": l.get("ticket_id", ""), "ref": l.get("ref", "")}
+                for l in cleaned
+            ],
+            "errors": [
+                {"ticket_id": l.get("ticket_id", ""), "ref": l.get("ref", "")}
+                for l in errors
+            ],
+            "dry_run": dry_run,
+        }
+
     def release(
         self,
         ticket_id: str,

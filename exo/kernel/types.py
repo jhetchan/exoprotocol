@@ -6,6 +6,11 @@ from typing import Any, Literal
 
 DecisionStatus = Literal["ALLOW", "DENY", "REQUIRE_ATTESTATION"]
 TicketValidationStatus = Literal["VALID", "INVALID"]
+TicketKind = Literal["intent", "epic", "task"]
+IntentRisk = Literal["low", "medium", "high"]
+
+TICKET_KINDS: set[str] = {"intent", "epic", "task"}
+INTENT_RISKS: set[str] = {"low", "medium", "high"}
 
 
 @dataclass(frozen=True)
