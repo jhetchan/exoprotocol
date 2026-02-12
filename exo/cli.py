@@ -391,6 +391,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("scan", help="Scan repo and preview what exo init would detect")
 
+    doctor_cmd = sub.add_parser("doctor", help="Run unified governance health check")
+    doctor_cmd.add_argument("--stale-hours", type=float, default=48.0, help="Hours before a session is considered stale")
+
+    sub.add_parser("config-validate", help="Validate .exo/config.yaml structure and values")
+
+    upgrade_cmd = sub.add_parser("upgrade", help="Upgrade .exo/ to latest schema version")
+    upgrade_cmd.add_argument("--dry-run", action="store_true", help="Preview changes without applying")
+
     worker_poll_cmd = sub.add_parser("worker-poll", help="Poll ledger topic once and execute pending intents")
     worker_poll_cmd.add_argument("--topic", dest="topic_id")
     worker_poll_cmd.add_argument("--since", dest="since_cursor")
@@ -427,7 +435,7 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
             return
 
         # Special rendering for pr-check, trace, and prune commands
-        if command in ("pr-check", "trace", "prune", "trace-reqs", "drift", "gc", "reflections", "scan"):
+        if command in ("pr-check", "trace", "prune", "trace-reqs", "drift", "gc", "reflections", "scan", "doctor", "config-validate", "upgrade"):
             data = response.get("data", {})
             human_summary = data.pop("_human_summary", "")
             if human_summary:
@@ -1068,6 +1076,26 @@ def main(argv: list[str] | None = None) -> int:
             report = scan_repo(repo_path)
             data = scan_to_dict(report)
             data["_human_summary"] = fmt_scan(report)
+            response = _ok(data)
+        elif cmd == "doctor":
+            repo_path = Path(args.repo).resolve()
+            from exo.stdlib.doctor import doctor as run_doctor, doctor_to_dict, format_doctor_human
+            report = run_doctor(repo_path, stale_hours=float(args.stale_hours))
+            data = doctor_to_dict(report)
+            data["_human_summary"] = format_doctor_human(report)
+            response = _ok(data)
+        elif cmd == "config-validate":
+            repo_path = Path(args.repo).resolve()
+            from exo.stdlib.config_schema import validate_config, validation_to_dict, format_validation_human
+            result = validate_config(repo_path)
+            data = validation_to_dict(result)
+            data["_human_summary"] = format_validation_human(result)
+            response = _ok(data)
+        elif cmd == "upgrade":
+            repo_path = Path(args.repo).resolve()
+            from exo.stdlib.upgrade import upgrade as run_upgrade, format_upgrade_human
+            data = run_upgrade(repo_path, dry_run=bool(args.dry_run))
+            data["_human_summary"] = format_upgrade_human(data)
             response = _ok(data)
         elif cmd == "worker-poll":
             worker = DistributedWorker(
