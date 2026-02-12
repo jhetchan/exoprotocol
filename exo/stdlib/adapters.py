@@ -182,6 +182,7 @@ Before starting any work:
 - If checks fail at finish, fix them — do not use `--skip-check` without `--break-glass-reason`
 - The bootstrap file is your source of truth for the current session
 - Never hardcode values that belong in config — load from manifest at runtime, write tests that vary the config
+- Read `.exo/LEARNINGS.md` for operational learnings from prior sessions
 """
 
 
@@ -212,6 +213,7 @@ Before starting any work:
 - Finish with summary and memento
 - Skip-check requires break-glass reason
 - Never hardcode configurable values — load from manifest/config, write tests that vary inputs
+- Read `.exo/LEARNINGS.md` for operational learnings from prior sessions
 """
 
 
@@ -246,6 +248,7 @@ This repository is governed by ExoProtocol. All AI agent work must follow the se
 - Respect lock ownership and ticket scope
 - Verification is default at finish; break-glass must be explicit
 - All configurable values must be loaded from their source of truth at runtime — never hardcode, always test
+- Read `.exo/LEARNINGS.md` for operational learnings from prior sessions
 """
 
 
@@ -391,6 +394,17 @@ def generate_adapters(
         else:
             results[target]["content"] = content
 
+    # Generate LEARNINGS.md alongside adapters (advisory)
+    learnings_written = False
+    if not dry_run:
+        try:
+            from exo.stdlib.reflect import write_learnings
+            write_learnings(repo)
+            written.append(".exo/LEARNINGS.md")
+            learnings_written = True
+        except Exception:  # noqa: BLE001
+            pass
+
     return {
         "targets": chosen,
         "written": written,
@@ -398,4 +412,5 @@ def generate_adapters(
         "generated_at": now_iso(),
         "governance_hash": lock.get("source_hash", ""),
         "files": results,
+        "learnings_written": learnings_written,
     }
