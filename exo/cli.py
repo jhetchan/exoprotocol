@@ -9,8 +9,30 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.kernel.tickets import (
+    load_ticket, next_intent_id, next_ticket_id, normalize_ticket, save_ticket,
+    ticket_path, validate_intent_hierarchy,
+)
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
+from exo.stdlib.adapters import generate_adapters, ADAPTER_TARGETS
 from exo.stdlib.engine import KernelEngine
+from exo.stdlib.features import (
+    load_features, features_to_list, generate_scope_deny,
+    trace, trace_to_dict, format_trace_human,
+    prune, prune_to_dict, format_prune_human,
+)
+from exo.stdlib.requirements import (
+    load_requirements, requirements_to_list,
+    trace_requirements, req_trace_to_dict, format_req_trace_human,
+)
+from exo.stdlib.drift import drift as run_drift, drift_to_dict, format_drift_human
+from exo.stdlib.gc import gc as run_gc, gc_to_dict, format_gc_human
+from exo.stdlib.pr_check import pr_check, pr_check_to_dict, format_pr_check_human
+from exo.stdlib.reflect import (
+    reflect as do_reflect, load_reflections, dismiss_reflection,
+    reflect_to_dict, reflections_to_list, format_reflections_human,
+)
+from exo.stdlib.timeline import build_intent_timeline, format_timeline_human
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -254,6 +276,117 @@ def _build_parser() -> argparse.ArgumentParser:
     session_finish_cmd.add_argument("--break-glass-reason")
     session_finish_cmd.add_argument("--release-lock", action="store_true")
     session_finish_cmd.add_argument("--no-release-lock", action="store_true")
+    session_finish_cmd.add_argument("--drift-threshold", type=float)
+    session_finish_cmd.add_argument("--error", action="append", default=[], dest="errors",
+                                    help="Error encountered during session (format: 'tool:message' or just 'message')")
+
+    audit_session_cmd = sub.add_parser("session-audit", help="Start an isolated audit session with context isolation and adversarial persona")
+    audit_session_cmd.add_argument("--ticket-id", required=True)
+    audit_session_cmd.add_argument("--vendor", default="unknown")
+    audit_session_cmd.add_argument("--model", default="unknown")
+    audit_session_cmd.add_argument("--context-window", type=int)
+    audit_session_cmd.add_argument("--role", default="auditor")
+    audit_session_cmd.add_argument("--task")
+    audit_session_cmd.add_argument("--topic", dest="topic_id")
+    audit_session_cmd.add_argument("--acquire-lock", action="store_true")
+    audit_session_cmd.add_argument("--distributed", action="store_true")
+    audit_session_cmd.add_argument("--remote", default="origin")
+    audit_session_cmd.add_argument("--hours", type=int, default=2)
+    audit_session_cmd.add_argument("--pr-base", default=None, help="Base branch/ref for PR governance check")
+    audit_session_cmd.add_argument("--pr-head", default=None, help="Head ref for PR governance check")
+
+    intents_cmd = sub.add_parser("intents", help="Show intent timeline with drift tracking")
+    intents_cmd.add_argument("--status", help="Filter by status (e.g. active, done, todo)")
+    intents_cmd.add_argument("--drift-above", type=float, help="Show only intents with drift above threshold")
+
+    validate_hierarchy_cmd = sub.add_parser("validate-hierarchy", help="Validate intent hierarchy for a ticket")
+    validate_hierarchy_cmd.add_argument("ticket_id")
+
+    intent_create_cmd = sub.add_parser("intent-create", help="Create an intent ticket from a brain dump")
+    intent_create_cmd.add_argument("title", help="Short intent title")
+    intent_create_cmd.add_argument("--brain-dump", required=True, dest="brain_dump", help="Original user input / brain dump")
+    intent_create_cmd.add_argument("--boundary", default="", help="Scope boundary description (what NOT to touch)")
+    intent_create_cmd.add_argument("--success-condition", default="", dest="success_condition", help="What 'done' looks like")
+    intent_create_cmd.add_argument("--risk", default="medium", choices=["low", "medium", "high"])
+    intent_create_cmd.add_argument("--scope-allow", action="append", default=[], help="Allowed file globs")
+    intent_create_cmd.add_argument("--scope-deny", action="append", default=[], help="Denied file globs")
+    intent_create_cmd.add_argument("--max-files", type=int, default=12, help="File budget")
+    intent_create_cmd.add_argument("--max-loc", type=int, default=400, help="LOC budget")
+    intent_create_cmd.add_argument("--priority", type=int, default=3)
+    intent_create_cmd.add_argument("--label", action="append", default=[])
+
+    ticket_create_cmd = sub.add_parser("ticket-create", help="Create a task or epic ticket linked to an intent")
+    ticket_create_cmd.add_argument("title", help="Short ticket title")
+    ticket_create_cmd.add_argument("--kind", default="task", choices=["task", "epic"])
+    ticket_create_cmd.add_argument("--parent", required=True, dest="parent_id", help="Parent ticket ID (intent or epic)")
+    ticket_create_cmd.add_argument("--scope-allow", action="append", default=[], help="Allowed file globs")
+    ticket_create_cmd.add_argument("--scope-deny", action="append", default=[], help="Denied file globs")
+    ticket_create_cmd.add_argument("--max-files", type=int, default=12, help="File budget")
+    ticket_create_cmd.add_argument("--max-loc", type=int, default=400, help="LOC budget")
+    ticket_create_cmd.add_argument("--priority", type=int, default=3)
+    ticket_create_cmd.add_argument("--label", action="append", default=[])
+    ticket_create_cmd.add_argument("--boundary", default="")
+    ticket_create_cmd.add_argument("--success-condition", default="", dest="success_condition")
+
+    pr_check_cmd = sub.add_parser("pr-check", help="Check governance compliance for all commits in a PR range")
+    pr_check_cmd.add_argument("--base", default="main", help="Base branch/ref (default: main)")
+    pr_check_cmd.add_argument("--head", default="HEAD", help="Head ref (default: HEAD)")
+    pr_check_cmd.add_argument("--drift-threshold", type=float, default=0.7, help="Drift score threshold for warnings")
+
+    adapter_cmd = sub.add_parser("adapter-generate", help="Generate repo-root agent config files (CLAUDE.md, .cursorrules, AGENTS.md) from governance state")
+    adapter_cmd.add_argument("--target", action="append", default=[], help=f"Target adapter(s): {', '.join(sorted(ADAPTER_TARGETS))}. Omit for all.")
+    adapter_cmd.add_argument("--dry-run", action="store_true", help="Preview output without writing files")
+
+    features_cmd = sub.add_parser("features", help="List feature definitions from .exo/features.yaml")
+    features_cmd.add_argument("--status", help="Filter by status (active, deprecated, deleted, experimental)")
+
+    trace_cmd = sub.add_parser("trace", help="Run feature traceability linter: cross-reference @feature: tags against manifest")
+    trace_cmd.add_argument("--glob", action="append", default=[], help="File globs to scan (default: common source extensions)")
+    trace_cmd.add_argument("--no-check-unbound", action="store_true", help="Skip checking for features with no code tags")
+
+    prune_cmd = sub.add_parser("prune", help="Remove code blocks tagged with deleted (or deprecated) features")
+    prune_cmd.add_argument("--include-deprecated", action="store_true", help="Also prune deprecated features (default: only deleted)")
+    prune_cmd.add_argument("--glob", action="append", default=[], help="File globs to scan")
+    prune_cmd.add_argument("--dry-run", action="store_true", help="Preview removals without modifying files")
+
+    requirements_cmd = sub.add_parser("requirements", help="List requirement definitions from .exo/requirements.yaml")
+    requirements_cmd.add_argument("--status", help="Filter by status (active, deprecated, deleted)")
+
+    trace_reqs_cmd = sub.add_parser("trace-reqs", help="Run requirement traceability linter: cross-reference @req: annotations against manifest")
+    trace_reqs_cmd.add_argument("--glob", action="append", default=[], help="File globs to scan (default: common source extensions)")
+    trace_reqs_cmd.add_argument("--no-check-uncovered", action="store_true", help="Skip checking for requirements with no code refs")
+
+    drift_cmd = sub.add_parser("drift", help="Run composite governance drift check across all subsystems")
+    drift_cmd.add_argument("--stale-hours", type=float, default=48.0, help="Threshold for flagging stale sessions (default: 48)")
+    drift_cmd.add_argument("--skip-adapters", action="store_true", help="Skip adapter freshness check")
+    drift_cmd.add_argument("--skip-features", action="store_true", help="Skip feature traceability check")
+    drift_cmd.add_argument("--skip-requirements", action="store_true", help="Skip requirement traceability check")
+    drift_cmd.add_argument("--skip-sessions", action="store_true", help="Skip session health check")
+
+    gc_cmd = sub.add_parser("gc", help="Garbage-collect old mementos, cursors, and bootstraps")
+    gc_cmd.add_argument("--max-age-days", type=float, default=30.0, help="Age threshold in days (default: 30)")
+    gc_cmd.add_argument("--dry-run", action="store_true", help="Preview what would be removed")
+
+    gc_locks_cmd = sub.add_parser("gc-locks", help="Clean up expired distributed locks on remote")
+    gc_locks_cmd.add_argument("--remote", default="origin", help="Git remote name (default: origin)")
+    gc_locks_cmd.add_argument("--dry-run", action="store_true", help="Preview what would be cleaned up")
+    gc_locks_cmd.add_argument("--list", action="store_true", dest="list_only", help="List all remote locks without cleaning")
+
+    reflect_cmd = sub.add_parser("reflect", help="Record an operational learning from session experience")
+    reflect_cmd.add_argument("--pattern", required=True, help="What keeps happening (the recurring failure/error)")
+    reflect_cmd.add_argument("--insight", required=True, help="What was learned (the fix/workaround)")
+    reflect_cmd.add_argument("--severity", default="medium", choices=["low", "medium", "high", "critical"])
+    reflect_cmd.add_argument("--scope", default="global", help="'global' or a ticket ID")
+    reflect_cmd.add_argument("--tag", action="append", default=[], help="Categorization tags")
+    reflect_cmd.add_argument("--session-id", default="", help="Session ID (auto-detected if in active session)")
+
+    reflections_cmd = sub.add_parser("reflections", help="List stored reflections with optional filters")
+    reflections_cmd.add_argument("--status", help="Filter by status (active, superseded, dismissed)")
+    reflections_cmd.add_argument("--scope", help="Filter by scope (global or ticket ID)")
+    reflections_cmd.add_argument("--severity", help="Filter by severity")
+
+    dismiss_cmd = sub.add_parser("reflect-dismiss", help="Dismiss a reflection so it stops appearing in bootstraps")
+    dismiss_cmd.add_argument("reflection_id", help="Reflection ID (e.g., REF-001)")
 
     worker_poll_cmd = sub.add_parser("worker-poll", help="Poll ledger topic once and execute pending intents")
     worker_poll_cmd.add_argument("--topic", dest="topic_id")
@@ -277,10 +410,44 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _render_human(response: dict[str, Any]) -> None:
+_SESSION_COMMANDS = frozenset({
+    "session-start", "session-finish", "session-audit", "session-resume",
+})
+
+
+def _render_human(response: dict[str, Any], *, command: str = "") -> None:
     if response.get("ok"):
+        # Special rendering for intents command
+        if command == "intents":
+            data = response.get("data", {})
+            print(format_timeline_human(data))
+            return
+
+        # Special rendering for pr-check, trace, and prune commands
+        if command in ("pr-check", "trace", "prune", "trace-reqs", "drift", "gc", "reflections"):
+            data = response.get("data", {})
+            human_summary = data.pop("_human_summary", "")
+            if human_summary:
+                print(human_summary)
+            else:
+                print("OK")
+                print(json.dumps(data, indent=2, ensure_ascii=True))
+            return
+
+        data = response.get("data", {})
+
+        # Print exo governance banner for session lifecycle commands
+        if command in _SESSION_COMMANDS:
+            banner = data.get("exo_banner") or ""
+            if not banner:
+                session = data.get("session") or {}
+                banner = session.get("exo_banner") or ""
+            if banner:
+                print(banner)
+                print()
+
         print("OK")
-        print(json.dumps(response.get("data", {}), indent=2, ensure_ascii=True))
+        print(json.dumps(data, indent=2, ensure_ascii=True))
         if response.get("blocked"):
             print("BLOCKED")
         return
@@ -564,6 +731,14 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 release_lock = None
 
+            parsed_errors: list[dict[str, Any]] = []
+            for err_str in (args.errors or []):
+                if ":" in err_str:
+                    tool, msg = err_str.split(":", 1)
+                    parsed_errors.append({"tool": tool.strip(), "message": msg.strip(), "count": 1})
+                else:
+                    parsed_errors.append({"tool": "unknown", "message": err_str.strip(), "count": 1})
+
             manager = AgentSessionManager(args.repo, actor=actor)
             data = manager.finish(
                 ticket_id=args.ticket_id,
@@ -575,8 +750,315 @@ def main(argv: list[str] | None = None) -> int:
                 blockers=args.blocker,
                 next_step=args.next_step,
                 release_lock=release_lock,
+                drift_threshold=args.drift_threshold,
+                errors=parsed_errors if parsed_errors else None,
             )
             response = _ok(data)
+        elif cmd == "session-audit":
+            manager = AgentSessionManager(args.repo, actor=actor)
+            data = manager.start(
+                ticket_id=args.ticket_id,
+                vendor=args.vendor,
+                model=args.model,
+                context_window_tokens=args.context_window,
+                role=args.role,
+                task=args.task,
+                topic_id=args.topic_id,
+                acquire_lock=bool(args.acquire_lock),
+                distributed=bool(args.distributed),
+                remote=args.remote,
+                duration_hours=args.hours,
+                mode="audit",
+                pr_base=args.pr_base,
+                pr_head=args.pr_head,
+            )
+            response = _ok(data)
+        elif cmd == "intents":
+            repo_path = Path(args.repo).resolve()
+            timeline = build_intent_timeline(repo_path)
+
+            # Apply filters
+            if args.status:
+                target_status = args.status.strip().lower()
+                timeline["intents"] = [
+                    i for i in timeline["intents"]
+                    if i.get("status", "").strip().lower() == target_status
+                ]
+            if args.drift_above is not None:
+                threshold = float(args.drift_above)
+                timeline["intents"] = [
+                    i for i in timeline["intents"]
+                    if i.get("drift_avg") is not None and i["drift_avg"] > threshold
+                ]
+
+            response = _ok(timeline)
+        elif cmd == "validate-hierarchy":
+            repo_path = Path(args.repo).resolve()
+            ticket = load_ticket(repo_path, args.ticket_id)
+            reasons = validate_intent_hierarchy(repo_path, ticket)
+            response = _ok({
+                "ticket_id": args.ticket_id,
+                "kind": str(ticket.get("kind", "task")),
+                "parent_id": ticket.get("parent_id"),
+                "valid": len(reasons) == 0,
+                "reasons": reasons,
+            })
+        elif cmd == "intent-create":
+            repo_path = Path(args.repo).resolve()
+            intent_id = next_intent_id(repo_path)
+            if ticket_path(repo_path, intent_id).exists():
+                intent_id = next_intent_id(repo_path)
+            ticket_data = {
+                "id": intent_id,
+                "title": args.title,
+                "intent": args.title,
+                "kind": "intent",
+                "brain_dump": args.brain_dump,
+                "boundary": args.boundary,
+                "success_condition": args.success_condition,
+                "risk": args.risk,
+                "priority": args.priority,
+                "labels": args.label,
+                "scope": {
+                    "allow": args.scope_allow or ["**"],
+                    "deny": args.scope_deny or [],
+                },
+                "budgets": {
+                    "max_files_changed": args.max_files,
+                    "max_loc_changed": args.max_loc,
+                },
+            }
+            saved_path = save_ticket(repo_path, ticket_data)
+            saved_ticket = normalize_ticket(ticket_data)
+            response = _ok({
+                "intent_id": intent_id,
+                "path": str(saved_path.relative_to(repo_path)),
+                "ticket": saved_ticket,
+            })
+        elif cmd == "ticket-create":
+            repo_path = Path(args.repo).resolve()
+            # Validate parent exists
+            parent = load_ticket(repo_path, args.parent_id)
+            parent_kind = str(parent.get("kind", "task")).strip().lower()
+            kind = args.kind
+            if kind == "task" and parent_kind not in ("intent", "epic"):
+                raise ExoError(
+                    code="INVALID_PARENT",
+                    message=f"task parent must be an intent or epic, got kind={parent_kind}",
+                    details={
+                        "requested_kind": kind,
+                        "parent_id": args.parent_id,
+                        "parent_kind": parent_kind,
+                        "allowed_parent_kinds": ["intent", "epic"],
+                        "hint": "Create an intent first with `exo intent-create`, or use an existing epic as parent.",
+                    },
+                    blocked=True,
+                )
+            if kind == "epic" and parent_kind != "intent":
+                raise ExoError(
+                    code="INVALID_PARENT",
+                    message=f"epic parent must be an intent, got kind={parent_kind}",
+                    details={
+                        "requested_kind": kind,
+                        "parent_id": args.parent_id,
+                        "parent_kind": parent_kind,
+                        "allowed_parent_kinds": ["intent"],
+                        "hint": "Epics must be direct children of an intent. Create an intent first with `exo intent-create`.",
+                    },
+                    blocked=True,
+                )
+            ticket_id = next_ticket_id(repo_path)
+            if kind == "epic":
+                ticket_id = ticket_id + "-EPIC"
+            if ticket_path(repo_path, ticket_id).exists():
+                ticket_id = next_ticket_id(repo_path)
+                if kind == "epic":
+                    ticket_id = ticket_id + "-EPIC"
+            ticket_data = {
+                "id": ticket_id,
+                "title": args.title,
+                "intent": args.title,
+                "kind": kind,
+                "parent_id": args.parent_id,
+                "boundary": args.boundary,
+                "success_condition": args.success_condition,
+                "priority": args.priority,
+                "labels": args.label,
+                "scope": {
+                    "allow": args.scope_allow or ["**"],
+                    "deny": args.scope_deny or [],
+                },
+                "budgets": {
+                    "max_files_changed": args.max_files,
+                    "max_loc_changed": args.max_loc,
+                },
+            }
+            saved_path = save_ticket(repo_path, ticket_data)
+            saved_ticket = normalize_ticket(ticket_data)
+            # Wire child into parent's children list
+            if ticket_id not in (parent.get("children") or []):
+                children = list(parent.get("children") or [])
+                children.append(ticket_id)
+                parent["children"] = children
+                save_ticket(repo_path, parent)
+            response = _ok({
+                "ticket_id": ticket_id,
+                "parent_id": args.parent_id,
+                "path": str(saved_path.relative_to(repo_path)),
+                "ticket": saved_ticket,
+            })
+        elif cmd == "pr-check":
+            repo_path = Path(args.repo).resolve()
+            report = pr_check(
+                repo_path,
+                base_ref=args.base,
+                head_ref=args.head,
+                drift_threshold=args.drift_threshold,
+            )
+            data = pr_check_to_dict(report)
+            data["_human_summary"] = format_pr_check_human(report)
+            response = _ok(data)
+        elif cmd == "adapter-generate":
+            repo_path = Path(args.repo).resolve()
+            targets = args.target if args.target else None
+            data = generate_adapters(repo_path, targets=targets, dry_run=bool(args.dry_run))
+            response = _ok(data)
+        elif cmd == "features":
+            repo_path = Path(args.repo).resolve()
+            features = load_features(repo_path)
+            if args.status:
+                target_status = args.status.strip().lower()
+                features = [f for f in features if f.status == target_status]
+            data: dict[str, Any] = {
+                "features": features_to_list(features),
+                "count": len(features),
+                "scope_deny": generate_scope_deny(features),
+            }
+            response = _ok(data)
+        elif cmd == "trace":
+            repo_path = Path(args.repo).resolve()
+            globs = args.glob if args.glob else None
+            report = trace(
+                repo_path,
+                globs=globs,
+                check_unbound=not bool(args.no_check_unbound),
+            )
+            data = trace_to_dict(report)
+            data["_human_summary"] = format_trace_human(report)
+            response = _ok(data)
+        elif cmd == "prune":
+            repo_path = Path(args.repo).resolve()
+            globs = args.glob if args.glob else None
+            report = prune(
+                repo_path,
+                include_deprecated=bool(args.include_deprecated),
+                globs=globs,
+                dry_run=bool(args.dry_run),
+            )
+            data = prune_to_dict(report)
+            data["_human_summary"] = format_prune_human(report)
+            response = _ok(data)
+        elif cmd == "requirements":
+            repo_path = Path(args.repo).resolve()
+            reqs = load_requirements(repo_path)
+            if args.status:
+                target_status = args.status.strip().lower()
+                reqs = [r for r in reqs if r.status == target_status]
+            data = {
+                "requirements": requirements_to_list(reqs),
+                "count": len(reqs),
+            }
+            response = _ok(data)
+        elif cmd == "trace-reqs":
+            repo_path = Path(args.repo).resolve()
+            globs = args.glob if args.glob else None
+            report = trace_requirements(
+                repo_path,
+                globs=globs,
+                check_uncovered=not bool(args.no_check_uncovered),
+            )
+            data = req_trace_to_dict(report)
+            data["_human_summary"] = format_req_trace_human(report)
+            response = _ok(data)
+        elif cmd == "drift":
+            repo_path = Path(args.repo).resolve()
+            report = run_drift(
+                repo_path,
+                stale_hours=float(args.stale_hours),
+                skip_adapters=bool(args.skip_adapters),
+                skip_features=bool(args.skip_features),
+                skip_requirements=bool(args.skip_requirements),
+                skip_sessions=bool(args.skip_sessions),
+            )
+            data = drift_to_dict(report)
+            data["_human_summary"] = format_drift_human(report)
+            response = _ok(data)
+        elif cmd == "gc":
+            repo_path = Path(args.repo).resolve()
+            report = run_gc(
+                repo_path,
+                max_age_days=float(args.max_age_days),
+                dry_run=bool(args.dry_run),
+            )
+            data = gc_to_dict(report)
+            data["_human_summary"] = format_gc_human(report)
+            response = _ok(data)
+        elif cmd == "gc-locks":
+            from exo.stdlib.distributed_leases import GitDistributedLeaseManager
+            repo_path = Path(args.repo).resolve()
+            manager = GitDistributedLeaseManager(repo_path)
+            if bool(args.list_only):
+                locks = manager.list_locks(remote=args.remote)
+                response = _ok({
+                    "remote": args.remote,
+                    "locks": locks,
+                    "count": len(locks),
+                })
+            else:
+                data = manager.cleanup_locks(
+                    remote=args.remote,
+                    dry_run=bool(args.dry_run),
+                )
+                response = _ok(data)
+        elif cmd == "reflect":
+            repo_path = Path(args.repo).resolve()
+            session_id = args.session_id
+            if not session_id:
+                mgr = AgentSessionManager(repo_path, actor=actor)
+                active = mgr.get_active()
+                if active:
+                    session_id = str(active.get("session_id", ""))
+            reflection = do_reflect(
+                repo_path,
+                pattern=args.pattern,
+                insight=args.insight,
+                severity=args.severity,
+                scope=args.scope,
+                actor=actor,
+                session_id=session_id,
+                tags=args.tag,
+            )
+            response = _ok(reflect_to_dict(reflection))
+        elif cmd == "reflections":
+            repo_path = Path(args.repo).resolve()
+            refs = load_reflections(
+                repo_path,
+                status=args.status,
+                scope=args.scope,
+            )
+            if args.severity:
+                target_sev = args.severity.strip().lower()
+                refs = [r for r in refs if r.severity == target_sev]
+            data: dict[str, Any] = {
+                "reflections": reflections_to_list(refs),
+                "count": len(refs),
+            }
+            data["_human_summary"] = format_reflections_human(refs)
+            response = _ok(data)
+        elif cmd == "reflect-dismiss":
+            repo_path = Path(args.repo).resolve()
+            ref = dismiss_reflection(repo_path, args.reflection_id)
+            response = _ok(reflect_to_dict(ref))
         elif cmd == "worker-poll":
             worker = DistributedWorker(
                 args.repo,
@@ -637,7 +1119,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.format == "json":
         _render_json(response)
     else:
-        _render_human(response)
+        _render_human(response, command=cmd)
 
     if response.get("ok") and not response.get("blocked"):
         return 0

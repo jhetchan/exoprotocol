@@ -5,8 +5,30 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.kernel.tickets import (
+    load_ticket, next_intent_id, next_ticket_id, normalize_ticket, save_ticket,
+    ticket_path, validate_intent_hierarchy,
+)
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
+from exo.stdlib.adapters import generate_adapters
 from exo.stdlib.engine import KernelEngine
+from exo.stdlib.features import (
+    load_features, features_to_list, generate_scope_deny,
+    trace as run_trace, trace_to_dict,
+    prune as run_prune, prune_to_dict,
+)
+from exo.stdlib.drift import drift as run_drift, drift_to_dict
+from exo.stdlib.gc import gc as run_gc, gc_to_dict
+from exo.stdlib.reflect import (
+    reflect as do_reflect, load_reflections, dismiss_reflection,
+    reflect_to_dict, reflections_to_list,
+)
+from exo.stdlib.requirements import (
+    load_requirements, requirements_to_list,
+    trace_requirements as run_trace_reqs, req_trace_to_dict,
+)
+from exo.stdlib.pr_check import pr_check, pr_check_to_dict
+from exo.stdlib.timeline import build_intent_timeline
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -444,6 +466,52 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_session_audit(
+        ticket_id: str,
+        repo: str = ".",
+        vendor: str = "unknown",
+        model: str = "unknown",
+        context_window_tokens: int | None = None,
+        role: str = "auditor",
+        task: str | None = None,
+        topic_id: str | None = None,
+        acquire_lock: bool = False,
+        distributed: bool = False,
+        remote: str = "origin",
+        duration_hours: int = 2,
+        pr_base: str | None = None,
+        pr_head: str | None = None,
+    ) -> dict[str, Any]:
+        """Start an isolated audit session with context isolation, adversarial persona, and model-mismatch detection.
+
+        When pr_base and pr_head are provided, automatically runs pr-check and injects
+        the governance report into the audit bootstrap prompt for PR review.
+        """
+        manager = AgentSessionManager(Path(repo).resolve(), actor="agent:mcp")
+        try:
+            data = manager.start(
+                ticket_id=ticket_id,
+                vendor=vendor,
+                model=model,
+                context_window_tokens=context_window_tokens,
+                role=role,
+                task=task,
+                topic_id=topic_id,
+                acquire_lock=acquire_lock,
+                distributed=distributed,
+                remote=remote,
+                duration_hours=duration_hours,
+                mode="audit",
+                pr_base=pr_base,
+                pr_head=pr_head,
+            )
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
     def exo_session_suspend(
         reason: str,
         repo: str = ".",
@@ -582,6 +650,8 @@ if FastMCP:
         skip_check: bool = False,
         break_glass_reason: str | None = None,
         release_lock: bool | None = None,
+        drift_threshold: float | None = None,
+        errors: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         manager = AgentSessionManager(Path(repo).resolve(), actor="agent:mcp")
         try:
@@ -595,6 +665,8 @@ if FastMCP:
                 blockers=blockers or [],
                 next_step=next_step,
                 release_lock=release_lock,
+                drift_threshold=drift_threshold,
+                errors=errors,
             )
             return {
                 "ok": True,
@@ -697,6 +769,515 @@ if FastMCP:
     @mcp.tool()
     def exo_distill(proposal_id: str, repo: str = ".", statement: str | None = None, confidence: float = 0.7) -> dict[str, Any]:
         return _run(repo, "distill", proposal_id=proposal_id, statement=statement, confidence=confidence)
+
+    @mcp.tool()
+    def exo_intents(
+        repo: str = ".",
+        status: str | None = None,
+        drift_above: float | None = None,
+    ) -> dict[str, Any]:
+        try:
+            repo_path = Path(repo).resolve()
+            timeline = build_intent_timeline(repo_path)
+            if status:
+                target = status.strip().lower()
+                timeline["intents"] = [
+                    i for i in timeline["intents"]
+                    if i.get("status", "").strip().lower() == target
+                ]
+            if drift_above is not None:
+                timeline["intents"] = [
+                    i for i in timeline["intents"]
+                    if i.get("drift_avg") is not None and i["drift_avg"] > drift_above
+                ]
+            return {"ok": True, "data": timeline, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_validate_hierarchy(ticket_id: str, repo: str = ".") -> dict[str, Any]:
+        try:
+            repo_path = Path(repo).resolve()
+            ticket = load_ticket(repo_path, ticket_id)
+            reasons = validate_intent_hierarchy(repo_path, ticket)
+            return {
+                "ok": True,
+                "data": {
+                    "ticket_id": ticket_id,
+                    "kind": str(ticket.get("kind", "task")),
+                    "parent_id": ticket.get("parent_id"),
+                    "valid": len(reasons) == 0,
+                    "reasons": reasons,
+                },
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_intent_create(
+        title: str,
+        brain_dump: str,
+        repo: str = ".",
+        boundary: str = "",
+        success_condition: str = "",
+        risk: str = "medium",
+        scope_allow: list[str] | None = None,
+        scope_deny: list[str] | None = None,
+        max_files: int = 12,
+        max_loc: int = 400,
+        priority: int = 3,
+        labels: list[str] | None = None,
+    ) -> dict[str, Any]:
+        try:
+            repo_path = Path(repo).resolve()
+            intent_id = next_intent_id(repo_path)
+            if ticket_path(repo_path, intent_id).exists():
+                intent_id = next_intent_id(repo_path)
+            ticket_data = {
+                "id": intent_id,
+                "title": title,
+                "intent": title,
+                "kind": "intent",
+                "brain_dump": brain_dump,
+                "boundary": boundary,
+                "success_condition": success_condition,
+                "risk": risk,
+                "priority": priority,
+                "labels": labels or [],
+                "scope": {"allow": scope_allow or ["**"], "deny": scope_deny or []},
+                "budgets": {"max_files_changed": max_files, "max_loc_changed": max_loc},
+            }
+            saved_path = save_ticket(repo_path, ticket_data)
+            saved_ticket = normalize_ticket(ticket_data)
+            return {
+                "ok": True,
+                "data": {"intent_id": intent_id, "path": str(saved_path.relative_to(repo_path)), "ticket": saved_ticket},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_ticket_create(
+        title: str,
+        parent_id: str,
+        repo: str = ".",
+        kind: str = "task",
+        scope_allow: list[str] | None = None,
+        scope_deny: list[str] | None = None,
+        max_files: int = 12,
+        max_loc: int = 400,
+        priority: int = 3,
+        labels: list[str] | None = None,
+        boundary: str = "",
+        success_condition: str = "",
+    ) -> dict[str, Any]:
+        try:
+            repo_path = Path(repo).resolve()
+            parent = load_ticket(repo_path, parent_id)
+            parent_kind = str(parent.get("kind", "task")).strip().lower()
+            if kind == "task" and parent_kind not in ("intent", "epic"):
+                raise ExoError(
+                    code="INVALID_PARENT",
+                    message=f"task parent must be intent or epic, got {parent_kind}",
+                    details={
+                        "requested_kind": kind,
+                        "parent_id": parent_id,
+                        "parent_kind": parent_kind,
+                        "allowed_parent_kinds": ["intent", "epic"],
+                        "hint": "Create an intent first with exo_intent_create, or use an existing epic as parent.",
+                    },
+                    blocked=True,
+                )
+            if kind == "epic" and parent_kind != "intent":
+                raise ExoError(
+                    code="INVALID_PARENT",
+                    message=f"epic parent must be intent, got {parent_kind}",
+                    details={
+                        "requested_kind": kind,
+                        "parent_id": parent_id,
+                        "parent_kind": parent_kind,
+                        "allowed_parent_kinds": ["intent"],
+                        "hint": "Epics must be direct children of an intent. Create an intent first with exo_intent_create.",
+                    },
+                    blocked=True,
+                )
+            ticket_id = next_ticket_id(repo_path)
+            if kind == "epic":
+                ticket_id = ticket_id + "-EPIC"
+            if ticket_path(repo_path, ticket_id).exists():
+                ticket_id = next_ticket_id(repo_path)
+                if kind == "epic":
+                    ticket_id = ticket_id + "-EPIC"
+            ticket_data = {
+                "id": ticket_id,
+                "title": title,
+                "intent": title,
+                "kind": kind,
+                "parent_id": parent_id,
+                "boundary": boundary,
+                "success_condition": success_condition,
+                "priority": priority,
+                "labels": labels or [],
+                "scope": {"allow": scope_allow or ["**"], "deny": scope_deny or []},
+                "budgets": {"max_files_changed": max_files, "max_loc_changed": max_loc},
+            }
+            saved_path = save_ticket(repo_path, ticket_data)
+            saved_ticket = normalize_ticket(ticket_data)
+            if ticket_id not in (parent.get("children") or []):
+                children = list(parent.get("children") or [])
+                children.append(ticket_id)
+                parent["children"] = children
+                save_ticket(repo_path, parent)
+            return {
+                "ok": True,
+                "data": {"ticket_id": ticket_id, "parent_id": parent_id, "path": str(saved_path.relative_to(repo_path)), "ticket": saved_ticket},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+
+    @mcp.tool()
+    def exo_pr_check(
+        repo: str = ".",
+        base_ref: str = "main",
+        head_ref: str = "HEAD",
+        drift_threshold: float = 0.7,
+    ) -> dict[str, Any]:
+        """Check governance compliance for all commits in a PR range.
+
+        Matches commits to governed sessions by timestamp, checks scope
+        coverage, drift scores, and governance integrity. Returns structured
+        verdict: pass / warn / fail.
+        """
+        try:
+            report = pr_check(
+                Path(repo).resolve(),
+                base_ref=base_ref,
+                head_ref=head_ref,
+                drift_threshold=drift_threshold,
+            )
+            return {"ok": True, "data": pr_check_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_adapter_generate(
+        repo: str = ".",
+        targets: list[str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Generate repo-root agent config files (CLAUDE.md, .cursorrules, AGENTS.md) from governance state."""
+        try:
+            data = generate_adapters(Path(repo).resolve(), targets=targets, dry_run=dry_run)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+
+    @mcp.tool()
+    def exo_features(
+        repo: str = ".",
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """List feature definitions from .exo/features.yaml with optional status filter."""
+        try:
+            repo_path = Path(repo).resolve()
+            features = load_features(repo_path)
+            if status:
+                target = status.strip().lower()
+                features = [f for f in features if f.status == target]
+            return {
+                "ok": True,
+                "data": {
+                    "features": features_to_list(features),
+                    "count": len(features),
+                    "scope_deny": generate_scope_deny(features),
+                },
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_trace(
+        repo: str = ".",
+        globs: list[str] | None = None,
+        check_unbound: bool = True,
+    ) -> dict[str, Any]:
+        """Run feature traceability linter: cross-reference @feature: tags against manifest.
+
+        Checks for invalid tags, deprecated/deleted usage, locked edits,
+        and unbound features. Returns structured report with pass/fail verdict.
+        """
+        try:
+            report = run_trace(
+                Path(repo).resolve(),
+                globs=globs,
+                check_unbound=check_unbound,
+            )
+            return {"ok": True, "data": trace_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+
+    @mcp.tool()
+    def exo_prune(
+        repo: str = ".",
+        include_deprecated: bool = False,
+        globs: list[str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Remove code blocks tagged with deleted (or deprecated) features.
+
+        Scans for @feature: / @endfeature blocks referencing features with
+        'deleted' status and removes them. Use include_deprecated=True to
+        also remove deprecated feature code. Use dry_run=True to preview.
+        """
+        try:
+            report = run_prune(
+                Path(repo).resolve(),
+                include_deprecated=include_deprecated,
+                globs=globs,
+                dry_run=dry_run,
+            )
+            return {"ok": True, "data": prune_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+
+    @mcp.tool()
+    def exo_requirements(
+        repo: str = ".",
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """List requirement definitions from .exo/requirements.yaml with optional status filter."""
+        try:
+            repo_path = Path(repo).resolve()
+            reqs = load_requirements(repo_path)
+            if status:
+                target = status.strip().lower()
+                reqs = [r for r in reqs if r.status == target]
+            return {
+                "ok": True,
+                "data": {
+                    "requirements": requirements_to_list(reqs),
+                    "count": len(reqs),
+                },
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_trace_reqs(
+        repo: str = ".",
+        globs: list[str] | None = None,
+        check_uncovered: bool = True,
+    ) -> dict[str, Any]:
+        """Run requirement traceability linter: cross-reference @req: annotations against manifest.
+
+        Checks for orphan references, deprecated/deleted usage, and uncovered
+        requirements. Returns structured report with pass/fail verdict.
+        """
+        try:
+            report = run_trace_reqs(
+                Path(repo).resolve(),
+                globs=globs,
+                check_uncovered=check_uncovered,
+            )
+            return {"ok": True, "data": req_trace_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_drift(
+        repo: str = ".",
+        stale_hours: float = 48.0,
+        skip_adapters: bool = False,
+        skip_features: bool = False,
+        skip_requirements: bool = False,
+        skip_sessions: bool = False,
+    ) -> dict[str, Any]:
+        """Run composite governance drift check across all subsystems.
+
+        Checks governance integrity, adapter freshness, feature traceability,
+        requirement traceability, and session health. Returns unified pass/fail
+        verdict with per-subsystem details.
+        """
+        try:
+            report = run_drift(
+                Path(repo).resolve(),
+                stale_hours=stale_hours,
+                skip_adapters=skip_adapters,
+                skip_features=skip_features,
+                skip_requirements=skip_requirements,
+                skip_sessions=skip_sessions,
+            )
+            return {"ok": True, "data": drift_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+
+    @mcp.tool()
+    def exo_gc(
+        repo: str = ".",
+        max_age_days: float = 30.0,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Garbage-collect old mementos, cursors, and bootstraps.
+
+        Scans .exo/memory/sessions/ for old memento files, .exo/cache/orchestrator/
+        for orphaned cursors, and .exo/cache/sessions/ for leftover bootstraps.
+        Also compacts the session index JSONL.
+        """
+        try:
+            report = run_gc(
+                Path(repo).resolve(),
+                max_age_days=max_age_days,
+                dry_run=dry_run,
+            )
+            return {"ok": True, "data": gc_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_gc_locks(
+        repo: str = ".",
+        remote: str = "origin",
+        dry_run: bool = False,
+        list_only: bool = False,
+    ) -> dict[str, Any]:
+        """Clean up expired distributed locks on a git remote.
+
+        Scans refs/exoprotocol/locks/* on the remote, identifies expired
+        leases, and deletes their refs. Use list_only=True to inspect
+        without cleaning, or dry_run=True to preview cleanup.
+        """
+        from exo.stdlib.distributed_leases import GitDistributedLeaseManager
+        try:
+            manager = GitDistributedLeaseManager(Path(repo).resolve())
+            if list_only:
+                locks = manager.list_locks(remote=remote)
+                return {"ok": True, "data": {"remote": remote, "locks": locks, "count": len(locks)}, "events": [], "blocked": False}
+            data = manager.cleanup_locks(remote=remote, dry_run=dry_run)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_reflect(
+        pattern: str,
+        insight: str,
+        repo: str = ".",
+        severity: str = "medium",
+        scope: str = "global",
+        tags: list[str] | None = None,
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        """Record an operational learning from session experience.
+
+        Agents call this when they encounter repeated failures or discover
+        an insight worth persisting. The reflection is stored and automatically
+        injected into future session bootstraps as 'Operational Learnings'.
+        """
+        try:
+            repo_path = Path(repo).resolve()
+            sid = session_id
+            if not sid:
+                manager = AgentSessionManager(repo_path, actor="agent:mcp")
+                active = manager.get_active()
+                if active:
+                    sid = str(active.get("session_id", ""))
+            reflection = do_reflect(
+                repo_path,
+                pattern=pattern,
+                insight=insight,
+                severity=severity,
+                scope=scope,
+                actor="agent:mcp",
+                session_id=sid,
+                tags=tags or [],
+            )
+            return {"ok": True, "data": reflect_to_dict(reflection), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_reflections(
+        repo: str = ".",
+        status: str | None = None,
+        scope: str | None = None,
+        severity: str | None = None,
+    ) -> dict[str, Any]:
+        """List stored reflections with optional filters."""
+        try:
+            repo_path = Path(repo).resolve()
+            refs = load_reflections(repo_path, status=status, scope=scope)
+            if severity:
+                target = severity.strip().lower()
+                refs = [r for r in refs if r.severity == target]
+            return {
+                "ok": True,
+                "data": {"reflections": reflections_to_list(refs), "count": len(refs)},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+    @mcp.tool()
+    def exo_reflect_dismiss(
+        reflection_id: str,
+        repo: str = ".",
+    ) -> dict[str, Any]:
+        """Dismiss a reflection so it stops appearing in future bootstraps."""
+        try:
+            ref = dismiss_reflection(Path(repo).resolve(), reflection_id)
+            return {"ok": True, "data": reflect_to_dict(ref), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
 
 
 def main() -> int:

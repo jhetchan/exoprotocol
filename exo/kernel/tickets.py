@@ -14,7 +14,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from .errors import ExoError
 from . import ledger
-from .types import Governance, Session, Ticket, TicketStatus, to_dict
+from .types import Governance, Session, Ticket, TicketStatus, to_dict, TICKET_KINDS, INTENT_RISKS
 from .utils import dump_json, dump_yaml, load_json, load_yaml, now_iso
 
 
@@ -24,7 +24,8 @@ LOCK_GUARD_FILE = Path(".exo/locks/.ticket.lock.guard")
 
 
 TICKET_ID_RE = re.compile(r"^TICKET-(\d+)(?:-EPIC)?$")
-PATH_RE = re.compile(r"^(TICKET-\d+(?:-EPIC)?|GOV-\d+|PRACTICE-\d+)\.ya?ml$")
+INTENT_ID_RE = re.compile(r"^INTENT-(\d+)$")
+PATH_RE = re.compile(r"^(TICKET-\d+(?:-EPIC)?|INTENT-\d+|GOV-\d+|PRACTICE-\d+)\.ya?ml$")
 
 
 def normalize_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
@@ -41,6 +42,16 @@ def normalize_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("blockers", [])
     normalized.setdefault("labels", [])
     normalized.setdefault("created_at", now_iso())
+
+    # Intent accountability fields
+    kind_raw = str(normalized.get("kind") or "task").strip().lower()
+    normalized["kind"] = kind_raw if kind_raw in TICKET_KINDS else "task"
+    normalized.setdefault("brain_dump", "")
+    normalized.setdefault("boundary", "")
+    normalized.setdefault("success_condition", "")
+    risk_raw = str(normalized.get("risk") or "medium").strip().lower()
+    normalized["risk"] = risk_raw if risk_raw in INTENT_RISKS else "medium"
+    normalized.setdefault("children", [])
 
     scope = normalized.get("scope") or {}
     scope.setdefault("allow", ["**"])
@@ -74,7 +85,15 @@ def list_ticket_paths(repo: Path) -> list[Path]:
 def load_ticket(repo: Path, ticket_id: str) -> dict[str, Any]:
     path = ticket_path(repo, ticket_id)
     if not path.exists():
-        raise ExoError(code="TICKET_NOT_FOUND", message=f"Ticket not found: {ticket_id}")
+        raise ExoError(
+            code="TICKET_NOT_FOUND",
+            message=f"Ticket not found: {ticket_id}",
+            details={
+                "ticket_id": ticket_id,
+                "expected_path": str(path.relative_to(repo)) if repo in path.parents or path.parent == repo else str(path),
+                "hint": f"No ticket file exists for '{ticket_id}'. Create it first with `exo intent-create` or `exo ticket-create`.",
+            },
+        )
     data = load_yaml(path)
     data = normalize_ticket(data)
     data.setdefault("id", ticket_id)
@@ -114,6 +133,92 @@ def next_ticket_id(repo: Path) -> str:
     numbers = _existing_ticket_numbers(repo)
     nxt = (numbers[-1] + 1) if numbers else 1
     return f"TICKET-{nxt:03d}"
+
+
+def _existing_intent_numbers(repo: Path) -> list[int]:
+    numbers: list[int] = []
+    for path in list_ticket_paths(repo):
+        match = INTENT_ID_RE.match(path.stem)
+        if not match:
+            continue
+        numbers.append(int(match.group(1)))
+    return sorted(numbers)
+
+
+def next_intent_id(repo: Path) -> str:
+    numbers = _existing_intent_numbers(repo)
+    nxt = (numbers[-1] + 1) if numbers else 1
+    return f"INTENT-{nxt:03d}"
+
+
+def resolve_intent_root(repo: Path, ticket: dict[str, Any], *, max_depth: int = 20) -> dict[str, Any] | None:
+    """Walk parent_id chain upward to find the root intent ticket.
+
+    Returns the intent ticket dict, or None if the chain is broken or no
+    intent root exists.
+    """
+    visited: set[str] = set()
+    current = ticket
+    for _ in range(max_depth):
+        current_id = str(current.get("id", "")).strip()
+        if not current_id or current_id in visited:
+            return None
+        visited.add(current_id)
+
+        if str(current.get("kind", "task")).strip().lower() == "intent":
+            return current
+
+        parent_id = current.get("parent_id")
+        if not isinstance(parent_id, str) or not parent_id.strip():
+            return None
+
+        try:
+            current = load_ticket(repo, parent_id.strip())
+        except ExoError:
+            return None
+
+    return None
+
+
+def validate_intent_hierarchy(repo: Path, ticket: dict[str, Any]) -> list[str]:
+    """Validate that a ticket's parent chain terminates at a kind=intent root.
+
+    Returns a list of warning/error reason strings (empty = valid).
+    Only enforced for TICKET-* and INTENT-* IDs; GOV-*/PRACTICE-* are exempt.
+    """
+    ticket_id = str(ticket.get("id", "")).strip()
+    kind = str(ticket.get("kind", "task")).strip().lower()
+    reasons: list[str] = []
+
+    # Governance and practice tickets are exempt from intent hierarchy
+    if ticket_id.startswith(("GOV-", "PRACTICE-")):
+        return reasons
+
+    if kind == "intent":
+        # Intents are roots — no parent required
+        brain_dump = str(ticket.get("brain_dump", "")).strip()
+        if not brain_dump:
+            reasons.append("intent ticket should include brain_dump (original user input)")
+        return reasons
+
+    if kind == "epic":
+        parent_id = ticket.get("parent_id")
+        if not isinstance(parent_id, str) or not parent_id.strip():
+            reasons.append("epic ticket must have parent_id linking to an intent")
+            return reasons
+
+    if kind == "task":
+        parent_id = ticket.get("parent_id")
+        if not isinstance(parent_id, str) or not parent_id.strip():
+            reasons.append("task ticket has no parent_id; cannot trace to intent root")
+            return reasons
+
+    # Walk upward to find intent root
+    root = resolve_intent_root(repo, ticket)
+    if root is None:
+        reasons.append(f"parent chain for {ticket_id} does not terminate at a kind=intent root")
+
+    return reasons
 
 
 def lock_path(repo: Path) -> Path:
@@ -456,8 +561,19 @@ def validate_ticket(gov: Governance, ticket: Ticket | dict[str, Any]) -> TicketS
     if not isinstance(ticket_id, str) or not ticket_id.strip():
         reasons.append("ticket.id must be a non-empty string")
     is_persistent = isinstance(ticket_id, str) and (
-        ticket_id.startswith("TICKET-") or ticket_id.startswith("GOV-") or ticket_id.startswith("PRACTICE-")
+        ticket_id.startswith("TICKET-") or ticket_id.startswith("INTENT-")
+        or ticket_id.startswith("GOV-") or ticket_id.startswith("PRACTICE-")
     )
+
+    # Validate kind and risk enums
+    kind_raw = data.get("kind")
+    if isinstance(kind_raw, str) and kind_raw.strip():
+        if kind_raw.strip().lower() not in TICKET_KINDS:
+            reasons.append(f"ticket.kind must be one of {sorted(TICKET_KINDS)}")
+    risk_raw = data.get("risk")
+    if isinstance(risk_raw, str) and risk_raw.strip():
+        if risk_raw.strip().lower() not in INTENT_RISKS:
+            reasons.append(f"ticket.risk must be one of {sorted(INTENT_RISKS)}")
 
     intent = data.get("intent")
     if (not isinstance(intent, str) or not intent.strip()) and is_persistent:
@@ -530,6 +646,12 @@ def validate_ticket(gov: Governance, ticket: Ticket | dict[str, Any]) -> TicketS
         "nonce": nonce,
         "budgets": data.get("budgets") if isinstance(data.get("budgets"), dict) else {},
         "metadata": data.get("metadata") if isinstance(data.get("metadata"), dict) else {},
+        "kind": str(data.get("kind") or "task").strip().lower(),
+        "brain_dump": str(data.get("brain_dump") or ""),
+        "boundary": str(data.get("boundary") or ""),
+        "success_condition": str(data.get("success_condition") or ""),
+        "risk": str(data.get("risk") or "medium").strip().lower(),
+        "children": data.get("children") if isinstance(data.get("children"), list) else [],
     }
 
     status = "VALID" if not reasons else "INVALID"
