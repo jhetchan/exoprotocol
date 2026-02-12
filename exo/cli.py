@@ -45,6 +45,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     init_cmd = sub.add_parser("init", help="Create .exo scaffold")
     init_cmd.add_argument("--seed", action="store_true", help="Seed starter SPEC + first kernel tickets")
+    init_cmd.add_argument("--no-scan", action="store_true", help="Skip repo scanning (use generic defaults)")
 
     sidecar_cmd = sub.add_parser(
         "sidecar-init",
@@ -388,6 +389,8 @@ def _build_parser() -> argparse.ArgumentParser:
     dismiss_cmd = sub.add_parser("reflect-dismiss", help="Dismiss a reflection so it stops appearing in bootstraps")
     dismiss_cmd.add_argument("reflection_id", help="Reflection ID (e.g., REF-001)")
 
+    sub.add_parser("scan", help="Scan repo and preview what exo init would detect")
+
     worker_poll_cmd = sub.add_parser("worker-poll", help="Poll ledger topic once and execute pending intents")
     worker_poll_cmd.add_argument("--topic", dest="topic_id")
     worker_poll_cmd.add_argument("--since", dest="since_cursor")
@@ -424,7 +427,7 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
             return
 
         # Special rendering for pr-check, trace, and prune commands
-        if command in ("pr-check", "trace", "prune", "trace-reqs", "drift", "gc", "reflections"):
+        if command in ("pr-check", "trace", "prune", "trace-reqs", "drift", "gc", "reflections", "scan"):
             data = response.get("data", {})
             human_summary = data.pop("_human_summary", "")
             if human_summary:
@@ -480,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cmd = args.command
         if cmd == "init":
-            response = engine.init(seed=bool(args.seed))
+            response = engine.init(seed=bool(args.seed), scan=not bool(args.no_scan))
         elif cmd == "sidecar-init":
             response = engine.sidecar_init(
                 branch=args.branch,
@@ -1059,6 +1062,13 @@ def main(argv: list[str] | None = None) -> int:
             repo_path = Path(args.repo).resolve()
             ref = dismiss_reflection(repo_path, args.reflection_id)
             response = _ok(reflect_to_dict(ref))
+        elif cmd == "scan":
+            repo_path = Path(args.repo).resolve()
+            from exo.stdlib.scan import scan_repo, scan_to_dict, format_scan_human as fmt_scan
+            report = scan_repo(repo_path)
+            data = scan_to_dict(report)
+            data["_human_summary"] = fmt_scan(report)
+            response = _ok(data)
         elif cmd == "worker-poll":
             worker = DistributedWorker(
                 args.repo,

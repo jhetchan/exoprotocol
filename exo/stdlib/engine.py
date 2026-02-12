@@ -1190,8 +1190,19 @@ class KernelEngine:
         tickets.save_ticket(self.repo, ticket)
         self._audit("update_ticket", "ok", ticket=str(ticket["id"]), details={"status": status})
 
-    def init(self, *, seed: bool = False) -> dict[str, Any]:
+    def init(self, *, seed: bool = False, scan: bool = True) -> dict[str, Any]:
         self._begin()
+
+        # Run repo scan before writing anything (scan is read-only)
+        scan_report = None
+        scan_dict = None
+        if scan:
+            try:
+                from exo.stdlib.scan import scan_repo, scan_to_dict, generate_constitution, generate_config
+                scan_report = scan_repo(self.repo)
+                scan_dict = scan_to_dict(scan_report)
+            except Exception:  # noqa: BLE001
+                pass
 
         dirs = [
             self.exo_dir,
@@ -1221,12 +1232,28 @@ class KernelEngine:
         created: list[str] = []
         constitution_path = self.exo_dir / "CONSTITUTION.md"
         if not constitution_path.exists():
-            self._write_system_text(constitution_path, DEFAULT_CONSTITUTION)
+            # Use scan-generated constitution if available, otherwise default
+            constitution_text = DEFAULT_CONSTITUTION
+            if scan_report is not None:
+                try:
+                    from exo.stdlib.scan import generate_constitution
+                    constitution_text = generate_constitution(scan_report)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._write_system_text(constitution_path, constitution_text)
             created.append(str(constitution_path.relative_to(self.repo)))
 
         config_path = self.exo_dir / "config.yaml"
         if not config_path.exists():
-            self._write_system_yaml(config_path, DEFAULT_CONFIG)
+            # Use scan-generated config if available, otherwise default
+            config_data = DEFAULT_CONFIG
+            if scan_report is not None:
+                try:
+                    from exo.stdlib.scan import generate_config
+                    config_data = generate_config(scan_report)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._write_system_yaml(config_path, config_data)
             created.append(str(config_path.relative_to(self.repo)))
 
         inbox = self.exo_dir / "scratchpad" / "INBOX.md"
@@ -1302,14 +1329,30 @@ class KernelEngine:
                 self._audit("create_ticket", "ok", ticket=str(ticket["id"]), path=path)
                 seeded.append(str(path.relative_to(self.repo)))
 
-        return self._response(
-            {
-                "repo": str(self.repo),
-                "created": created,
-                "seeded_tickets": seeded,
-                "governance_source_hash": compile_out.get("source_hash"),
-            }
-        )
+        # Auto-generate adapters (advisory — never blocks init)
+        adapters_generated: list[str] = []
+        if scan:
+            try:
+                from exo.stdlib.adapters import generate_adapters
+                adapter_result = generate_adapters(self.repo)
+                adapters_generated = adapter_result.get("written", [])
+            except Exception:  # noqa: BLE001
+                pass
+
+        result: dict[str, Any] = {
+            "repo": str(self.repo),
+            "created": created,
+            "seeded_tickets": seeded,
+            "governance_source_hash": compile_out.get("source_hash"),
+        }
+        if scan_dict is not None:
+            result["scan"] = scan_dict
+        if adapters_generated:
+            result["adapters_generated"] = adapters_generated
+        else:
+            result["adapters_generated"] = []
+
+        return self._response(result)
 
     def build_governance(self) -> dict[str, Any]:
         self._begin()
