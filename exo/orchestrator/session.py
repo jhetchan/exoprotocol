@@ -402,6 +402,7 @@ class AgentSessionManager:
 
         # --- Sibling session awareness ---
         sibling_lines: list[str] = []
+        siblings: list[dict[str, Any]] = []
         try:
             sibling_scan = scan_sessions(self.root)
             sibling_active = sibling_scan.get("active_sessions", [])
@@ -424,6 +425,37 @@ class AgentSessionManager:
                 sibling_lines.append("")
         except Exception:
             pass  # Sibling scan is advisory
+
+        # --- Start advisories (scope conflicts, unmerged work, ticket gating) ---
+        start_advisories: list[dict[str, Any]] = []
+        advisory_lines: list[str] = []
+        try:
+            from exo.stdlib.conflicts import (
+                detect_scope_conflicts,
+                detect_unmerged_work,
+                detect_ticket_issues,
+                detect_stale_branch,
+                format_advisories,
+                advisories_to_dicts,
+            )
+            _advisories: list[Any] = []
+            _advisories.extend(detect_stale_branch(self.root, git_branch))
+            _advisories.extend(detect_scope_conflicts(
+                self.root, chosen_ticket, ticket.get("scope") or {}, siblings,
+            ))
+            _advisories.extend(detect_unmerged_work(
+                self.root, git_branch, chosen_ticket, ticket.get("scope") or {},
+            ))
+            _advisories.extend(detect_ticket_issues(
+                self.root, chosen_ticket, git_branch, siblings,
+            ))
+            if _advisories:
+                fmt = format_advisories(_advisories)
+                if fmt:
+                    advisory_lines = fmt.split("\n")
+                start_advisories = advisories_to_dicts(_advisories)
+        except Exception:
+            pass  # Advisory — never blocks start
 
         start_banner = _exo_banner(
             event="start",
@@ -467,6 +499,9 @@ class AgentSessionManager:
 
         if sibling_lines:
             bootstrap_lines.extend(sibling_lines)
+
+        if advisory_lines:
+            bootstrap_lines.extend(advisory_lines)
 
         if mode == "audit":
             bootstrap_lines.extend([
@@ -584,6 +619,7 @@ class AgentSessionManager:
             "bootstrap_path": relative_posix(self.bootstrap_path, self.root),
             "writing_session": writing_session,
             "pr_check": pr_check_data,
+            "start_advisories": start_advisories if start_advisories else None,
         }
         self._write_active(session_payload)
         self._log_event(
@@ -618,6 +654,7 @@ class AgentSessionManager:
             "bootstrap_prompt": bootstrap_text,
             "exo_banner": start_banner,
             "reused": False,
+            "start_advisories": start_advisories if start_advisories else None,
         }
 
     def finish(
