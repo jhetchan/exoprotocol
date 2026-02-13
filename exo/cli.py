@@ -364,6 +364,12 @@ def _build_parser() -> argparse.ArgumentParser:
     drift_cmd.add_argument("--skip-features", action="store_true", help="Skip feature traceability check")
     drift_cmd.add_argument("--skip-requirements", action="store_true", help="Skip requirement traceability check")
     drift_cmd.add_argument("--skip-sessions", action="store_true", help="Skip session health check")
+    drift_cmd.add_argument("--skip-coherence", action="store_true", help="Skip coherence check")
+
+    coherence_cmd = sub.add_parser("coherence", help="Check semantic coherence: co-update rules and docstring freshness")
+    coherence_cmd.add_argument("--skip-co-updates", action="store_true", help="Skip co-update rule checks")
+    coherence_cmd.add_argument("--skip-docstrings", action="store_true", help="Skip docstring freshness checks")
+    coherence_cmd.add_argument("--base", default="main", help="Git base ref (default: main)")
 
     gc_cmd = sub.add_parser("gc", help="Garbage-collect old mementos, cursors, and bootstraps")
     gc_cmd.add_argument("--max-age-days", type=float, default=30.0, help="Age threshold in days (default: 30)")
@@ -436,7 +442,7 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
             return
 
         # Special rendering for pr-check, trace, and prune commands
-        if command in ("pr-check", "trace", "prune", "trace-reqs", "drift", "gc", "reflections", "scan", "doctor", "config-validate", "upgrade"):
+        if command in ("pr-check", "trace", "prune", "trace-reqs", "drift", "coherence", "gc", "reflections", "scan", "doctor", "config-validate", "upgrade"):
             data = response.get("data", {})
             human_summary = data.pop("_human_summary", "")
             if human_summary:
@@ -1001,9 +1007,22 @@ def main(argv: list[str] | None = None) -> int:
                 skip_features=bool(args.skip_features),
                 skip_requirements=bool(args.skip_requirements),
                 skip_sessions=bool(args.skip_sessions),
+                skip_coherence=bool(args.skip_coherence),
             )
             data = drift_to_dict(report)
             data["_human_summary"] = format_drift_human(report)
+            response = _ok(data)
+        elif cmd == "coherence":
+            from exo.stdlib.coherence import check_coherence, coherence_to_dict, format_coherence_human
+            repo_path = Path(args.repo).resolve()
+            report = check_coherence(
+                repo_path,
+                base=args.base,
+                skip_co_updates=bool(args.skip_co_updates),
+                skip_docstrings=bool(args.skip_docstrings),
+            )
+            data = coherence_to_dict(report)
+            data["_human_summary"] = format_coherence_human(report)
             response = _ok(data)
         elif cmd == "gc":
             repo_path = Path(args.repo).resolve()

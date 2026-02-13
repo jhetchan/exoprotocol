@@ -169,6 +169,12 @@ DEFAULT_CONFIG = {
         "commit_logs": False,
         "redact_local_paths": True,
     },
+    "coherence": {
+        "enabled": True,
+        "co_update_rules": [],
+        "docstring_languages": ["py"],
+        "skip_patterns": [],
+    },
 }
 
 

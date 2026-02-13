@@ -29,6 +29,7 @@ _REQUIRED_KEYS: dict[str, type | tuple[type, ...]] = {
     "control_caps": dict,
     "git_controls": dict,
     "privacy": dict,
+    "coherence": dict,
 }
 
 # Required nested keys
@@ -49,6 +50,13 @@ _REQUIRED_GIT_CONTROLS_KEYS: dict[str, type | tuple[type, ...]] = {
 _REQUIRED_PRIVACY_KEYS: dict[str, type | tuple[type, ...]] = {
     "commit_logs": bool,
     "redact_local_paths": bool,
+}
+
+_REQUIRED_COHERENCE_KEYS: dict[str, type | tuple[type, ...]] = {
+    "enabled": bool,
+    "co_update_rules": list,
+    "docstring_languages": list,
+    "skip_patterns": list,
 }
 
 
@@ -162,6 +170,11 @@ def validate_config(repo: Path) -> ConfigValidation:
     privacy = data.get("privacy")
     if isinstance(privacy, dict):
         _check_keys(privacy, _REQUIRED_PRIVACY_KEYS, "privacy", result.issues)
+
+    # Check coherence
+    coherence = data.get("coherence")
+    if isinstance(coherence, dict):
+        _check_keys(coherence, _REQUIRED_COHERENCE_KEYS, "coherence", result.issues)
 
     # Check list items are strings
     for list_key in ("checks_allowlist", "do_allowlist", "recall_paths"):
