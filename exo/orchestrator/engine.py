@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.kernel.utils import default_topic_id
 
 from .models import AgentRun, OrchestratorTask, Workflow
 
@@ -24,7 +25,7 @@ class Orchestrator:
         self.root = Path(root).resolve()
         self.actor = actor
         self._syscalls = KernelSyscalls(self.root, actor=actor)
-        self._default_topic = f"repo:{self.root.as_posix()}"
+        self._default_topic = default_topic_id(self.root)
 
     def _load_decision(self, decision_id: str) -> dict[str, Any]:
         rows = self._syscalls.read(

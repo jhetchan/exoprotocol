@@ -15,7 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover
 from .errors import ExoError
 from . import ledger
 from .types import Governance, Session, Ticket, TicketStatus, to_dict, TICKET_KINDS, INTENT_RISKS
-from .utils import dump_json, dump_yaml, load_json, load_yaml, now_iso
+from .utils import default_topic_id, dump_json, dump_yaml, load_json, load_yaml, now_iso
 
 
 TICKETS_DIR = Path(".exo/tickets")
@@ -521,7 +521,7 @@ def mint_ticket(
         }
     )
 
-    topic_id = f"repo:{root.as_posix()}"
+    topic_id = default_topic_id(root)
     expected_head = ledger.head(root, topic_id)
     intent_ref = ledger.intent_submitted(
         root,

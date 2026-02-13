@@ -75,3 +75,11 @@ def matches_pattern(path: Path, pattern: str, repo: Path) -> bool:
 
 def any_pattern_matches(path: Path, patterns: list[str], repo: Path) -> bool:
     return any(matches_pattern(path, pat, repo) for pat in patterns)
+
+
+def default_topic_id(repo: Path) -> str:
+    """Return a portable, privacy-safe default topic ID for a repo.
+
+    Uses ``repo:default`` instead of embedding the absolute local path.
+    """
+    return "repo:default"

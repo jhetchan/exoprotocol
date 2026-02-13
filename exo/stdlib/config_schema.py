@@ -28,6 +28,7 @@ _REQUIRED_KEYS: dict[str, type | tuple[type, ...]] = {
     "scheduler": dict,
     "control_caps": dict,
     "git_controls": dict,
+    "privacy": dict,
 }
 
 # Required nested keys
@@ -43,6 +44,11 @@ _REQUIRED_BUDGET_KEYS: dict[str, type | tuple[type, ...]] = {
 _REQUIRED_GIT_CONTROLS_KEYS: dict[str, type | tuple[type, ...]] = {
     "enabled": bool,
     "ignore_paths": list,
+}
+
+_REQUIRED_PRIVACY_KEYS: dict[str, type | tuple[type, ...]] = {
+    "commit_logs": bool,
+    "redact_local_paths": bool,
 }
 
 
@@ -151,6 +157,11 @@ def validate_config(repo: Path) -> ConfigValidation:
     git_controls = data.get("git_controls")
     if isinstance(git_controls, dict):
         _check_keys(git_controls, _REQUIRED_GIT_CONTROLS_KEYS, "git_controls", result.issues)
+
+    # Check privacy
+    privacy = data.get("privacy")
+    if isinstance(privacy, dict):
+        _check_keys(privacy, _REQUIRED_PRIVACY_KEYS, "privacy", result.issues)
 
     # Check list items are strings
     for list_key in ("checks_allowlist", "do_allowlist", "recall_paths"):

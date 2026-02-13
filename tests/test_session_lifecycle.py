@@ -62,7 +62,7 @@ def _submit_read_intent(repo: Path, intent_id: str) -> str:
         {
             "intent_id": intent_id,
             "intent": "Read README",
-            "topic": f"repo:{repo.resolve().as_posix()}",
+            "topic": "repo:default",
             "ttl_hours": 1,
             "scope": {"allow": ["README.md"], "deny": []},
             "action": {"kind": "read_file", "target": "README.md", "params": {}, "mode": "execute"},

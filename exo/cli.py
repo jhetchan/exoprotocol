@@ -9,6 +9,7 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.kernel.utils import default_topic_id
 from exo.kernel.tickets import (
     load_ticket, next_intent_id, next_ticket_id, normalize_ticket, save_ticket,
     ticket_path, validate_intent_hierarchy,
@@ -556,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
         elif cmd == "recall":
             response = engine.recall(args.query)
         elif cmd == "subscribe":
-            topic_id = args.topic_id or f"repo:{Path(args.repo).resolve().as_posix()}"
+            topic_id = args.topic_id or default_topic_id(Path(args.repo))
             data = syscalls.subscribe(topic_id=topic_id, since_cursor=args.since_cursor, limit=args.limit)
             response = _ok(data)
         elif cmd == "ack":
@@ -598,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             response = _ok({"policy_version": version})
         elif cmd == "submit-intent":
-            topic_id = args.topic_id or f"repo:{Path(args.repo).resolve().as_posix()}"
+            topic_id = args.topic_id or default_topic_id(Path(args.repo))
             intent_id = syscalls.submit(
                 {
                     "intent_id": args.intent_id,
