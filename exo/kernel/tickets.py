@@ -53,6 +53,10 @@ def normalize_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
     normalized["risk"] = risk_raw if risk_raw in INTENT_RISKS else "medium"
     normalized.setdefault("children", [])
 
+    # Resource profile (machine awareness)
+    rp_raw = str(normalized.get("resource_profile") or "default").strip().lower()
+    normalized["resource_profile"] = rp_raw if rp_raw in {"default", "light", "heavy"} else "default"
+
     scope = normalized.get("scope") or {}
     scope.setdefault("allow", ["**"])
     scope.setdefault("deny", [])

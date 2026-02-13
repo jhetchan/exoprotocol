@@ -426,6 +426,36 @@ class AgentSessionManager:
         except Exception:
             pass  # Sibling scan is advisory
 
+        # --- Machine context (resource awareness) ---
+        machine_context_lines: list[str] = []
+        machine_snap: dict[str, Any] = {}
+        try:
+            from exo.stdlib.conflicts import machine_snapshot, format_machine_context
+            machine_snap = machine_snapshot()
+            resource_profile = str(ticket.get("resource_profile") or "default").strip()
+            mc_text = format_machine_context(machine_snap, resource_profile)
+            if mc_text:
+                machine_context_lines = mc_text.split("\n")
+        except Exception:
+            pass  # Machine context is advisory
+
+        # --- Resolve base branch from lock workspace ---
+        lock_base = "main"
+        _ws = lock.get("workspace")
+        if isinstance(_ws, dict):
+            _base_raw = str(_ws.get("base", "main")).strip()
+            if _base_raw:
+                lock_base = _base_raw
+
+        # --- Git workflow directives ---
+        git_workflow_lines: list[str] = []
+        if mode != "audit":
+            try:
+                from exo.stdlib.conflicts import format_git_workflow
+                git_workflow_lines = format_git_workflow(lock_base).split("\n")
+            except Exception:
+                pass
+
         # --- Start advisories (scope conflicts, unmerged work, ticket gating) ---
         start_advisories: list[dict[str, Any]] = []
         advisory_lines: list[str] = []
@@ -435,11 +465,14 @@ class AgentSessionManager:
                 detect_unmerged_work,
                 detect_ticket_issues,
                 detect_stale_branch,
+                detect_base_divergence,
+                detect_machine_load,
                 format_advisories,
                 advisories_to_dicts,
             )
             _advisories: list[Any] = []
             _advisories.extend(detect_stale_branch(self.root, git_branch))
+            _advisories.extend(detect_base_divergence(self.root, git_branch, lock_base))
             _advisories.extend(detect_scope_conflicts(
                 self.root, chosen_ticket, ticket.get("scope") or {}, siblings,
             ))
@@ -448,6 +481,10 @@ class AgentSessionManager:
             ))
             _advisories.extend(detect_ticket_issues(
                 self.root, chosen_ticket, git_branch, siblings,
+            ))
+            resource_profile = str(ticket.get("resource_profile") or "default").strip()
+            _advisories.extend(detect_machine_load(
+                machine_snap, sibling_count=len(siblings), resource_profile=resource_profile,
             ))
             if _advisories:
                 fmt = format_advisories(_advisories)
@@ -496,6 +533,12 @@ class AgentSessionManager:
             f"- {json.dumps(ticket.get('checks') or [], ensure_ascii=True)}",
             "",
         ]
+
+        if git_workflow_lines:
+            bootstrap_lines.extend(git_workflow_lines)
+
+        if machine_context_lines:
+            bootstrap_lines.extend(machine_context_lines)
 
         if sibling_lines:
             bootstrap_lines.extend(sibling_lines)
@@ -620,6 +663,7 @@ class AgentSessionManager:
             "writing_session": writing_session,
             "pr_check": pr_check_data,
             "start_advisories": start_advisories if start_advisories else None,
+            "machine_snapshot": machine_snap if machine_snap else None,
         }
         self._write_active(session_payload)
         self._log_event(
