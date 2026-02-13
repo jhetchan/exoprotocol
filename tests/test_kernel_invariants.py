@@ -353,7 +353,7 @@ def test_phase_c_topic_head_cas_and_topic_reads(tmp_path: Path) -> None:
 
     ticket = mint_ticket(session, "Write README", {"allow": ["README.md"], "deny": []}, 1)
     ticket_data = to_dict(ticket)
-    topic_id = f"repo:{repo.resolve().as_posix()}"
+    topic_id = "repo:default"
     expected_head = f"line:{ticket_data['metadata']['intent_record']['line']}"
     assert ledger_mod.head(repo, topic_id) == expected_head
 
@@ -497,7 +497,7 @@ def test_phase_d_subscribe_cursor_and_ack_quorum(tmp_path: Path) -> None:
         artifact_refs=["artifact://d1"],
     )
 
-    topic_id = f"repo:{repo.resolve().as_posix()}"
+    topic_id = "repo:default"
     batch_1 = ledger_mod.subscribe(repo, topic_id=topic_id, limit=2)
     assert batch_1["count"] == 2
     assert batch_1["next_cursor"] == "line:2"
@@ -584,7 +584,7 @@ def test_phase_e_override_and_policy_set_are_cap_gated_and_receipted(tmp_path: P
 def test_phase_f_cas_head_retry_and_conflict_surface(tmp_path: Path) -> None:
     repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
     session = open_session(repo, "human:test")
-    topic_id = f"repo:{repo.resolve().as_posix()}"
+    topic_id = "repo:default"
 
     first = mint_ticket(session, "First intent", {"allow": ["README.md"], "deny": []}, 1)
     second = mint_ticket(session, "Second intent", {"allow": ["README.md"], "deny": []}, 1)
@@ -643,7 +643,7 @@ def test_phase_f_cas_head_retry_and_conflict_surface(tmp_path: Path) -> None:
 def test_phase_g_submit_intent_uses_optimistic_head_cas(tmp_path: Path) -> None:
     repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
     session = open_session(repo, "human:test")
-    topic_id = f"repo:{repo.resolve().as_posix()}"
+    topic_id = "repo:default"
 
     first = mint_ticket(session, "First intent", {"allow": ["README.md"], "deny": []}, 1)
     first_record = ledger_mod.read_records(repo, record_type="IntentSubmitted", intent_id=first.id, limit=1)[0]
@@ -674,7 +674,7 @@ def test_phase_g_submit_intent_uses_optimistic_head_cas(tmp_path: Path) -> None:
 
 def test_phase_h_12_syscall_surface_happy_path(tmp_path: Path) -> None:
     repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
-    topic_id = f"repo:{repo.resolve().as_posix()}"
+    topic_id = "repo:default"
     api = KernelSyscalls(repo, actor="human:test")
 
     intent_id = api.submit(
@@ -745,7 +745,7 @@ def test_phase_h_policy_set_requires_governance_lock(tmp_path: Path) -> None:
 
 def test_phase_h_check_denies_memory_mutation_intent(tmp_path: Path) -> None:
     repo = _bootstrap_repo(tmp_path, require_lock=False, kernel_deny=False)
-    topic_id = f"repo:{repo.resolve().as_posix()}"
+    topic_id = "repo:default"
     api = KernelSyscalls(repo, actor="human:test")
 
     intent_id = api.submit(

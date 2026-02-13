@@ -9,7 +9,7 @@ from typing import Any
 from exo.kernel import governance, ledger, tickets
 from exo.kernel.engine import check_action, open_session
 from exo.kernel.errors import ExoError
-from exo.kernel.utils import load_yaml
+from exo.kernel.utils import default_topic_id, load_yaml
 
 try:
     import fcntl as _fcntl
@@ -115,7 +115,7 @@ class KernelSyscalls:
     def submit(self, intent_envelope: dict[str, Any]) -> str:
         envelope = dict(intent_envelope)
         intent_id = str(envelope.get("intent_id") or f"INT-{uuid.uuid4().hex[:12].upper()}")
-        topic_id = str(envelope.get("topic") or f"repo:{self.root.as_posix()}")
+        topic_id = str(envelope.get("topic") or default_topic_id(self.root))
         parents_raw = envelope.get("parents")
         parents = [str(item) for item in parents_raw if isinstance(item, str) and item.strip()] if isinstance(parents_raw, list) else None
 

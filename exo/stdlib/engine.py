@@ -51,6 +51,57 @@ OVERLAY_TEMPLATES = {
 }
 
 
+_GITIGNORE_LOG_ENTRIES = [
+    "# ExoProtocol: audit logs excluded (privacy.commit_logs=false)",
+    ".exo/logs/",
+]
+
+
+def _manage_gitignore(repo: Path, config_path: Path) -> bool:
+    """Add .exo/logs/ to .gitignore when privacy.commit_logs is False.
+
+    Returns True if .gitignore was modified.
+    """
+    try:
+        config = load_yaml(config_path) if config_path.exists() else {}
+    except Exception:  # noqa: BLE001
+        config = {}
+
+    privacy = config.get("privacy", {})
+    commit_logs = privacy.get("commit_logs", False)
+
+    gitignore_path = repo / ".gitignore"
+    sentinel = ".exo/logs/"
+
+    if commit_logs:
+        # If commit_logs is True, remove our entries if present
+        if gitignore_path.exists():
+            content = gitignore_path.read_text(encoding="utf-8")
+            if sentinel in content:
+                lines = content.splitlines()
+                new_lines = [ln for ln in lines if ln.strip() not in (sentinel, _GITIGNORE_LOG_ENTRIES[0])]
+                new_content = "\n".join(new_lines)
+                if not new_content.endswith("\n"):
+                    new_content += "\n"
+                gitignore_path.write_text(new_content, encoding="utf-8")
+                return True
+        return False
+
+    # commit_logs is False (default) — ensure .exo/logs/ is in .gitignore
+    if gitignore_path.exists():
+        content = gitignore_path.read_text(encoding="utf-8")
+        if sentinel in content:
+            return False  # already present
+        if not content.endswith("\n"):
+            content += "\n"
+    else:
+        content = ""
+
+    content += "\n".join(_GITIGNORE_LOG_ENTRIES) + "\n"
+    gitignore_path.write_text(content, encoding="utf-8")
+    return True
+
+
 class KernelEngine:
     def __init__(self, repo: Path | str = ".", *, actor: str = "human", no_llm: bool = False) -> None:
         self.repo = Path(repo).resolve()
@@ -1339,6 +1390,9 @@ class KernelEngine:
             except Exception:  # noqa: BLE001
                 pass
 
+        # Manage .gitignore based on privacy config
+        gitignore_updated = _manage_gitignore(self.repo, config_path)
+
         result: dict[str, Any] = {
             "repo": str(self.repo),
             "created": created,
@@ -1351,6 +1405,8 @@ class KernelEngine:
             result["adapters_generated"] = adapters_generated
         else:
             result["adapters_generated"] = []
+        if gitignore_updated:
+            result["gitignore_updated"] = True
 
         return self._response(result)
 

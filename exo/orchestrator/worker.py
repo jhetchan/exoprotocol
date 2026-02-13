@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.kernel.utils import default_topic_id
 from exo.orchestrator.session import AgentSessionManager
 
 WorkerExecutor = Callable[[dict[str, Any]], dict[str, Any] | None]
@@ -28,7 +29,7 @@ class DistributedWorker:
     ) -> None:
         self.root = Path(root).resolve()
         self.actor = actor
-        self.topic_id = topic_id or f"repo:{self.root.as_posix()}"
+        self.topic_id = topic_id or default_topic_id(self.root)
         self._syscalls = KernelSyscalls(self.root, actor=actor)
         self.require_session = require_session
         self._session_manager = AgentSessionManager(self.root, actor=actor)

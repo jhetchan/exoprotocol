@@ -165,6 +165,10 @@ DEFAULT_CONFIG = {
             "**/*.pyc",
         ],
     },
+    "privacy": {
+        "commit_logs": False,
+        "redact_local_paths": True,
+    },
 }
 
 

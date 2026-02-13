@@ -5,6 +5,7 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
+from exo.kernel.utils import default_topic_id
 from exo.kernel.tickets import (
     load_ticket, next_intent_id, next_ticket_id, normalize_ticket, save_ticket,
     ticket_path, validate_intent_hierarchy,
@@ -146,7 +147,7 @@ if FastMCP:
         since_cursor: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
-        resolved_topic = topic_id or f"repo:{Path(repo).resolve().as_posix()}"
+        resolved_topic = topic_id or default_topic_id(Path(repo))
         return _run_syscall(
             repo,
             "subscribe",
@@ -249,7 +250,7 @@ if FastMCP:
         expected_ref: str | None = None,
         max_attempts: int = 1,
     ) -> dict[str, Any]:
-        resolved_topic = topic_id or f"repo:{Path(repo).resolve().as_posix()}"
+        resolved_topic = topic_id or default_topic_id(Path(repo))
         envelope = {
             "intent_id": intent_id,
             "intent": intent,

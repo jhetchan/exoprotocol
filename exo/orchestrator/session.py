@@ -13,7 +13,7 @@ from uuid import uuid4
 from exo.kernel import tickets
 from exo.kernel.audit import append_audit, event_template
 from exo.kernel.errors import ExoError
-from exo.kernel.utils import ensure_dir, now_iso, relative_posix
+from exo.kernel.utils import default_topic_id, ensure_dir, now_iso, relative_posix
 from exo.stdlib import distributed_leases
 from exo.stdlib.engine import KernelEngine
 from exo.stdlib.features import trace as run_trace, trace_to_dict, format_trace_human, TraceReport, FEATURES_PATH
@@ -312,7 +312,7 @@ class AgentSessionManager:
 
         started_at = now_iso()
         session_id = _session_id()
-        topic = topic_id.strip() if isinstance(topic_id, str) and topic_id.strip() else f"repo:{self.root.as_posix()}"
+        topic = topic_id.strip() if isinstance(topic_id, str) and topic_id.strip() else default_topic_id(self.root)
         context_tokens: int | None
         if context_window_tokens is None:
             context_tokens = None
@@ -1112,7 +1112,7 @@ class AgentSessionManager:
             "role": suspended.get("role"),
             "task": suspended.get("task"),
             "ticket_id": target_ticket,
-            "topic_id": suspended.get("topic_id", f"repo:{self.root.as_posix()}"),
+            "topic_id": suspended.get("topic_id", default_topic_id(self.root)),
             "started_at": suspended.get("started_at"),
             "resumed_at": resumed_at,
             "lock": lock or tickets.load_lock(self.root),
