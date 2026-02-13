@@ -36,6 +36,23 @@ SESSION_LOG_LOCK = Path(".exo/logs/session.log.lock")
 EXO_PROTOCOL_VERSION = "v1"
 
 
+def _current_git_branch(repo: Path) -> str:
+    """Get current git branch name. Returns empty string on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return ""
+
+
 def _exo_banner(
     *,
     event: str,
@@ -49,6 +66,7 @@ def _exo_banner(
     trace_passed: bool | None = None,
     trace_violations: int | None = None,
     audit_warnings: list[str] | None = None,
+    branch: str = "",
 ) -> str:
     """Generate the ExoProtocol governance banner strip for session lifecycle events."""
     width = 54
@@ -68,10 +86,14 @@ def _exo_banner(
         lines.append(_pad(f"ticket: {ticket_id} | actor: {actor}"))
         if model and model != "unknown":
             lines.append(_pad(f"model: {model}"))
+        if branch:
+            lines.append(_pad(f"branch: {branch}"))
     elif event == "finish":
         label = "EXO SESSION COMPLETE" if mode != "audit" else "EXO AUDIT COMPLETE"
         lines.append(_pad(f"<<< {label}"))
         lines.append(_pad(f"ticket: {ticket_id} | verify: {verify}"))
+        if branch:
+            lines.append(_pad(f"branch: {branch}"))
         if drift_score is not None:
             lines.append(_pad(f"drift: {drift_score:.2f}"))
         if trace_passed is not None:
@@ -85,6 +107,8 @@ def _exo_banner(
         lines.append(_pad(">>> EXO SESSION RESUMED"))
         lines.append(_pad(f"protocol: ExoProtocol {EXO_PROTOCOL_VERSION} | mode: work"))
         lines.append(_pad(f"ticket: {ticket_id} | actor: {actor}"))
+        if branch:
+            lines.append(_pad(f"branch: {branch}"))
     else:
         lines.append(_pad(f"EXO | {event}"))
 
@@ -374,6 +398,33 @@ class AgentSessionManager:
             if deny_glob not in effective_deny:
                 effective_deny.append(deny_glob)
 
+        git_branch = _current_git_branch(self.root)
+
+        # --- Sibling session awareness ---
+        sibling_lines: list[str] = []
+        try:
+            sibling_scan = scan_sessions(self.root)
+            sibling_active = sibling_scan.get("active_sessions", [])
+            # Exclude our own session (just created, not yet written)
+            siblings = [
+                s for s in sibling_active
+                if s.get("actor", "") != self.actor
+            ]
+            if siblings:
+                sibling_lines.append("## Sibling Sessions (other agents working concurrently)")
+                for sib in siblings:
+                    sib_branch = sib.get("git_branch", "")
+                    sib_ticket = sib.get("ticket_id", "?")
+                    sib_actor = sib.get("actor", "?")
+                    branch_tag = f" on {sib_branch}" if sib_branch else ""
+                    sibling_lines.append(
+                        f"- {sib_actor}: ticket={sib_ticket}{branch_tag} "
+                        f"(session={sib.get('session_id', '?')}, age={sib.get('age_hours', 0):.1f}h)"
+                    )
+                sibling_lines.append("")
+        except Exception:
+            pass  # Sibling scan is advisory
+
         start_banner = _exo_banner(
             event="start",
             mode=mode,
@@ -381,6 +432,7 @@ class AgentSessionManager:
             actor=self.actor,
             model=model,
             session_id=session_id,
+            branch=git_branch,
         )
 
         bootstrap_lines = [
@@ -400,6 +452,7 @@ class AgentSessionManager:
             f"ticket_priority: {ticket.get('priority')}",
             f"topic_id: {topic}",
             f"lock_owner: {lock_owner}",
+            f"git_branch: {git_branch}",
             f"lock_branch: {lock_branch}",
             f"lock_expires_at: {lock.get('expires_at')}",
             "",
@@ -411,6 +464,9 @@ class AgentSessionManager:
             f"- {json.dumps(ticket.get('checks') or [], ensure_ascii=True)}",
             "",
         ]
+
+        if sibling_lines:
+            bootstrap_lines.extend(sibling_lines)
 
         if mode == "audit":
             bootstrap_lines.extend([
@@ -522,6 +578,7 @@ class AgentSessionManager:
             "ticket_id": chosen_ticket,
             "topic_id": topic,
             "started_at": started_at,
+            "git_branch": git_branch,
             "pid": os.getpid(),
             "lock": lock,
             "bootstrap_path": relative_posix(self.bootstrap_path, self.root),
@@ -679,6 +736,11 @@ class AgentSessionManager:
             # Traceability check is advisory — don't block session-finish on failure
             pass
 
+        # --- Branch drift detection ---
+        start_branch = str(session.get("git_branch", "")).strip()
+        finish_branch = _current_git_branch(self.root)
+        branch_drifted = bool(start_branch and finish_branch and start_branch != finish_branch)
+
         # --- Coherence check ---
         coherence_section: str = ""
         coherence_data: dict[str, Any] | None = None
@@ -735,6 +797,9 @@ class AgentSessionManager:
             f"- started_at: {session.get('started_at')}",
             f"- finished_at: {finished_at}",
             f"- verify: {verify}",
+            f"- git_branch_start: {start_branch}",
+            f"- git_branch_finish: {finish_branch}",
+            f"- branch_drifted: {branch_drifted}",
             f"- break_glass_reason: {break_glass_reason.strip() if isinstance(break_glass_reason, str) else ''}",
             "",
             "## Summary",
@@ -824,6 +889,8 @@ class AgentSessionManager:
             "trace_passed": trace_report.passed if trace_report else None,
             "trace_violations": len(trace_report.violations) if trace_report else None,
             "coherence_warnings": coherence_data.get("warning_count") if coherence_data else None,
+            "git_branch": finish_branch,
+            "branch_drifted": branch_drifted,
             "audit_warnings": audit_warnings if audit_warnings else None,
             "errors": errors_list if errors_list else None,
             "error_count": sum(e["count"] for e in errors_list) if errors_list else 0,
@@ -870,6 +937,7 @@ class AgentSessionManager:
             trace_passed=trace_report.passed if trace_report else None,
             trace_violations=len(trace_report.violations) if trace_report else None,
             audit_warnings=audit_warnings or None,
+            branch=finish_branch,
         )
 
         result: dict[str, Any] = {
@@ -886,6 +954,8 @@ class AgentSessionManager:
             "drift": drift_data,
             "trace": trace_data,
             "coherence": coherence_data,
+            "git_branch": finish_branch,
+            "branch_drifted": branch_drifted,
             "exo_banner": finish_banner,
         }
         if audit_warnings:
@@ -1118,6 +1188,7 @@ class AgentSessionManager:
 
         resumed_at = now_iso()
         session_id = str(suspended.get("session_id", _session_id()))
+        git_branch = _current_git_branch(self.root)
 
         session_payload = {
             "session_id": session_id,
@@ -1132,6 +1203,7 @@ class AgentSessionManager:
             "topic_id": suspended.get("topic_id", default_topic_id(self.root)),
             "started_at": suspended.get("started_at"),
             "resumed_at": resumed_at,
+            "git_branch": git_branch,
             "lock": lock or tickets.load_lock(self.root),
             "bootstrap_path": relative_posix(self.bootstrap_path, self.root),
             "suspend_history": [
@@ -1160,6 +1232,7 @@ class AgentSessionManager:
             actor=self.actor,
             model=session_payload["model"],
             session_id=session_id,
+            branch=git_branch,
         )
 
         bootstrap_lines = [
@@ -1175,6 +1248,7 @@ class AgentSessionManager:
             f"ticket_id: {target_ticket}",
             f"ticket_status: active (resumed from paused)",
             f"topic_id: {session_payload['topic_id']}",
+            f"git_branch: {git_branch}",
             f"lock_owner: {lock_owner}",
             f"lock_branch: {lock_branch}",
             f"lock_expires_at: {active_lock.get('expires_at')}",
@@ -1334,6 +1408,7 @@ def scan_sessions(repo: Path, *, stale_hours: float = 48.0) -> dict[str, Any]:
                 "stale": age >= stale_hours,
                 "pid": pid_int,
                 "pid_alive": alive,
+                "git_branch": str(data.get("git_branch", "")),
             }
             active_sessions.append(entry)
             if age >= stale_hours:
