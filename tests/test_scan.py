@@ -216,6 +216,44 @@ class TestScanExistingGovernance:
         found = _detect_existing_governance(tmp_path)
         assert len(found) == 0
 
+    def test_detect_exo_managed_file(self, tmp_path: Path) -> None:
+        """File with exo governance markers is detected as exo_managed."""
+        from exo.stdlib.adapters import EXO_MARKER_BEGIN, EXO_MARKER_END
+        content = f"# My Rules\n\n{EXO_MARKER_BEGIN}\ngoverned\n{EXO_MARKER_END}\n"
+        (tmp_path / "CLAUDE.md").write_text(content, encoding="utf-8")
+        found = _detect_existing_governance(tmp_path)
+        claude = [eg for eg in found if eg.kind == "claude_md"][0]
+        assert claude.exo_managed is True
+        assert claude.total_lines > 0
+
+    def test_detect_user_only_file(self, tmp_path: Path) -> None:
+        """File without markers is detected as user-only."""
+        (tmp_path / "CLAUDE.md").write_text("# My Rules\nline2\nline3\n", encoding="utf-8")
+        found = _detect_existing_governance(tmp_path)
+        claude = [eg for eg in found if eg.kind == "claude_md"][0]
+        assert claude.exo_managed is False
+        assert claude.user_lines == 3
+        assert claude.total_lines == 3
+
+    def test_scan_to_dict_includes_content_fields(self, tmp_path: Path) -> None:
+        """scan_to_dict includes exo_managed, user_lines, total_lines."""
+        (tmp_path / "CLAUDE.md").write_text("# Rules\n", encoding="utf-8")
+        report = scan_repo(tmp_path)
+        data = scan_to_dict(report)
+        eg_list = data["existing_governance"]
+        claude = [eg for eg in eg_list if eg["kind"] == "claude_md"][0]
+        assert "exo_managed" in claude
+        assert "user_lines" in claude
+        assert "total_lines" in claude
+
+    def test_format_scan_human_shows_content_summary(self, tmp_path: Path) -> None:
+        """format_scan_human shows user-only or exo-managed per file."""
+        (tmp_path / "CLAUDE.md").write_text("# My Rules\nline 2\n", encoding="utf-8")
+        report = scan_repo(tmp_path)
+        human = format_scan_human(report)
+        assert "user-only" in human
+        assert "2 lines" in human
+
 
 # ── CI Detection ─────────────────────────────────────────────────
 

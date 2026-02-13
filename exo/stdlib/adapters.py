@@ -6,6 +6,8 @@ bridging ExoProtocol governance into the agent's native config format.
 from __future__ import annotations
 
 import json
+import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,11 @@ from exo.kernel.utils import load_json, load_yaml, now_iso
 
 GOVERNANCE_LOCK_PATH = Path(".exo/governance.lock.json")
 CONFIG_PATH = Path(".exo/config.yaml")
+
+# Marker delimiters for brownfield-safe adapter generation.
+# Content between these markers is exo-managed; everything outside is user content.
+EXO_MARKER_BEGIN = "<!-- exo:governance:begin -->"
+EXO_MARKER_END = "<!-- exo:governance:end -->"
 
 ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents", "ci"})
 AGENT_ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents"})  # targets with governance preamble
@@ -341,6 +348,68 @@ _GENERATORS: dict[str, Any] = {
 }
 
 
+# ── Brownfield Merge Helpers ────────────────────────────────────
+
+
+def _wrap_with_markers(content: str, governance_hash: str) -> str:
+    """Wrap generated content in exo governance markers with embedded hash."""
+    hash_comment = f"<!-- Governance hash: {governance_hash[:16]} -->"
+    return f"{EXO_MARKER_BEGIN}\n{hash_comment}\n{content}\n{EXO_MARKER_END}\n"
+
+
+_MARKER_RE = re.compile(
+    re.escape(EXO_MARKER_BEGIN) + r".*?" + re.escape(EXO_MARKER_END) + r"\n?",
+    re.DOTALL,
+)
+
+
+def _extract_marker_sections(existing: str) -> tuple[str, str, str] | None:
+    """Split file around exo governance markers.
+
+    Returns (before, governed, after) or None if no markers found.
+    """
+    match = _MARKER_RE.search(existing)
+    if not match:
+        return None
+    before = existing[: match.start()]
+    governed = match.group(0)
+    after = existing[match.end() :]
+    return (before, governed, after)
+
+
+def _merge_with_existing(
+    existing: str, new_governed: str, governance_hash: str
+) -> tuple[str, bool]:
+    """Merge new governance content into an existing file.
+
+    Returns (merged_content, had_markers).
+    If existing has markers → replace governed section (had_markers=True).
+    If no markers → append governed section at end (had_markers=False).
+    """
+    sections = _extract_marker_sections(existing)
+    wrapped = _wrap_with_markers(new_governed, governance_hash)
+
+    if sections is not None:
+        before, _old_governed, after = sections
+        return (before + wrapped + after, True)
+
+    # No markers: preserve existing content, append governed section
+    separator = "\n" if existing and not existing.endswith("\n") else ""
+    return (existing + separator + "\n" + wrapped, False)
+
+
+def _count_user_lines(content: str) -> int:
+    """Count non-blank lines outside exo governance markers."""
+    sections = _extract_marker_sections(content)
+    if sections is None:
+        # No markers — all content is user content
+        return sum(1 for line in content.splitlines() if line.strip())
+
+    before, _governed, after = sections
+    user_text = before + after
+    return sum(1 for line in user_text.splitlines() if line.strip())
+
+
 def generate_adapters(
     repo: Path,
     *,
@@ -371,6 +440,7 @@ def generate_adapters(
 
     lock = _load_governance_lock(repo)
     config = _load_config(repo)
+    governance_hash = lock.get("source_hash", "")
 
     results: dict[str, Any] = {}
     written: list[str] = []
@@ -381,18 +451,69 @@ def generate_adapters(
         filename = TARGET_FILES[target]
         output_path = repo / filename
 
-        results[target] = {
+        result_entry: dict[str, Any] = {
             "file": filename,
             "path": str(output_path.relative_to(repo)),
-            "content_length": len(content),
         }
 
-        if not dry_run:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(content, encoding="utf-8")
-            written.append(filename)
+        is_agent_target = target in AGENT_ADAPTER_TARGETS
+
+        if is_agent_target:
+            # Brownfield merge for agent adapter targets
+            existing = ""
+            file_exists = output_path.exists()
+            if file_exists:
+                existing = output_path.read_text(encoding="utf-8")
+
+            if file_exists and existing:
+                merged, had_markers = _merge_with_existing(
+                    existing, content, governance_hash
+                )
+                backed_up = False
+                if not had_markers and not dry_run:
+                    # First brownfield merge — backup original
+                    backup_path = output_path.parent / f"{output_path.name}.pre-exo"
+                    if not backup_path.exists():
+                        shutil.copy2(output_path, backup_path)
+                        backed_up = True
+
+                result_entry["content_length"] = len(merged)
+                result_entry["merged"] = True
+                result_entry["had_markers"] = had_markers
+                result_entry["user_lines"] = _count_user_lines(merged)
+                result_entry["backed_up"] = backed_up
+
+                if not dry_run:
+                    output_path.write_text(merged, encoding="utf-8")
+                    written.append(filename)
+                else:
+                    result_entry["content"] = merged
+            else:
+                # No existing file — wrap in markers and write
+                wrapped = _wrap_with_markers(content, governance_hash)
+                result_entry["content_length"] = len(wrapped)
+                result_entry["merged"] = False
+                result_entry["had_markers"] = False
+                result_entry["user_lines"] = 0
+                result_entry["backed_up"] = False
+
+                if not dry_run:
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_text(wrapped, encoding="utf-8")
+                    written.append(filename)
+                else:
+                    result_entry["content"] = wrapped
         else:
-            results[target]["content"] = content
+            # CI target: unconditional overwrite (no markers, no merge)
+            result_entry["content_length"] = len(content)
+            if not dry_run:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(content, encoding="utf-8")
+                written.append(filename)
+            else:
+                result_entry["content"] = content
+
+        results[target] = result_entry
 
     # Generate LEARNINGS.md alongside adapters (advisory)
     learnings_written = False
@@ -410,7 +531,7 @@ def generate_adapters(
         "written": written,
         "dry_run": dry_run,
         "generated_at": now_iso(),
-        "governance_hash": lock.get("source_hash", ""),
+        "governance_hash": governance_hash,
         "files": results,
         "learnings_written": learnings_written,
     }

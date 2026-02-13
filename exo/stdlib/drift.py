@@ -170,7 +170,7 @@ def _check_adapters(repo: Path) -> DriftSection:
             missing.append(filename)
             continue
 
-        match = _GOVERNANCE_HASH_RE.search(content[:500])
+        match = _GOVERNANCE_HASH_RE.search(content)
         if match:
             embedded_hash = match.group(1)
             if current_hash.startswith(embedded_hash):

@@ -16,8 +16,14 @@ from exo.stdlib.adapters import (
     ADAPTER_TARGETS,
     AGENT_ADAPTER_TARGETS,
     TARGET_FILES,
+    EXO_MARKER_BEGIN,
+    EXO_MARKER_END,
     _load_governance_lock,
     _format_deny_rules,
+    _wrap_with_markers,
+    _extract_marker_sections,
+    _merge_with_existing,
+    _count_user_lines,
 )
 from exo.stdlib.reconcile import reconcile_session, DriftReport
 from exo.cli import main as cli_main
@@ -777,3 +783,231 @@ ci:
         assert content1 != content2
         assert "0.9" in content2
         assert '"3.13"' in content2
+
+
+# ──────────────────────────────────────────────
+# Marker Helpers: unit tests for merge primitives
+# ──────────────────────────────────────────────
+
+class TestMarkerHelpers:
+    """Verify low-level marker wrap/extract/count helpers."""
+
+    def test_wrap_with_markers_contains_begin_end(self) -> None:
+        result = _wrap_with_markers("hello", "abc123")
+        assert EXO_MARKER_BEGIN in result
+        assert EXO_MARKER_END in result
+
+    def test_wrap_with_markers_embeds_governance_hash(self) -> None:
+        result = _wrap_with_markers("hello", "abc123def456789012345678")
+        assert "<!-- Governance hash: abc123def4567890 -->" in result
+
+    def test_extract_marker_sections_with_markers(self) -> None:
+        content = f"user stuff\n{EXO_MARKER_BEGIN}\ngoverned\n{EXO_MARKER_END}\nmore user"
+        sections = _extract_marker_sections(content)
+        assert sections is not None
+        before, governed, after = sections
+        assert "user stuff" in before
+        assert EXO_MARKER_BEGIN in governed
+        assert "more user" in after
+
+    def test_extract_marker_sections_without_markers(self) -> None:
+        content = "just user content\nno markers here"
+        assert _extract_marker_sections(content) is None
+
+    def test_count_user_lines_with_markers(self) -> None:
+        governed = _wrap_with_markers("line1\nline2\nline3", "hash123")
+        content = f"user line A\nuser line B\n\n{governed}\nuser line C\n"
+        count = _count_user_lines(content)
+        assert count == 3  # A, B, C (blank lines excluded)
+
+    def test_count_user_lines_without_markers(self) -> None:
+        content = "line1\nline2\n\nline3\n"
+        count = _count_user_lines(content)
+        assert count == 3
+
+
+# ──────────────────────────────────────────────
+# Brownfield Merge: adapter generation with existing files
+# ──────────────────────────────────────────────
+
+class TestBrownfieldMerge:
+    """Verify adapter generation preserves user content in existing files."""
+
+    def test_greenfield_wraps_in_markers(self, tmp_path: Path) -> None:
+        """New file (no existing) gets content wrapped in markers."""
+        repo = _bootstrap_repo(tmp_path)
+        generate_adapters(repo, targets=["claude"])
+        content = (repo / "CLAUDE.md").read_text()
+        assert EXO_MARKER_BEGIN in content
+        assert EXO_MARKER_END in content
+        assert "ExoProtocol" in content
+
+    def test_brownfield_no_markers_appends(self, tmp_path: Path) -> None:
+        """Existing file without markers gets governance appended."""
+        repo = _bootstrap_repo(tmp_path)
+        user_content = "# My Project\n\nCustom instructions for Claude.\n"
+        (repo / "CLAUDE.md").write_text(user_content, encoding="utf-8")
+
+        result = generate_adapters(repo, targets=["claude"])
+        content = (repo / "CLAUDE.md").read_text()
+
+        # User content preserved
+        assert "# My Project" in content
+        assert "Custom instructions for Claude." in content
+        # Governance appended with markers
+        assert EXO_MARKER_BEGIN in content
+        assert EXO_MARKER_END in content
+        assert "ExoProtocol" in content
+        # Result reports merge
+        assert result["files"]["claude"]["merged"] is True
+        assert result["files"]["claude"]["had_markers"] is False
+
+    def test_brownfield_no_markers_creates_backup(self, tmp_path: Path) -> None:
+        """First merge of unmarked file creates .pre-exo backup."""
+        repo = _bootstrap_repo(tmp_path)
+        user_content = "# My Project\n\nOriginal content.\n"
+        (repo / "CLAUDE.md").write_text(user_content, encoding="utf-8")
+
+        result = generate_adapters(repo, targets=["claude"])
+        backup_path = repo / "CLAUDE.md.pre-exo"
+
+        assert backup_path.exists()
+        assert backup_path.read_text() == user_content
+        assert result["files"]["claude"]["backed_up"] is True
+
+    def test_brownfield_with_markers_replaces_governed(self, tmp_path: Path) -> None:
+        """File with existing markers gets governed section replaced only."""
+        repo = _bootstrap_repo(tmp_path)
+        # First generate to create markers
+        generate_adapters(repo, targets=["claude"])
+        # Add user content before and after markers
+        content = (repo / "CLAUDE.md").read_text()
+        content = "# User Header\n\n" + content + "\n# User Footer\n"
+        (repo / "CLAUDE.md").write_text(content, encoding="utf-8")
+
+        # Regenerate
+        result = generate_adapters(repo, targets=["claude"])
+        new_content = (repo / "CLAUDE.md").read_text()
+
+        assert "# User Header" in new_content
+        assert "# User Footer" in new_content
+        assert EXO_MARKER_BEGIN in new_content
+        assert result["files"]["claude"]["merged"] is True
+        assert result["files"]["claude"]["had_markers"] is True
+
+    def test_brownfield_with_markers_no_backup(self, tmp_path: Path) -> None:
+        """File already with markers does NOT create a backup."""
+        repo = _bootstrap_repo(tmp_path)
+        generate_adapters(repo, targets=["claude"])
+        # Regenerate — should not create backup
+        generate_adapters(repo, targets=["claude"])
+        assert not (repo / "CLAUDE.md.pre-exo").exists()
+
+    def test_user_content_preserved_across_regeneration(self, tmp_path: Path) -> None:
+        """Two consecutive regenerations preserve user content each time."""
+        repo = _bootstrap_repo(tmp_path)
+        user_content = "# My Custom Rules\n\nDo not touch production.\n"
+        (repo / "CLAUDE.md").write_text(user_content, encoding="utf-8")
+
+        generate_adapters(repo, targets=["claude"])
+        generate_adapters(repo, targets=["claude"])
+
+        content = (repo / "CLAUDE.md").read_text()
+        assert "# My Custom Rules" in content
+        assert "Do not touch production." in content
+        assert content.count(EXO_MARKER_BEGIN) == 1
+
+    def test_merge_reports_user_lines(self, tmp_path: Path) -> None:
+        """Result dict includes user_lines count."""
+        repo = _bootstrap_repo(tmp_path)
+        user_content = "line one\nline two\nline three\n"
+        (repo / "CLAUDE.md").write_text(user_content, encoding="utf-8")
+
+        result = generate_adapters(repo, targets=["claude"])
+        assert result["files"]["claude"]["user_lines"] == 3
+
+    def test_ci_target_not_merged(self, tmp_path: Path) -> None:
+        """CI target is unconditionally overwritten (no markers)."""
+        repo = _bootstrap_repo(tmp_path)
+        ci_dir = repo / ".github" / "workflows"
+        ci_dir.mkdir(parents=True, exist_ok=True)
+        (ci_dir / "exo-governance.yml").write_text("# old ci stuff\n", encoding="utf-8")
+
+        result = generate_adapters(repo, targets=["ci"])
+        content = (repo / ".github" / "workflows" / "exo-governance.yml").read_text()
+
+        assert "# old ci stuff" not in content
+        assert "ExoProtocol Governance" in content
+        assert "merged" not in result["files"]["ci"]
+
+    def test_all_agent_targets_merge_independently(self, tmp_path: Path) -> None:
+        """Each agent target merges with its own existing file independently."""
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "CLAUDE.md").write_text("claude user content\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("cursor user content\n", encoding="utf-8")
+        (repo / "AGENTS.md").write_text("agents user content\n", encoding="utf-8")
+
+        result = generate_adapters(repo, targets=["claude", "cursor", "agents"])
+
+        for target, user_text in [
+            ("claude", "claude user content"),
+            ("cursor", "cursor user content"),
+            ("agents", "agents user content"),
+        ]:
+            content = (repo / TARGET_FILES[target]).read_text()
+            assert user_text in content, f"{target} should preserve user content"
+            assert EXO_MARKER_BEGIN in content, f"{target} should have markers"
+            assert result["files"][target]["merged"] is True
+
+
+# ──────────────────────────────────────────────
+# Drift detection with markers (governance hash in merged files)
+# ──────────────────────────────────────────────
+
+class TestDriftWithMarkers:
+    """Verify drift detection finds governance hash inside merged files."""
+
+    def test_drift_finds_hash_in_merged_file(self, tmp_path: Path) -> None:
+        """Drift check passes when governance hash is inside markers."""
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "CLAUDE.md").write_text("# Existing content\n", encoding="utf-8")
+        generate_adapters(repo)
+
+        from exo.stdlib.drift import _check_adapters
+        section = _check_adapters(repo)
+        # All adapter files should be fresh (including merged CLAUDE.md)
+        assert section.status == "pass", f"Expected pass, got {section.status}: {section.summary}"
+
+    def test_drift_detects_stale_merged_file(self, tmp_path: Path) -> None:
+        """Drift check fails when constitution changes after merge."""
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "CLAUDE.md").write_text("# Existing content\n", encoding="utf-8")
+        generate_adapters(repo)
+
+        # Modify constitution to change governance hash
+        old_const = (repo / ".exo" / "CONSTITUTION.md").read_text()
+        new_const = old_const + _policy_block({
+            "id": "RULE-EXTRA-999",
+            "type": "filesystem_deny",
+            "patterns": ["*.bak"],
+            "actions": ["write"],
+            "message": "No backups",
+        })
+        (repo / ".exo" / "CONSTITUTION.md").write_text(new_const)
+        governance_mod.compile_constitution(repo)
+
+        from exo.stdlib.drift import _check_adapters
+        section = _check_adapters(repo)
+        assert section.status == "fail"
+
+    def test_drift_finds_hash_beyond_500_chars(self, tmp_path: Path) -> None:
+        """Drift hash detection works even if hash is past byte 500."""
+        repo = _bootstrap_repo(tmp_path)
+        # Create a large user content block that pushes markers past 500 chars
+        big_content = "# Big Header\n\n" + ("x" * 600) + "\n\n"
+        (repo / "CLAUDE.md").write_text(big_content, encoding="utf-8")
+        generate_adapters(repo)
+
+        from exo.stdlib.drift import _check_adapters
+        section = _check_adapters(repo)
+        assert section.status == "pass", f"Expected pass, got {section.status}: {section.summary}"

@@ -44,6 +44,9 @@ class BuildDir:
 class ExistingGovernance:
     kind: str   # claude_md | cursorrules | agents_md | exo_dir
     path: str
+    exo_managed: bool = False   # True if exo governance markers found
+    user_lines: int = 0         # non-blank lines outside markers
+    total_lines: int = 0        # total lines in file
 
 
 @dataclass
@@ -198,7 +201,13 @@ def _detect_build_dirs(repo: Path, languages: list[LanguageDetection]) -> list[B
 
 
 def _detect_existing_governance(repo: Path) -> list[ExistingGovernance]:
-    """Check for CLAUDE.md, .cursorrules, AGENTS.md, .exo/ directory."""
+    """Check for CLAUDE.md, .cursorrules, AGENTS.md, .exo/ directory.
+
+    For file-based governance (not exo_dir), reads content to determine
+    whether exo markers are present and counts user vs total lines.
+    """
+    from exo.stdlib.adapters import EXO_MARKER_BEGIN, _count_user_lines
+
     found: list[ExistingGovernance] = []
     checks = [
         ("claude_md", "CLAUDE.md"),
@@ -209,7 +218,23 @@ def _detect_existing_governance(repo: Path) -> list[ExistingGovernance]:
     for kind, path_str in checks:
         p = repo / path_str
         if p.exists():
-            found.append(ExistingGovernance(kind=kind, path=path_str))
+            if kind == "exo_dir":
+                found.append(ExistingGovernance(kind=kind, path=path_str))
+            else:
+                try:
+                    content = p.read_text(encoding="utf-8")
+                    has_markers = EXO_MARKER_BEGIN in content
+                    total = len(content.splitlines())
+                    user = _count_user_lines(content) if has_markers else total
+                    found.append(ExistingGovernance(
+                        kind=kind,
+                        path=path_str,
+                        exo_managed=has_markers,
+                        user_lines=user,
+                        total_lines=total,
+                    ))
+                except OSError:
+                    found.append(ExistingGovernance(kind=kind, path=path_str))
     return found
 
 
@@ -418,7 +443,13 @@ def scan_to_dict(report: ScanReport) -> dict[str, Any]:
             for bd in report.build_dirs
         ],
         "existing_governance": [
-            {"kind": eg.kind, "path": eg.path}
+            {
+                "kind": eg.kind,
+                "path": eg.path,
+                "exo_managed": eg.exo_managed,
+                "user_lines": eg.user_lines,
+                "total_lines": eg.total_lines,
+            }
             for eg in report.existing_governance
         ],
         "ci_systems": [
@@ -470,7 +501,14 @@ def format_scan_human(report: ScanReport) -> str:
     if report.existing_governance:
         lines.append(f"\nExisting governance: {len(report.existing_governance)}")
         for eg in report.existing_governance:
-            lines.append(f"  {eg.kind}: {eg.path}")
+            if eg.kind == "exo_dir":
+                lines.append(f"  {eg.kind}: {eg.path}")
+            elif eg.exo_managed:
+                lines.append(
+                    f"  {eg.kind}: {eg.path} (exo-managed, {eg.user_lines} user lines / {eg.total_lines} total)"
+                )
+            else:
+                lines.append(f"  {eg.kind}: {eg.path} (user-only, {eg.total_lines} lines)")
     else:
         lines.append("\nExisting governance: (none)")
 
