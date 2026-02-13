@@ -258,7 +258,7 @@ class TestDrift:
         report = drift(repo)
         assert report.passed
         assert report.overall == "pass"
-        assert len(report.sections) == 5  # governance, adapters, features, requirements, sessions
+        assert len(report.sections) == 6  # governance, adapters, features, requirements, coherence, sessions
 
     def test_fail_when_governance_drifted(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -305,7 +305,7 @@ class TestDrift:
             skip_requirements=True,
             skip_sessions=True,
         )
-        assert len(report.sections) == 1  # only governance
+        assert len(report.sections) == 2  # governance + coherence (coherence skips without config)
         assert report.sections[0].name == "governance"
 
     def test_total_errors_and_warnings(self, tmp_path: Path) -> None:
@@ -341,7 +341,7 @@ class TestDriftReport:
         assert "total_errors" in d
         assert "total_warnings" in d
         assert "sections" in d
-        assert d["section_count"] == 5
+        assert d["section_count"] == 6
         assert "checked_at" in d
 
     def test_to_dict_with_failure(self, tmp_path: Path) -> None:
@@ -389,7 +389,7 @@ class TestCLIDrift:
         data = json.loads(result.stdout)
         assert data["ok"]
         assert data["data"]["passed"]
-        assert data["data"]["section_count"] == 5
+        assert data["data"]["section_count"] == 6
 
     def test_human_output(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -409,7 +409,7 @@ class TestCLIDrift:
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
-        assert data["data"]["section_count"] == 1
+        assert data["data"]["section_count"] == 2
 
     def test_fail_exit_code_on_drift(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)

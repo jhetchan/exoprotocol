@@ -679,6 +679,18 @@ class AgentSessionManager:
             # Traceability check is advisory — don't block session-finish on failure
             pass
 
+        # --- Coherence check ---
+        coherence_section: str = ""
+        coherence_data: dict[str, Any] | None = None
+        try:
+            from exo.stdlib.coherence import check_coherence, coherence_to_dict, format_coherence_human
+            coherence_report = check_coherence(self.root, base=git_base)
+            coherence_data = coherence_to_dict(coherence_report)
+            coherence_section = format_coherence_human(coherence_report)
+        except Exception:
+            # Coherence check is advisory — don't block session-finish on failure
+            pass
+
         ticket_status = None
         if set_status != "keep":
             ticket_data = tickets.load_ticket(self.root, target_ticket)
@@ -734,6 +746,9 @@ class AgentSessionManager:
         if trace_section:
             memento_sections.append("")
             memento_sections.append(trace_section)
+        if coherence_section:
+            memento_sections.append("")
+            memento_sections.append(coherence_section)
         memento_sections.extend([
             "",
             "## Artifacts",
@@ -808,6 +823,7 @@ class AgentSessionManager:
             "drift_score": drift_report.drift_score if drift_report else None,
             "trace_passed": trace_report.passed if trace_report else None,
             "trace_violations": len(trace_report.violations) if trace_report else None,
+            "coherence_warnings": coherence_data.get("warning_count") if coherence_data else None,
             "audit_warnings": audit_warnings if audit_warnings else None,
             "errors": errors_list if errors_list else None,
             "error_count": sum(e["count"] for e in errors_list) if errors_list else 0,
@@ -869,6 +885,7 @@ class AgentSessionManager:
             "session_index_path": str(relative_posix(self.root / SESSION_INDEX_PATH, self.root)),
             "drift": drift_data,
             "trace": trace_data,
+            "coherence": coherence_data,
             "exo_banner": finish_banner,
         }
         if audit_warnings:

@@ -302,6 +302,62 @@ def _check_requirements(repo: Path) -> DriftSection:
         )
 
 
+def _check_coherence(repo: Path) -> DriftSection:
+    """Run coherence checks if config is present and enabled."""
+    config_path = repo / Path(".exo/config.yaml")
+    if not config_path.exists():
+        return DriftSection(
+            name="coherence",
+            status="skip",
+            summary="no config.yaml found",
+        )
+
+    try:
+        from exo.stdlib.coherence import check_coherence, coherence_to_dict
+        report = check_coherence(repo)
+        warnings = report.warning_count
+
+        if report.passed and not report.violations:
+            return DriftSection(
+                name="coherence",
+                status="pass",
+                summary=f"{report.files_checked} files, {report.functions_checked} functions — no issues",
+                details=coherence_to_dict(report),
+            )
+        elif report.passed:
+            return DriftSection(
+                name="coherence",
+                status="pass",
+                summary=f"{warnings} warning(s) in coherence check",
+                warnings=warnings,
+                details=coherence_to_dict(report),
+            )
+        else:
+            errors = sum(1 for v in report.violations if v.severity == "error")
+            return DriftSection(
+                name="coherence",
+                status="fail",
+                summary=f"{errors} error(s), {warnings} warning(s) in coherence check",
+                errors=errors,
+                warnings=warnings,
+                details=coherence_to_dict(report),
+            )
+    except ExoError as e:
+        return DriftSection(
+            name="coherence",
+            status="error",
+            summary=str(e.message),
+            errors=1,
+        )
+    except Exception as e:
+        return DriftSection(
+            name="coherence",
+            status="error",
+            summary=f"unexpected error: {e}",
+            errors=1,
+        )
+
+
 def _check_sessions(repo: Path, stale_hours: float = 48.0) -> DriftSection:
     """Check for stale or orphaned sessions."""
     try:
@@ -359,6 +415,7 @@ def drift(
     skip_features: bool = False,
     skip_requirements: bool = False,
     skip_sessions: bool = False,
+    skip_coherence: bool = False,
 ) -> DriftReport:
     """Run all governance drift checks and produce a composite report.
 
@@ -367,7 +424,8 @@ def drift(
     2. Adapter freshness (governance hash embedded in adapter files)
     3. Feature traceability (if .exo/features.yaml exists)
     4. Requirement traceability (if .exo/requirements.yaml exists)
-    5. Session health (stale/orphaned sessions)
+    5. Coherence (co-update rules + docstring freshness)
+    6. Session health (stale/orphaned sessions)
 
     Args:
         repo: Repository root path.
@@ -376,6 +434,7 @@ def drift(
         skip_features: Skip feature traceability check.
         skip_requirements: Skip requirement traceability check.
         skip_sessions: Skip session health check.
+        skip_coherence: Skip coherence check.
 
     Returns:
         DriftReport with per-subsystem results and overall verdict.
@@ -398,7 +457,11 @@ def drift(
     if not skip_requirements:
         sections.append(_check_requirements(repo))
 
-    # 5. Session health
+    # 5. Coherence
+    if not skip_coherence:
+        sections.append(_check_coherence(repo))
+
+    # 6. Session health
     if not skip_sessions:
         sections.append(_check_sessions(repo, stale_hours=stale_hours))
 

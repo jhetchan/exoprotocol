@@ -1128,12 +1128,13 @@ if FastMCP:
         skip_features: bool = False,
         skip_requirements: bool = False,
         skip_sessions: bool = False,
+        skip_coherence: bool = False,
     ) -> dict[str, Any]:
         """Run composite governance drift check across all subsystems.
 
         Checks governance integrity, adapter freshness, feature traceability,
-        requirement traceability, and session health. Returns unified pass/fail
-        verdict with per-subsystem details.
+        requirement traceability, session health, and coherence. Returns unified
+        pass/fail verdict with per-subsystem details.
         """
         try:
             report = run_drift(
@@ -1143,8 +1144,37 @@ if FastMCP:
                 skip_features=skip_features,
                 skip_requirements=skip_requirements,
                 skip_sessions=skip_sessions,
+                skip_coherence=skip_coherence,
             )
             return {"ok": True, "data": drift_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+
+
+    @mcp.tool()
+    def exo_coherence(
+        repo: str = ".",
+        base: str = "main",
+        skip_co_updates: bool = False,
+        skip_docstrings: bool = False,
+    ) -> dict[str, Any]:
+        """Check semantic coherence: co-update rules and docstring freshness.
+
+        Detects when code changes without corresponding documentation updates.
+        Co-update rules enforce that related files change together. Docstring
+        freshness flags functions whose body changed but docstring didn't.
+        """
+        try:
+            from exo.stdlib.coherence import check_coherence, coherence_to_dict
+            report = check_coherence(
+                Path(repo).resolve(),
+                base=base,
+                skip_co_updates=skip_co_updates,
+                skip_docstrings=skip_docstrings,
+            )
+            return {"ok": True, "data": coherence_to_dict(report), "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
