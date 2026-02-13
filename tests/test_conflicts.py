@@ -27,17 +27,24 @@ from exo.orchestrator.session import (
 )
 from exo.kernel.utils import ensure_dir
 from exo.stdlib.conflicts import (
+    RESOURCE_PROFILES,
     StartAdvisory,
     _scopes_overlap,
     _share_directory_prefix,
     _common_prefix,
     _merged_branches,
     _upstream_status,
+    _base_divergence,
     _read_session_index,
     detect_scope_conflicts,
     detect_unmerged_work,
     detect_ticket_issues,
     detect_stale_branch,
+    detect_base_divergence,
+    machine_snapshot,
+    format_machine_context,
+    format_git_workflow,
+    detect_machine_load,
     format_advisories,
     advisories_to_dicts,
 )
@@ -541,8 +548,11 @@ class TestSessionStartAdvisories:
         assert ("scope_conflict" in str(result.get("start_advisories") or "")
                 or "agent:other" in bootstrap)
 
+    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
+        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
+    })
     @patch("exo.orchestrator.session._current_git_branch", return_value="main")
-    def test_no_conflicts_no_section(self, _mock_branch: object, tmp_path: Path) -> None:
+    def test_no_conflicts_no_section(self, _mock_branch: object, _mock_snap: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-111", scope_allow=["src/**"])
         _acquire_lock(repo, "TICKET-111")
@@ -708,3 +718,394 @@ class TestDetectStaleBranch:
         """Ahead-only (local commits, nothing upstream) → no warning."""
         result = detect_stale_branch(tmp_path, "feature/x")
         assert result == []
+
+
+# ── TestMachineSnapshot ──────────────────────────────────────────────
+
+
+class TestMachineSnapshot:
+    def test_returns_dict_with_keys(self) -> None:
+        snap = machine_snapshot()
+        assert isinstance(snap, dict)
+        assert "cpu_count" in snap
+        assert "load_avg_1m" in snap
+        assert "ram_total_gb" in snap
+        assert "ram_available_gb" in snap
+
+    def test_cpu_count_positive(self) -> None:
+        snap = machine_snapshot()
+        assert snap["cpu_count"] > 0
+
+    @patch("exo.stdlib.conflicts.os.cpu_count", return_value=None)
+    @patch("exo.stdlib.conflicts.os.getloadavg", side_effect=OSError)
+    @patch("exo.stdlib.conflicts.platform.system", return_value="Unknown")
+    def test_graceful_fallback(self, _sys: object, _load: object, _cpu: object) -> None:
+        snap = machine_snapshot()
+        assert snap["cpu_count"] == 0
+        assert snap["load_avg_1m"] is None
+        assert snap["ram_total_gb"] is None
+        assert snap["ram_available_gb"] is None
+
+
+# ── TestFormatMachineContext ─────────────────────────────────────────
+
+
+class TestFormatMachineContext:
+    def test_default_profile(self) -> None:
+        snap = {"cpu_count": 8, "load_avg_1m": 2.5, "ram_total_gb": 16.0, "ram_available_gb": 8.0}
+        result = format_machine_context(snap)
+        assert "## Machine Context" in result
+        assert "cpu_cores: 8" in result
+        assert "load_avg_1m: 2.5" in result
+        assert "8.0GB available / 16.0GB total" in result
+        assert "resource_profile" not in result  # default is omitted
+        assert "DIRECTIVE" not in result
+
+    def test_heavy_profile(self) -> None:
+        snap = {"cpu_count": 4, "load_avg_1m": 1.0, "ram_total_gb": 8.0, "ram_available_gb": 4.0}
+        result = format_machine_context(snap, resource_profile="heavy")
+        assert "resource_profile: heavy" in result
+        assert "DIRECTIVE" in result
+        assert "Serialize" in result
+
+    def test_light_profile(self) -> None:
+        snap = {"cpu_count": 4, "load_avg_1m": None, "ram_total_gb": None, "ram_available_gb": None}
+        result = format_machine_context(snap, resource_profile="light")
+        assert "resource_profile: light" in result
+        assert "DIRECTIVE" not in result  # only heavy gets directive
+
+    def test_missing_ram(self) -> None:
+        snap = {"cpu_count": 4, "load_avg_1m": 1.0, "ram_total_gb": None, "ram_available_gb": None}
+        result = format_machine_context(snap)
+        assert "ram" not in result.lower() or "ram_total" not in result
+
+
+# ── TestDetectMachineLoad ────────────────────────────────────────────
+
+
+class TestDetectMachineLoad:
+    def test_normal_load_no_advisory(self) -> None:
+        snap = {"cpu_count": 8, "load_avg_1m": 2.0, "ram_available_gb": 8.0}
+        result = detect_machine_load(snap)
+        assert result == []
+
+    def test_high_cpu_load(self) -> None:
+        snap = {"cpu_count": 8, "load_avg_1m": 7.0, "ram_available_gb": 8.0}
+        result = detect_machine_load(snap)
+        assert len(result) == 1
+        assert result[0].kind == "machine_load"
+        assert result[0].severity == "warning"
+        assert "CPU load" in result[0].message
+        assert result[0].detail["load_high"] is True
+
+    def test_low_ram(self) -> None:
+        snap = {"cpu_count": 8, "load_avg_1m": 1.0, "ram_available_gb": 1.5}
+        result = detect_machine_load(snap)
+        assert len(result) == 1
+        assert result[0].kind == "machine_load"
+        assert "RAM" in result[0].message
+        assert result[0].detail["ram_low"] is True
+
+    def test_both_high_cpu_and_low_ram(self) -> None:
+        snap = {"cpu_count": 4, "load_avg_1m": 4.0, "ram_available_gb": 1.0}
+        result = detect_machine_load(snap)
+        assert len(result) == 1
+        assert result[0].detail["load_high"] is True
+        assert result[0].detail["ram_low"] is True
+
+    def test_sibling_count_in_message(self) -> None:
+        snap = {"cpu_count": 4, "load_avg_1m": 4.0, "ram_available_gb": 8.0}
+        result = detect_machine_load(snap, sibling_count=3)
+        assert len(result) == 1
+        assert "3 sibling session(s)" in result[0].message
+
+    def test_heavy_profile_info_advisory(self) -> None:
+        """Heavy profile emits info even when load is normal."""
+        snap = {"cpu_count": 8, "load_avg_1m": 1.0, "ram_available_gb": 16.0}
+        result = detect_machine_load(snap, resource_profile="heavy")
+        assert len(result) == 1
+        assert result[0].severity == "info"
+        assert "resource_profile" in result[0].message
+        assert result[0].detail["resource_profile"] == "heavy"
+
+    def test_heavy_profile_under_load_is_warning(self) -> None:
+        """Heavy profile + high load → warning (not info)."""
+        snap = {"cpu_count": 4, "load_avg_1m": 4.0, "ram_available_gb": 1.0}
+        result = detect_machine_load(snap, resource_profile="heavy")
+        assert len(result) == 1
+        assert result[0].severity == "warning"
+
+    def test_none_values_no_crash(self) -> None:
+        """All None metrics → no advisory, no crash."""
+        snap = {"cpu_count": 0, "load_avg_1m": None, "ram_available_gb": None}
+        result = detect_machine_load(snap)
+        assert result == []
+
+
+# ── TestResourceProfiles ─────────────────────────────────────────────
+
+
+class TestResourceProfiles:
+    def test_valid_profiles(self) -> None:
+        assert RESOURCE_PROFILES == {"default", "light", "heavy"}
+
+    def test_ticket_resource_profile_default(self, tmp_path: Path) -> None:
+        """Tickets default to resource_profile='default'."""
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo, "TICKET-111")
+        ticket = tickets_mod.load_ticket(repo, "TICKET-111")
+        assert ticket["resource_profile"] == "default"
+
+    def test_ticket_resource_profile_heavy(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(repo, {
+            "id": "TICKET-222",
+            "type": "feature",
+            "title": "Heavy task",
+            "status": "active",
+            "resource_profile": "heavy",
+        })
+        ticket = tickets_mod.load_ticket(repo, "TICKET-222")
+        assert ticket["resource_profile"] == "heavy"
+
+    def test_ticket_resource_profile_invalid_defaults(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(repo, {
+            "id": "TICKET-333",
+            "type": "feature",
+            "title": "Bad profile",
+            "status": "active",
+            "resource_profile": "ultra",
+        })
+        ticket = tickets_mod.load_ticket(repo, "TICKET-333")
+        assert ticket["resource_profile"] == "default"
+
+
+# ── TestMachineContextIntegration ────────────────────────────────────
+
+
+class TestMachineContextIntegration:
+    @patch("exo.orchestrator.session._current_git_branch", return_value="main")
+    def test_machine_context_in_bootstrap(self, _mock_branch: object, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo, "TICKET-111")
+        _acquire_lock(repo, "TICKET-111")
+
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(
+            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+        )
+        bootstrap = result["bootstrap_prompt"]
+        assert "## Machine Context" in bootstrap
+        assert "cpu_cores:" in bootstrap
+
+    @patch("exo.orchestrator.session._current_git_branch", return_value="main")
+    def test_machine_snapshot_in_payload(self, _mock_branch: object, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo, "TICKET-111")
+        _acquire_lock(repo, "TICKET-111")
+
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(
+            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+        )
+        session = result["session"]
+        snap = session.get("machine_snapshot")
+        assert snap is not None
+        assert "cpu_count" in snap
+
+    @patch("exo.orchestrator.session._current_git_branch", return_value="main")
+    def test_heavy_ticket_directive_in_bootstrap(self, _mock_branch: object, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(repo, {
+            "id": "TICKET-HEAVY",
+            "type": "feature",
+            "title": "Heavy pipeline",
+            "status": "active",
+            "resource_profile": "heavy",
+        })
+        _acquire_lock(repo, "TICKET-HEAVY")
+
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(
+            ticket_id="TICKET-HEAVY", vendor="anthropic", model="claude",
+        )
+        bootstrap = result["bootstrap_prompt"]
+        assert "DIRECTIVE" in bootstrap
+        assert "Serialize" in bootstrap
+
+
+# ── TestBaseDivergence ───────────────────────────────────────────────
+
+
+class TestBaseDivergence:
+    @patch("exo.stdlib.conflicts.subprocess.run")
+    def test_parses_git_output(self, mock_run: object, tmp_path: Path) -> None:
+        mock_run.return_value = type("R", (), {"returncode": 0, "stdout": "5\t20\n"})()
+        behind, ahead = _base_divergence(tmp_path, "feature/x", "main")
+        assert behind == 20
+        assert ahead == 5
+
+    @patch("exo.stdlib.conflicts.subprocess.run")
+    def test_git_failure(self, mock_run: object, tmp_path: Path) -> None:
+        mock_run.return_value = type("R", (), {"returncode": 128, "stdout": ""})()
+        behind, ahead = _base_divergence(tmp_path, "feature/x", "main")
+        assert behind == 0
+        assert ahead == 0
+
+    @patch("exo.stdlib.conflicts.subprocess.run", side_effect=FileNotFoundError)
+    def test_no_git(self, _mock: object, tmp_path: Path) -> None:
+        behind, ahead = _base_divergence(tmp_path, "feature/x", "main")
+        assert behind == 0
+        assert ahead == 0
+
+
+class TestDetectBaseDivergence:
+    @patch("exo.stdlib.conflicts._base_divergence", return_value=(0, 0))
+    def test_no_divergence(self, _mock: object, tmp_path: Path) -> None:
+        result = detect_base_divergence(tmp_path, "feature/x", "main")
+        assert result == []
+
+    @patch("exo.stdlib.conflicts._base_divergence", return_value=(10, 5))
+    def test_below_threshold(self, _mock: object, tmp_path: Path) -> None:
+        """10 commits behind but threshold is 15 → no advisory."""
+        result = detect_base_divergence(tmp_path, "feature/x", "main", threshold=15)
+        assert result == []
+
+    @patch("exo.stdlib.conflicts._base_divergence", return_value=(20, 5))
+    def test_behind_with_local_commits(self, _mock: object, tmp_path: Path) -> None:
+        result = detect_base_divergence(tmp_path, "feature/x", "main", threshold=15)
+        assert len(result) == 1
+        assert result[0].kind == "base_divergence"
+        assert result[0].severity == "warning"
+        assert "20 commit(s) behind main" in result[0].message
+        assert "5 local commit(s)" in result[0].message
+        assert "git pull --rebase origin main" in result[0].message
+        assert result[0].detail["base_branch"] == "main"
+
+    @patch("exo.stdlib.conflicts._base_divergence", return_value=(30, 0))
+    def test_behind_no_local_commits(self, _mock: object, tmp_path: Path) -> None:
+        result = detect_base_divergence(tmp_path, "feature/x", "sandbox", threshold=15)
+        assert len(result) == 1
+        assert "30 commit(s) behind sandbox" in result[0].message
+        assert "git pull --rebase origin sandbox" in result[0].message
+        assert result[0].detail["base_branch"] == "sandbox"
+
+    def test_same_branch_skipped(self, tmp_path: Path) -> None:
+        """Working directly on main → no advisory."""
+        result = detect_base_divergence(tmp_path, "main", "main")
+        assert result == []
+
+    def test_empty_branch_skipped(self, tmp_path: Path) -> None:
+        result = detect_base_divergence(tmp_path, "", "main")
+        assert result == []
+
+    def test_empty_base_skipped(self, tmp_path: Path) -> None:
+        result = detect_base_divergence(tmp_path, "feature/x", "")
+        assert result == []
+
+    @patch("exo.stdlib.conflicts._base_divergence", return_value=(16, 3))
+    def test_custom_threshold(self, _mock: object, tmp_path: Path) -> None:
+        # At threshold=16, 16 behind fires
+        result = detect_base_divergence(tmp_path, "feature/x", "develop", threshold=16)
+        assert len(result) == 1
+        assert "develop" in result[0].message
+
+
+# ── TestFormatGitWorkflow ────────────────────────────────────────────
+
+
+class TestFormatGitWorkflow:
+    def test_uses_base_branch(self) -> None:
+        result = format_git_workflow("main")
+        assert "## Git Workflow" in result
+        assert "git pull --rebase origin main" in result
+        assert "Keep commits atomic" in result
+
+    def test_custom_base_branch(self) -> None:
+        result = format_git_workflow("sandbox")
+        assert "git pull --rebase origin sandbox" in result
+
+    def test_develop_branch(self) -> None:
+        result = format_git_workflow("develop")
+        assert "git pull --rebase origin develop" in result
+
+
+# ── TestGitWorkflowIntegration ───────────────────────────────────────
+
+
+class TestGitWorkflowIntegration:
+    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
+        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
+    })
+    @patch("exo.orchestrator.session._current_git_branch", return_value="feature/api")
+    def test_git_workflow_in_bootstrap(self, _mock_branch: object, _mock_snap: object, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo, "TICKET-111")
+        _acquire_lock(repo, "TICKET-111")
+
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(
+            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+        )
+        bootstrap = result["bootstrap_prompt"]
+        assert "## Git Workflow" in bootstrap
+        assert "git pull --rebase origin main" in bootstrap
+
+    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
+        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
+    })
+    @patch("exo.orchestrator.session._current_git_branch", return_value="feature/api")
+    def test_git_workflow_uses_lock_base(self, _mock_branch: object, _mock_snap: object, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo, "TICKET-111")
+        tickets_mod.acquire_lock(
+            repo, "TICKET-111", owner="agent:test", role="developer",
+            duration_hours=1, base="sandbox",
+        )
+
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(
+            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+        )
+        bootstrap = result["bootstrap_prompt"]
+        assert "git pull --rebase origin sandbox" in bootstrap
+
+    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
+        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
+    })
+    @patch("exo.orchestrator.session._current_git_branch", return_value="feature/api")
+    def test_git_workflow_not_in_audit_mode(self, _mock_branch: object, _mock_snap: object, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo, "TICKET-111")
+        _acquire_lock(repo, "TICKET-111")
+
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(
+            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            mode="audit",
+        )
+        bootstrap = result["bootstrap_prompt"]
+        assert "## Git Workflow" not in bootstrap
+
+    @patch("exo.stdlib.conflicts._base_divergence", return_value=(25, 3))
+    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
+        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
+    })
+    @patch("exo.orchestrator.session._current_git_branch", return_value="feature/api")
+    def test_base_divergence_advisory_in_bootstrap(
+        self, _mock_branch: object, _mock_snap: object, _mock_div: object, tmp_path: Path,
+    ) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo, "TICKET-111")
+        _acquire_lock(repo, "TICKET-111")
+
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(
+            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+        )
+        bootstrap = result["bootstrap_prompt"]
+        assert "Start Advisories" in bootstrap
+        advisories = result.get("start_advisories") or []
+        kinds = [a["kind"] for a in advisories]
+        assert "base_divergence" in kinds

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
+import platform
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -431,6 +433,286 @@ def detect_stale_branch(
                 "diverged": False,
             },
         )]
+
+
+# ---------------------------------------------------------------------------
+# 5. Base branch divergence
+# ---------------------------------------------------------------------------
+
+def _base_divergence(repo: Path, current_branch: str, base_branch: str) -> tuple[int, int]:
+    """Return (behind_base, ahead_of_base) commit counts.
+
+    ``behind_base`` = commits on *base_branch* that *current_branch* doesn't have.
+    ``ahead_of_base`` = commits on *current_branch* that *base_branch* doesn't have.
+    Returns ``(0, 0)`` on any failure.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-list", "--left-right", "--count",
+             f"{current_branch}...{base_branch}"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return 0, 0
+        parts = result.stdout.strip().split()
+        if len(parts) == 2:
+            ahead = int(parts[0])   # left side = current_branch
+            behind = int(parts[1])  # right side = base_branch
+            return behind, ahead
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+        pass
+    return 0, 0
+
+
+def detect_base_divergence(
+    repo: Path,
+    current_branch: str,
+    base_branch: str,
+    *,
+    threshold: int = 15,
+) -> list[StartAdvisory]:
+    """Check if the current branch has fallen behind the base branch (e.g. main).
+
+    Only fires when ``behind >= threshold`` to avoid noise on small lag.
+    Skips when current_branch == base_branch (working directly on main).
+    """
+    if not current_branch or not base_branch:
+        return []
+    if current_branch == base_branch:
+        return []
+
+    behind, ahead = _base_divergence(repo, current_branch, base_branch)
+
+    if behind < threshold:
+        return []
+
+    if ahead > 0:
+        return [StartAdvisory(
+            kind="base_divergence",
+            severity="warning",
+            message=(
+                f"{current_branch} is {behind} commit(s) behind {base_branch} "
+                f"(with {ahead} local commit(s)). "
+                f"Run `git pull --rebase origin {base_branch}` to reduce merge lag."
+            ),
+            detail={
+                "branch": current_branch,
+                "base_branch": base_branch,
+                "behind": behind,
+                "ahead": ahead,
+            },
+        )]
+    else:
+        return [StartAdvisory(
+            kind="base_divergence",
+            severity="warning",
+            message=(
+                f"{current_branch} is {behind} commit(s) behind {base_branch}. "
+                f"Run `git pull --rebase origin {base_branch}` before making changes."
+            ),
+            detail={
+                "branch": current_branch,
+                "base_branch": base_branch,
+                "behind": behind,
+                "ahead": 0,
+            },
+        )]
+
+
+# ---------------------------------------------------------------------------
+# 6. Git workflow directives
+# ---------------------------------------------------------------------------
+
+def format_git_workflow(base_branch: str) -> str:
+    """Static git workflow directives for the bootstrap prompt.
+
+    Uses the actual base branch from the lock workspace — never hardcoded.
+    """
+    return "\n".join([
+        "## Git Workflow",
+        f"- Before pushing, rebase on base branch: `git pull --rebase origin {base_branch}`",
+        "- Pull latest before starting work: `git pull --rebase`",
+        "- Keep commits atomic and branches short-lived",
+        "",
+    ])
+
+
+# ---------------------------------------------------------------------------
+# 7. Machine context / resource awareness
+# ---------------------------------------------------------------------------
+
+RESOURCE_PROFILES = {"default", "light", "heavy"}
+
+
+def _ram_info_darwin() -> tuple[float | None, float | None]:
+    """Return (total_gb, available_gb) on macOS.  None on failure."""
+    total_gb: float | None = None
+    available_gb: float | None = None
+    try:
+        result = subprocess.run(
+            ["sysctl", "-n", "hw.memsize"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            total_gb = round(int(result.stdout.strip()) / (1024 ** 3), 1)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+        pass
+    try:
+        result = subprocess.run(
+            ["vm_stat"], capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            lines = result.stdout.splitlines()
+            page_size = 16384
+            for line in lines:
+                if "page size of" in line:
+                    for token in line.split():
+                        if token.isdigit():
+                            page_size = int(token)
+                            break
+                    break
+            free_pages = 0
+            for line in lines:
+                if "Pages free:" in line:
+                    val = line.split(":")[1].strip().rstrip(".")
+                    free_pages += int(val)
+                elif "Pages inactive:" in line:
+                    val = line.split(":")[1].strip().rstrip(".")
+                    free_pages += int(val)
+            available_gb = round(free_pages * page_size / (1024 ** 3), 1)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+        pass
+    return total_gb, available_gb
+
+
+def _ram_info_linux() -> tuple[float | None, float | None]:
+    """Return (total_gb, available_gb) on Linux.  None on failure."""
+    total_gb: float | None = None
+    available_gb: float | None = None
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("MemTotal:"):
+                    total_gb = round(int(line.split()[1]) / (1024 ** 2), 1)
+                elif line.startswith("MemAvailable:"):
+                    available_gb = round(int(line.split()[1]) / (1024 ** 2), 1)
+    except (OSError, ValueError):
+        pass
+    return total_gb, available_gb
+
+
+def machine_snapshot() -> dict[str, Any]:
+    """Lightweight one-shot read of machine resources.  All-stdlib, no psutil."""
+    snap: dict[str, Any] = {
+        "cpu_count": os.cpu_count() or 0,
+        "load_avg_1m": None,
+        "ram_total_gb": None,
+        "ram_available_gb": None,
+    }
+
+    # Load average (POSIX — macOS + Linux)
+    try:
+        load = os.getloadavg()
+        snap["load_avg_1m"] = round(load[0], 1)
+    except (OSError, AttributeError):
+        pass
+
+    # RAM
+    system = platform.system()
+    if system == "Darwin":
+        snap["ram_total_gb"], snap["ram_available_gb"] = _ram_info_darwin()
+    elif system == "Linux":
+        snap["ram_total_gb"], snap["ram_available_gb"] = _ram_info_linux()
+
+    return snap
+
+
+def format_machine_context(snap: dict[str, Any], resource_profile: str = "default") -> str:
+    """Format the machine context bootstrap section.  Always included (small)."""
+    cpu = snap.get("cpu_count") or "?"
+    load = snap.get("load_avg_1m")
+    total = snap.get("ram_total_gb")
+    avail = snap.get("ram_available_gb")
+
+    lines = ["## Machine Context"]
+    lines.append(f"- cpu_cores: {cpu}")
+    if load is not None:
+        lines.append(f"- load_avg_1m: {load}")
+    if total is not None and avail is not None:
+        lines.append(f"- ram: {avail}GB available / {total}GB total")
+    elif total is not None:
+        lines.append(f"- ram_total: {total}GB")
+    if resource_profile != "default":
+        lines.append(f"- resource_profile: {resource_profile}")
+    if resource_profile == "heavy":
+        lines.append("- DIRECTIVE: This ticket is resource-heavy. Serialize CPU/memory-intensive operations.")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def detect_machine_load(
+    snap: dict[str, Any],
+    sibling_count: int = 0,
+    resource_profile: str = "default",
+) -> list[StartAdvisory]:
+    """Emit advisory when the machine is under pressure."""
+    advisories: list[StartAdvisory] = []
+    cpu = snap.get("cpu_count") or 0
+    load = snap.get("load_avg_1m")
+    avail_gb = snap.get("ram_available_gb")
+
+    # High CPU load: load average > 70% of cores
+    load_high = False
+    if cpu and load is not None and load > cpu * 0.7:
+        load_high = True
+
+    # Low RAM: less than 2GB available
+    ram_low = False
+    if avail_gb is not None and avail_gb < 2.0:
+        ram_low = True
+
+    if load_high or ram_low:
+        parts: list[str] = []
+        if load_high:
+            parts.append(f"CPU load {load}/{cpu} cores")
+        if ram_low:
+            parts.append(f"RAM {avail_gb}GB available")
+        msg = f"System under load ({', '.join(parts)}). Prefer sequential execution."
+        if sibling_count > 0:
+            msg += f" {sibling_count} sibling session(s) also running."
+        advisories.append(StartAdvisory(
+            kind="machine_load",
+            severity="warning",
+            message=msg,
+            detail={
+                "cpu_count": cpu,
+                "load_avg_1m": load,
+                "ram_available_gb": avail_gb,
+                "sibling_count": sibling_count,
+                "load_high": load_high,
+                "ram_low": ram_low,
+            },
+        ))
+    elif resource_profile == "heavy":
+        advisories.append(StartAdvisory(
+            kind="machine_load",
+            severity="info",
+            message=(
+                "Ticket resource_profile is 'heavy'. "
+                "Serialize CPU/memory-intensive operations even if system load is normal."
+            ),
+            detail={
+                "resource_profile": resource_profile,
+                "cpu_count": cpu,
+                "load_avg_1m": load,
+                "ram_available_gb": avail_gb,
+            },
+        ))
+
+    return advisories
 
 
 # ---------------------------------------------------------------------------
