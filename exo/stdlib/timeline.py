@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -177,10 +178,8 @@ def _build_intent_tree(
     for s in all_sessions:
         drift_raw = s.get("drift_score")
         if drift_raw is not None:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 drift_scores.append(float(drift_raw))
-            except (TypeError, ValueError):
-                pass
 
     drift_avg = round(sum(drift_scores) / len(drift_scores), 3) if drift_scores else None
 
