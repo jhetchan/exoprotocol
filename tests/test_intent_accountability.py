@@ -396,6 +396,7 @@ class TestDriftDetection:
         (repo / "README.md").write_text("hello\n")
         subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=str(repo), capture_output=True)
 
         # Create work branch with changes
         subprocess.run(["git", "checkout", "-b", "work"], cwd=str(repo), capture_output=True)

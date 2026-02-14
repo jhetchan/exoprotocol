@@ -495,13 +495,14 @@ class TestDefaultFallbacks:
 
 
 def _init_git_repo(repo: Path) -> None:
-    """Initialize a git repo with an initial commit."""
+    """Initialize a git repo with an initial commit on a branch named 'main'."""
     subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(repo), capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(repo), capture_output=True)
     (repo / "README.md").write_text("init\n")
     subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=str(repo), capture_output=True)
 
 
 def _make_changes(repo: Path, n_files: int, loc_per_file: int) -> None:
