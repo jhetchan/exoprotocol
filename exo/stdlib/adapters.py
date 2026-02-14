@@ -6,7 +6,6 @@ bridging ExoProtocol governance into the agent's native config format.
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 from pathlib import Path
@@ -164,6 +163,18 @@ def _generate_preamble(lock: dict[str, Any], config: dict[str, Any]) -> str:
             "- **GOOD**: set config to 42, assert output contains 42 and not the old default",
             "- **BAD**: `MAX_RETRIES = 3` (literal in source when retries is in config)",
             "- **GOOD**: `max_retries = load_config()['max_retries']`",
+            "",
+            "### Operational Learnings",
+            "",
+            "When you discover a reusable pattern, gotcha, or operational insight during a session:",
+            "- Record it with `exo reflect` (CLI) or `exo_reflect` (MCP) — NOT your private memory",
+            "- ExoProtocol reflections are injected into future session bootstraps for all agents",
+            "- Private memory files (MEMORY.md, .cursorrules, etc.) are agent-specific and invisible to the team",
+            "- If you must write to private memory, also create an ExoProtocol reflection with the same insight",
+            "",
+            "**Private memory monitoring**: If `private_memory.watch_paths` in `.exo/config.yaml` is empty,",
+            "add the absolute path to your memory file (e.g., `~/.claude/.../memory/MEMORY.md`) so that",
+            "ExoProtocol can detect when you write to private memory without creating a shared reflection.",
         ]
     )
 
