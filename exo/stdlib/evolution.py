@@ -37,10 +37,10 @@ CONFIDENCE_VALUES = {"low", "medium", "high"}
 
 
 OBS_TEMPLATE = """---
-id: OBS-2026-02-10-001
-timestamp: 2026-02-10T14:22:31+08:00
-ticket: TICKET-123
-actor: agent:claude-opus
+id: OBS-YYYY-MM-DD-001
+timestamp: YYYY-MM-DDTHH:MM:SS+00:00
+ticket: TICKET-NNN
+actor: agent:your-agent
 trigger:
   - blocked_by_governance
   - test_failure
@@ -51,52 +51,48 @@ confidence: high
 ---
 
 ## What happened
-Attempted to write to `config/ci.yml` without ticket scope allowing `config/**`.
+Describe what the agent attempted and what happened.
 
 ## Evidence
-- audit log lines: 203-240
-- command: exo do TICKET-123
+- audit log lines: NNN-NNN
+- command: exo do TICKET-NNN
 
 ## Immediate outcome
-Action blocked by RULE-FS-004 (ticket scope violation).
+What was the result (blocked, failed, etc.)?
 
 ## Notes
 Pure observation. No interpretation or fix proposed here.
 """
 
 
-PROP_TEMPLATE = """id: PROP-041
-created_at: 2026-02-10T15:10:00+08:00
-author: human:jhet
-ticket: TICKET-123
+PROP_TEMPLATE = """id: PROP-NNN
+created_at: YYYY-MM-DDTHH:MM:SS+00:00
+author: human:your-name
+ticket: TICKET-NNN
 kind: practice_change
 status: draft
 summary: >
-  Add explicit practice discouraging config edits without scope.
+  Describe the proposed change.
 symptom:
-  - "Repeated blocked attempts to edit config/*.yml"
-  - "Model assumes config files are safe by default"
+  - "What behavior triggered this proposal"
 root_cause: >
-  No documented default stance for configuration files;
-  only secrets are explicitly restricted.
+  Why the current rules don't cover this case.
 proposed_change:
   type: add_file
-  path: .exo/practices/config-editing.md
+  path: .exo/practices/your-practice.md
 expected_effect:
-  - "Fewer out-of-scope config edits"
-  - "Smaller diffs"
-  - "Less governance friction"
+  - "What should improve"
 risk_level: low
 blast_radius:
   - practices_only
 rollback:
   type: delete_file
-  path: .exo/practices/config-editing.md
+  path: .exo/practices/your-practice.md
 evidence:
   observations:
-    - OBS-2026-02-10-001
+    - OBS-YYYY-MM-DD-001
   audit_log_ranges:
-    - "audit.log.jsonl:203-240"
+    - "audit.log.jsonl:NNN-NNN"
 requires:
   approvals: 1
   human_required: false
@@ -106,23 +102,22 @@ notes:
 
 
 REV_TEMPLATE = """---
-review_id: REV-041-001
-proposal: PROP-041
-reviewer: human:jhet
-timestamp: 2026-02-10T15:42:00+08:00
+review_id: REV-NNN-001
+proposal: PROP-NNN
+reviewer: human:your-name
+timestamp: YYYY-MM-DDTHH:MM:SS+00:00
 decision: approve
 confidence: high
 ---
 
 ## Rationale
-Practice-only change with clear rollback.
-Observed failure mode is repeatable.
+Explain why you approve or reject the proposal.
 
 ## Conditions
 None.
 
 ## Signature
-jhet
+your-name
 """
 
 
