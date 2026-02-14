@@ -1564,16 +1564,9 @@ class KernelEngine:
                 kind = str(ticket.get("kind", "task")).strip().lower()
                 if not ticket.get("id"):
                     if kind == "intent":
-                        ticket["id"] = tickets.next_intent_id(self.repo)
+                        ticket["id"] = tickets.allocate_intent_id(self.repo)
                     else:
-                        tid = tickets.next_ticket_id(self.repo)
-                        ticket["id"] = f"{tid}-EPIC" if kind == "epic" else tid
-                if tickets.ticket_path(self.repo, str(ticket["id"])).exists():
-                    if kind == "intent":
-                        ticket["id"] = tickets.next_intent_id(self.repo)
-                    else:
-                        tid = tickets.next_ticket_id(self.repo)
-                        ticket["id"] = f"{tid}-EPIC" if kind == "epic" else tid
+                        ticket["id"] = tickets.allocate_ticket_id(self.repo, kind=kind)
                 ticket.setdefault("spec_ref", str(spec_path.relative_to(self.repo)))
                 ticket.setdefault("created_at", now_iso())
                 tickets.save_ticket(self.repo, ticket)
@@ -2133,7 +2126,7 @@ class KernelEngine:
                 title = line.replace("# Thread:", "").strip()
                 break
 
-        ticket_id = tickets.next_ticket_id(self.repo)
+        ticket_id = tickets.allocate_ticket_id(self.repo)
         ticket = {
             "id": ticket_id,
             "type": "docs",

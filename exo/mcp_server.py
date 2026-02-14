@@ -7,8 +7,8 @@ from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
 from exo.kernel.utils import default_topic_id
 from exo.kernel.tickets import (
-    load_ticket, next_intent_id, next_ticket_id, normalize_ticket, save_ticket,
-    ticket_path, validate_intent_hierarchy,
+    allocate_intent_id, allocate_ticket_id, load_ticket, normalize_ticket, save_ticket,
+    validate_intent_hierarchy,
 )
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
 from exo.stdlib.adapters import generate_adapters
@@ -837,9 +837,7 @@ if FastMCP:
     ) -> dict[str, Any]:
         try:
             repo_path = Path(repo).resolve()
-            intent_id = next_intent_id(repo_path)
-            if ticket_path(repo_path, intent_id).exists():
-                intent_id = next_intent_id(repo_path)
+            intent_id = allocate_intent_id(repo_path)
             ticket_data = {
                 "id": intent_id,
                 "title": title,
@@ -912,13 +910,7 @@ if FastMCP:
                     },
                     blocked=True,
                 )
-            ticket_id = next_ticket_id(repo_path)
-            if kind == "epic":
-                ticket_id = ticket_id + "-EPIC"
-            if ticket_path(repo_path, ticket_id).exists():
-                ticket_id = next_ticket_id(repo_path)
-                if kind == "epic":
-                    ticket_id = ticket_id + "-EPIC"
+            ticket_id = allocate_ticket_id(repo_path, kind=kind)
             ticket_data = {
                 "id": ticket_id,
                 "title": title,

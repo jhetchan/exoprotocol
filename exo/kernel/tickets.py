@@ -21,6 +21,7 @@ from .utils import default_topic_id, dump_json, dump_yaml, load_json, load_yaml,
 TICKETS_DIR = Path(".exo/tickets")
 LOCK_FILE = Path(".exo/locks/ticket.lock.json")
 LOCK_GUARD_FILE = Path(".exo/locks/.ticket.lock.guard")
+ID_GUARD_FILE = Path(".exo/locks/.id.guard")
 
 
 TICKET_ID_RE = re.compile(r"^TICKET-(\d+)(?:-EPIC)?$")
@@ -153,6 +154,54 @@ def next_intent_id(repo: Path) -> str:
     numbers = _existing_intent_numbers(repo)
     nxt = (numbers[-1] + 1) if numbers else 1
     return f"INTENT-{nxt:03d}"
+
+
+@contextmanager
+def _id_guard(repo: Path):
+    """File lock for atomic ticket/intent ID allocation."""
+    if fcntl is None:
+        yield
+        return
+    guard = repo / ID_GUARD_FILE
+    guard.parent.mkdir(parents=True, exist_ok=True)
+    with guard.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def allocate_ticket_id(repo: Path, *, kind: str = "task") -> str:
+    """Atomically allocate the next ticket ID and reserve it on disk.
+
+    Holds a file lock while scanning for the max ID and writing a
+    minimal placeholder file, preventing TOCTOU races between
+    concurrent callers.
+    """
+    with _id_guard(repo):
+        tid = next_ticket_id(repo)
+        if kind == "epic":
+            tid = f"{tid}-EPIC"
+        path = ticket_path(repo, tid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            dump_yaml(path, {"id": tid, "status": "todo", "kind": kind, "created_at": now_iso()})
+        return tid
+
+
+def allocate_intent_id(repo: Path) -> str:
+    """Atomically allocate the next intent ID and reserve it on disk.
+
+    Same concurrency-safe pattern as allocate_ticket_id.
+    """
+    with _id_guard(repo):
+        tid = next_intent_id(repo)
+        path = ticket_path(repo, tid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            dump_yaml(path, {"id": tid, "status": "todo", "kind": "intent", "created_at": now_iso()})
+        return tid
 
 
 def resolve_intent_root(repo: Path, ticket: dict[str, Any], *, max_depth: int = 20) -> dict[str, Any] | None:
