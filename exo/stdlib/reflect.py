@@ -10,6 +10,7 @@ Storage: ``.exo/memory/reflections/REF-NNN.yaml`` — one file per reflection.
 
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -137,10 +138,8 @@ def reflect(
     dump_yaml(ref_path, _reflection_to_yaml_dict(reflection))
 
     # Sync to memory index (advisory)
-    try:
+    with contextlib.suppress(Exception):
         _sync_to_memory_index(repo, reflection)
-    except Exception:  # noqa: BLE001
-        pass
 
     return reflection
 

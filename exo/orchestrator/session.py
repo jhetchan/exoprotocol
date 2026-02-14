@@ -658,10 +658,8 @@ class AgentSessionManager:
                 if relevant_reflections:
                     bootstrap_lines.extend(format_bootstrap_reflections(relevant_reflections))
                     for ref in relevant_reflections:
-                        try:
+                        with contextlib.suppress(Exception):
                             increment_hit_count(self.root, ref.id)
-                        except Exception:  # noqa: BLE001
-                            pass
             except Exception:  # noqa: BLE001
                 pass  # Reflection injection is advisory — never blocks session start
 
@@ -1409,10 +1407,8 @@ class AgentSessionManager:
             if relevant_reflections:
                 bootstrap_lines.extend(format_bootstrap_reflections(relevant_reflections))
                 for ref in relevant_reflections:
-                    try:
+                    with contextlib.suppress(Exception):
                         increment_hit_count(self.root, ref.id)
-                    except Exception:  # noqa: BLE001
-                        pass
         except Exception:  # noqa: BLE001
             pass  # Reflection injection is advisory — never blocks session resume
 
