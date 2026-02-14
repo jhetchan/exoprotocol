@@ -23,12 +23,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets as tickets_mod
 from exo.orchestrator.session import AgentSessionManager
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -190,7 +187,7 @@ def _setup_pr_audit_repo(tmp_path: Path) -> tuple[Path, str]:
 
     # Create a feature branch with a commit
     _git(repo, "checkout", "-b", "feature/auth")
-    sha = _make_commit(repo, "src/login.py", "def login(): pass", "add login endpoint")
+    _make_commit(repo, "src/login.py", "def login(): pass", "add login endpoint")
 
     # Write a session index entry that covers this commit's timestamp window
     now = datetime.now(timezone.utc)

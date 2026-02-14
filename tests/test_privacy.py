@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from exo.kernel import governance as governance_mod
 from exo.kernel.utils import default_topic_id, dump_yaml, load_yaml
@@ -112,12 +111,11 @@ class TestDefaultTopicId:
 class TestLedgerTopicIdsPortable:
     def test_mint_ticket_uses_portable_topic(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        from exo.kernel import ledger
         from exo.kernel.engine import open_session
         from exo.kernel.tickets import mint_ticket
 
         session = open_session(repo, "human:test")
-        ticket = mint_ticket(session, "Write README", {"allow": ["README.md"], "deny": []}, 1)
+        mint_ticket(session, "Write README", {"allow": ["README.md"], "deny": []}, 1)
 
         # Read ledger and check topic_id
         log_path = repo / ".exo" / "logs" / "ledger.log.jsonl"
@@ -228,7 +226,7 @@ class TestUpgradeBackfillsPrivacy:
 
         from exo.stdlib.upgrade import upgrade
 
-        result = upgrade(tmp_path)
+        upgrade(tmp_path)
         config_after = load_yaml(tmp_path / ".exo" / "config.yaml")
         assert "privacy" in config_after
         assert config_after["privacy"]["commit_logs"] is False

@@ -8,7 +8,6 @@ from typing import Any
 
 from exo.kernel.utils import dump_yaml, ensure_dir, load_yaml, now_iso
 
-
 OBS_DIR = Path(".exo/observations")
 PATCH_DIR = Path(".exo/patches")
 PROP_DIR = Path(".exo/proposals")
@@ -473,7 +472,7 @@ def validate_proposal_payload(proposal: dict[str, Any]) -> list[str]:
             errors.append(f"missing required field: {key}")
 
     allowed_fields = set(props.keys())
-    for key in proposal.keys():
+    for key in proposal:
         if key not in allowed_fields:
             errors.append(f"unknown field: {key}")
 
@@ -516,7 +515,7 @@ def validate_proposal_payload(proposal: dict[str, Any]) -> list[str]:
             value = proposed_change.get(key)
             if not isinstance(value, str) or not value.strip():
                 errors.append(f"proposed_change.{key} must be a non-empty string")
-        for key in proposed_change.keys():
+        for key in proposed_change:
             if key not in {"type", "path"}:
                 errors.append(f"unknown field: proposed_change.{key}")
 
@@ -540,7 +539,7 @@ def validate_proposal_payload(proposal: dict[str, Any]) -> list[str]:
             value = rollback.get(key)
             if not isinstance(value, str) or not value.strip():
                 errors.append(f"rollback.{key} must be a non-empty string")
-        for key in rollback.keys():
+        for key in rollback:
             if key not in {"type", "path"}:
                 errors.append(f"unknown field: rollback.{key}")
 
@@ -555,7 +554,7 @@ def validate_proposal_payload(proposal: dict[str, Any]) -> list[str]:
             human_required = requires.get("human_required")
             if human_required is not None and not isinstance(human_required, bool):
                 errors.append("requires.human_required must be a boolean")
-            for key in requires.keys():
+            for key in requires:
                 if key not in {"approvals", "human_required"}:
                     errors.append(f"unknown field: requires.{key}")
 
@@ -570,7 +569,7 @@ def validate_proposal_payload(proposal: dict[str, Any]) -> list[str]:
             audit_ranges = evidence.get("audit_log_ranges")
             if audit_ranges is not None:
                 errors.extend(_validate_string_list(audit_ranges, "evidence.audit_log_ranges"))
-            for key in evidence.keys():
+            for key in evidence:
                 if key not in {"observations", "audit_log_ranges"}:
                     errors.append(f"unknown field: evidence.{key}")
 
@@ -591,7 +590,7 @@ def validate_proposal_payload(proposal: dict[str, Any]) -> list[str]:
                 for key in required_review:
                     if key not in review:
                         errors.append(f"approvals[{idx}] missing required field: {key}")
-                for key in review.keys():
+                for key in review:
                     if key not in {"review_id", "decision", "reviewer", "reviewer_type", "note", "created_at"}:
                         errors.append(f"unknown field: approvals[{idx}].{key}")
                 decision = review.get("decision")

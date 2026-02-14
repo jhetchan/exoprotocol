@@ -18,24 +18,24 @@ from pathlib import Path
 from typing import Any
 
 from exo.kernel import governance as governance_mod
+from exo.kernel import tickets as tickets_mod
+from exo.orchestrator import AgentSessionManager
+from exo.orchestrator.session import _exo_banner
 from exo.stdlib.features import (
-    CodeTag,
+    END_TAG_PATTERN,
+    TAG_PATTERN,
+    VALID_STATUSES,
     FeatureDef,
-    TraceReport,
-    TraceViolation,
+    features_to_list,
+    format_prune_human,
+    format_trace_human,
+    generate_scope_deny,
     load_features,
+    prune,
+    prune_to_dict,
     scan_tags,
     trace,
     trace_to_dict,
-    format_trace_human,
-    features_to_list,
-    generate_scope_deny,
-    prune,
-    prune_to_dict,
-    format_prune_human,
-    VALID_STATUSES,
-    TAG_PATTERN,
-    END_TAG_PATTERN,
 )
 
 
@@ -626,7 +626,7 @@ class TestTagPatterns:
 
 class TestValidStatuses:
     def test_valid_statuses_set(self) -> None:
-        assert VALID_STATUSES == {"active", "experimental", "deprecated", "deleted"}
+        assert {"active", "experimental", "deprecated", "deleted"} == VALID_STATUSES
 
 
 # ──────────────────────────────────────────────────────────────
@@ -867,11 +867,6 @@ class TestEdgeCases:
 # ──────────────────────────────────────────────────────────────
 # Session-finish trace integration
 # ──────────────────────────────────────────────────────────────
-
-
-from exo.kernel import tickets as tickets_mod
-from exo.orchestrator import AgentSessionManager
-from exo.orchestrator.session import _exo_banner
 
 
 def _seed_ticket(repo: Path, ticket_id: str = "TICKET-111") -> None:

@@ -43,7 +43,7 @@ def _share_directory_prefix(pa: str, pb: str) -> bool:
     parts_a = pa.replace("\\", "/").split("/")
     parts_b = pb.replace("\\", "/").split("/")
     # Need at least one concrete directory segment in common
-    for a_seg, b_seg in zip(parts_a, parts_b):
+    for a_seg, b_seg in zip(parts_a, parts_b, strict=False):
         if a_seg == "**" or b_seg == "**":
             return True  # wildcard after shared prefix → overlap
         if a_seg == b_seg:
@@ -60,7 +60,7 @@ def _common_prefix(pa: str, pb: str) -> str:
     parts_a = pa.replace("\\", "/").split("/")
     parts_b = pb.replace("\\", "/").split("/")
     common: list[str] = []
-    for a_seg, b_seg in zip(parts_a, parts_b):
+    for a_seg, b_seg in zip(parts_a, parts_b, strict=False):
         if a_seg == b_seg:
             common.append(a_seg)
         else:
@@ -605,10 +605,7 @@ def _ram_info_darwin() -> tuple[float | None, float | None]:
                     break
             free_pages = 0
             for line in lines:
-                if "Pages free:" in line:
-                    val = line.split(":")[1].strip().rstrip(".")
-                    free_pages += int(val)
-                elif "Pages inactive:" in line:
+                if "Pages free:" in line or "Pages inactive:" in line:
                     val = line.split(":")[1].strip().rstrip(".")
                     free_pages += int(val)
             available_gb = round(free_pages * page_size / (1024**3), 1)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 KERNEL_NAME = "exo-kernel"
 KERNEL_VERSION = "0.1.0"
 

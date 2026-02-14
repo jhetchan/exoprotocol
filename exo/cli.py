@@ -3,13 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
-from exo.kernel.utils import default_topic_id
 from exo.kernel.tickets import (
     allocate_intent_id,
     allocate_ticket_id,
@@ -18,37 +16,42 @@ from exo.kernel.tickets import (
     save_ticket,
     validate_intent_hierarchy,
 )
+from exo.kernel.utils import default_topic_id
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
-from exo.stdlib.adapters import generate_adapters, ADAPTER_TARGETS
+from exo.stdlib.adapters import ADAPTER_TARGETS, generate_adapters
+from exo.stdlib.drift import drift as run_drift
+from exo.stdlib.drift import drift_to_dict, format_drift_human
 from exo.stdlib.engine import KernelEngine
 from exo.stdlib.features import (
-    load_features,
     features_to_list,
-    generate_scope_deny,
-    trace,
-    trace_to_dict,
+    format_prune_human,
     format_trace_human,
+    generate_scope_deny,
+    load_features,
     prune,
     prune_to_dict,
-    format_prune_human,
+    trace,
+    trace_to_dict,
 )
-from exo.stdlib.requirements import (
-    load_requirements,
-    requirements_to_list,
-    trace_requirements,
-    req_trace_to_dict,
-    format_req_trace_human,
-)
-from exo.stdlib.drift import drift as run_drift, drift_to_dict, format_drift_human
-from exo.stdlib.gc import gc as run_gc, gc_to_dict, format_gc_human
-from exo.stdlib.pr_check import pr_check, pr_check_to_dict, format_pr_check_human
+from exo.stdlib.gc import format_gc_human, gc_to_dict
+from exo.stdlib.gc import gc as run_gc
+from exo.stdlib.pr_check import format_pr_check_human, pr_check, pr_check_to_dict
 from exo.stdlib.reflect import (
-    reflect as do_reflect,
-    load_reflections,
     dismiss_reflection,
+    format_reflections_human,
+    load_reflections,
     reflect_to_dict,
     reflections_to_list,
-    format_reflections_human,
+)
+from exo.stdlib.reflect import (
+    reflect as do_reflect,
+)
+from exo.stdlib.requirements import (
+    format_req_trace_human,
+    load_requirements,
+    req_trace_to_dict,
+    requirements_to_list,
+    trace_requirements,
 )
 from exo.stdlib.timeline import build_intent_timeline, format_timeline_human
 
@@ -1176,7 +1179,8 @@ def main(argv: list[str] | None = None) -> int:
             response = _ok(reflect_to_dict(ref))
         elif cmd == "scan":
             repo_path = Path(args.repo).resolve()
-            from exo.stdlib.scan import scan_repo, scan_to_dict, format_scan_human as fmt_scan
+            from exo.stdlib.scan import format_scan_human as fmt_scan
+            from exo.stdlib.scan import scan_repo, scan_to_dict
 
             report = scan_repo(repo_path)
             data = scan_to_dict(report)
@@ -1184,7 +1188,8 @@ def main(argv: list[str] | None = None) -> int:
             response = _ok(data)
         elif cmd == "doctor":
             repo_path = Path(args.repo).resolve()
-            from exo.stdlib.doctor import doctor as run_doctor, doctor_to_dict, format_doctor_human
+            from exo.stdlib.doctor import doctor as run_doctor
+            from exo.stdlib.doctor import doctor_to_dict, format_doctor_human
 
             report = run_doctor(repo_path, stale_hours=float(args.stale_hours))
             data = doctor_to_dict(report)
@@ -1192,7 +1197,7 @@ def main(argv: list[str] | None = None) -> int:
             response = _ok(data)
         elif cmd == "config-validate":
             repo_path = Path(args.repo).resolve()
-            from exo.stdlib.config_schema import validate_config, validation_to_dict, format_validation_human
+            from exo.stdlib.config_schema import format_validation_human, validate_config, validation_to_dict
 
             result = validate_config(repo_path)
             data = validation_to_dict(result)
@@ -1200,7 +1205,8 @@ def main(argv: list[str] | None = None) -> int:
             response = _ok(data)
         elif cmd == "upgrade":
             repo_path = Path(args.repo).resolve()
-            from exo.stdlib.upgrade import upgrade as run_upgrade, format_upgrade_human
+            from exo.stdlib.upgrade import format_upgrade_human
+            from exo.stdlib.upgrade import upgrade as run_upgrade
 
             data = run_upgrade(repo_path, dry_run=bool(args.dry_run))
             data["_human_summary"] = format_upgrade_human(data)

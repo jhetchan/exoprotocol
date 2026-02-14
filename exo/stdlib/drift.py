@@ -11,7 +11,7 @@ that aggregates results from all governance subsystems.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -19,12 +19,11 @@ from exo.kernel.errors import ExoError
 from exo.kernel.governance import (
     CONSTITUTION_PATH,
     LOCK_PATH,
-    load_governance_lock,
-    verify_governance,
     load_governance,
+    verify_governance,
 )
-from exo.kernel.utils import now_iso, sha256_text
-from exo.stdlib.adapters import TARGET_FILES, GOVERNANCE_LOCK_PATH
+from exo.kernel.utils import now_iso
+from exo.stdlib.adapters import GOVERNANCE_LOCK_PATH, TARGET_FILES
 
 REQUIREMENTS_PATH = Path(".exo/requirements.yaml")
 FEATURES_PATH = Path(".exo/features.yaml")
@@ -162,7 +161,7 @@ def _check_adapters(repo: Path) -> DriftSection:
     missing: list[str] = []
     fresh: list[str] = []
 
-    for target, filename in TARGET_FILES.items():
+    for _target, filename in TARGET_FILES.items():
         adapter_path = repo / filename
         if not adapter_path.exists():
             missing.append(filename)
@@ -269,7 +268,7 @@ def _check_requirements(repo: Path) -> DriftSection:
         )
 
     try:
-        from exo.stdlib.requirements import trace_requirements, req_trace_to_dict
+        from exo.stdlib.requirements import req_trace_to_dict, trace_requirements
 
         report = trace_requirements(repo)
         errors = sum(1 for v in report.violations if v.severity == "error")

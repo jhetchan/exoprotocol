@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError

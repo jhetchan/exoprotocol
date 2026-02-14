@@ -21,16 +21,14 @@ from typing import Any
 
 from exo.kernel import governance as governance_mod
 from exo.stdlib.drift import (
-    DriftReport,
-    DriftSection,
+    _check_adapters,
+    _check_features,
+    _check_governance,
+    _check_requirements,
+    _check_sessions,
     drift,
     drift_to_dict,
     format_drift_human,
-    _check_governance,
-    _check_adapters,
-    _check_features,
-    _check_requirements,
-    _check_sessions,
 )
 
 

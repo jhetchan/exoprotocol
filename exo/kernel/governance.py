@@ -9,7 +9,6 @@ from .types import Governance, VerificationReport
 from .utils import any_pattern_matches, dump_json, load_json, now_iso, parse_yaml_like, sha256_text
 from .version import KERNEL_NAME, KERNEL_VERSION, is_supported_kernel_version
 
-
 CONSTITUTION_PATH = Path(".exo/CONSTITUTION.md")
 LOCK_PATH = Path(".exo/governance.lock.json")
 

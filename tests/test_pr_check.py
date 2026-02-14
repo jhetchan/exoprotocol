@@ -14,21 +14,16 @@ from __future__ import annotations
 
 import json
 import subprocess
-import textwrap
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets as tickets_mod
 from exo.stdlib.pr_check import (
     CommitInfo,
-    CommitVerdict,
     PRCheckReport,
     SessionVerdict,
-    _check_scope_coverage,
     _list_commits,
     _load_session_index,
     _match_commits_to_sessions,
@@ -36,7 +31,6 @@ from exo.stdlib.pr_check import (
     pr_check,
     pr_check_to_dict,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -361,7 +355,7 @@ class TestPRCheckIntegration:
 
         now = datetime.now(timezone.utc)
         session_start = (now - timedelta(minutes=5)).isoformat()
-        sha1 = _make_commit(repo, "governed.py", "x", "governed commit")
+        _make_commit(repo, "governed.py", "x", "governed commit")
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
         # Second commit outside any session (far future)

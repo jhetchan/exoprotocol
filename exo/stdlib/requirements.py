@@ -11,7 +11,7 @@ check at session-finish or in CI.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -192,10 +192,7 @@ def load_requirements(repo: Path) -> list[RequirementDef]:
             )
 
         tags_raw = entry.get("tags", [])
-        if isinstance(tags_raw, list):
-            tags = tuple(str(t).strip() for t in tags_raw if str(t).strip())
-        else:
-            tags = ()
+        tags = tuple(str(t).strip() for t in tags_raw if str(t).strip()) if isinstance(tags_raw, list) else ()
 
         reqs.append(
             RequirementDef(

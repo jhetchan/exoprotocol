@@ -5,7 +5,6 @@ from typing import Any
 
 from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
-from exo.kernel.utils import default_topic_id
 from exo.kernel.tickets import (
     allocate_intent_id,
     allocate_ticket_id,
@@ -14,34 +13,45 @@ from exo.kernel.tickets import (
     save_ticket,
     validate_intent_hierarchy,
 )
+from exo.kernel.utils import default_topic_id
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
 from exo.stdlib.adapters import generate_adapters
+from exo.stdlib.drift import drift as run_drift
+from exo.stdlib.drift import drift_to_dict
 from exo.stdlib.engine import KernelEngine
 from exo.stdlib.features import (
-    load_features,
     features_to_list,
     generate_scope_deny,
-    trace as run_trace,
-    trace_to_dict,
-    prune as run_prune,
+    load_features,
     prune_to_dict,
+    trace_to_dict,
 )
-from exo.stdlib.drift import drift as run_drift, drift_to_dict
-from exo.stdlib.gc import gc as run_gc, gc_to_dict
+from exo.stdlib.features import (
+    prune as run_prune,
+)
+from exo.stdlib.features import (
+    trace as run_trace,
+)
+from exo.stdlib.gc import gc as run_gc
+from exo.stdlib.gc import gc_to_dict
+from exo.stdlib.pr_check import pr_check, pr_check_to_dict
 from exo.stdlib.reflect import (
-    reflect as do_reflect,
-    load_reflections,
     dismiss_reflection,
+    load_reflections,
     reflect_to_dict,
     reflections_to_list,
 )
+from exo.stdlib.reflect import (
+    reflect as do_reflect,
+)
 from exo.stdlib.requirements import (
     load_requirements,
-    requirements_to_list,
-    trace_requirements as run_trace_reqs,
     req_trace_to_dict,
+    requirements_to_list,
 )
-from exo.stdlib.pr_check import pr_check, pr_check_to_dict
+from exo.stdlib.requirements import (
+    trace_requirements as run_trace_reqs,
+)
 from exo.stdlib.timeline import build_intent_timeline
 
 try:
@@ -1420,7 +1430,7 @@ if FastMCP:
                 "blocked": False,
             }
 
-    @server.tool(
+    @mcp.tool(
         name="exo_scan",
         description="Scan repository and detect languages, sensitive files, build dirs, CI systems, and existing governance. Read-only preview of what 'exo init' would customize.",
     )
@@ -1441,13 +1451,14 @@ if FastMCP:
                 "blocked": False,
             }
 
-    @server.tool(
+    @mcp.tool(
         name="exo_doctor",
         description="Run unified governance health check: scaffold, config validation, drift, and scan freshness.",
     )
     def exo_doctor(repo: str = ".", stale_hours: float = 48.0) -> dict[str, Any]:
         try:
-            from exo.stdlib.doctor import doctor as run_doctor, doctor_to_dict
+            from exo.stdlib.doctor import doctor as run_doctor
+            from exo.stdlib.doctor import doctor_to_dict
 
             repo_path = Path(repo).resolve()
             report = run_doctor(repo_path, stale_hours=stale_hours)
@@ -1462,7 +1473,7 @@ if FastMCP:
                 "blocked": False,
             }
 
-    @server.tool(
+    @mcp.tool(
         name="exo_config_validate",
         description="Validate .exo/config.yaml structure, types, and value ranges.",
     )
@@ -1483,7 +1494,7 @@ if FastMCP:
                 "blocked": False,
             }
 
-    @server.tool(
+    @mcp.tool(
         name="exo_upgrade",
         description="Upgrade .exo/ directory to latest schema version. Backfills missing config keys, creates missing dirs, recompiles governance, regenerates adapters.",
     )

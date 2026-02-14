@@ -12,7 +12,6 @@ from typing import Any
 
 from exo.kernel.utils import load_yaml
 
-
 CONFIG_PATH = Path(".exo/config.yaml")
 
 # Current schema version

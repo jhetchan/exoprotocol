@@ -11,7 +11,6 @@ from uuid import uuid4
 from exo.kernel import tickets
 from exo.kernel.errors import ExoError
 
-
 _LEASE_VERSION = "exo-distributed-lease-v1"
 _LEASE_REF_PREFIX = "refs/exoprotocol/locks"
 _GIT_AUTHOR_ENV = {
@@ -667,24 +666,24 @@ class GitDistributedLeaseManager:
             "error_count": len(errors),
             "expired": [
                 {
-                    "ticket_id": l.get("ticket_id", ""),
-                    "owner": l.get("owner", ""),
-                    "ref": l.get("ref", ""),
-                    "expires_at": l.get("expires_at", ""),
+                    "ticket_id": lk.get("ticket_id", ""),
+                    "owner": lk.get("owner", ""),
+                    "ref": lk.get("ref", ""),
+                    "expires_at": lk.get("expires_at", ""),
                 }
-                for l in expired
+                for lk in expired
             ],
             "active": [
                 {
-                    "ticket_id": l.get("ticket_id", ""),
-                    "owner": l.get("owner", ""),
-                    "ref": l.get("ref", ""),
-                    "expires_at": l.get("expires_at", ""),
+                    "ticket_id": lk.get("ticket_id", ""),
+                    "owner": lk.get("owner", ""),
+                    "ref": lk.get("ref", ""),
+                    "expires_at": lk.get("expires_at", ""),
                 }
-                for l in active
+                for lk in active
             ],
-            "cleaned": [{"ticket_id": l.get("ticket_id", ""), "ref": l.get("ref", "")} for l in cleaned],
-            "errors": [{"ticket_id": l.get("ticket_id", ""), "ref": l.get("ref", "")} for l in errors],
+            "cleaned": [{"ticket_id": lk.get("ticket_id", ""), "ref": lk.get("ref", "")} for lk in cleaned],
+            "errors": [{"ticket_id": lk.get("ticket_id", ""), "ref": lk.get("ref", "")} for lk in errors],
             "dry_run": dry_run,
         }
 

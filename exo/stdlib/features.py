@@ -10,9 +10,8 @@ check at session-finish or in CI.
 
 from __future__ import annotations
 
-import fnmatch
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -175,10 +174,7 @@ def load_features(repo: Path) -> list[FeatureDef]:
             )
 
         files_raw = entry.get("files", [])
-        if isinstance(files_raw, list):
-            files = tuple(str(f).strip() for f in files_raw if str(f).strip())
-        else:
-            files = ()
+        files = tuple(str(f).strip() for f in files_raw if str(f).strip()) if isinstance(files_raw, list) else ()
 
         features.append(
             FeatureDef(
@@ -496,7 +492,7 @@ def prune(
     """
     repo = Path(repo).resolve()
     features = load_features(repo)
-    feature_map: dict[str, FeatureDef] = {f.id: f for f in features}
+    {f.id: f for f in features}
 
     prune_statuses = {"deleted"}
     if include_deprecated:

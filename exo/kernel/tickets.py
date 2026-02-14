@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -12,11 +12,10 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     fcntl = None  # type: ignore[assignment]
 
-from .errors import ExoError
 from . import ledger
-from .types import Governance, Session, Ticket, TicketStatus, to_dict, TICKET_KINDS, INTENT_RISKS
+from .errors import ExoError
+from .types import INTENT_RISKS, TICKET_KINDS, Governance, Session, Ticket, TicketStatus, to_dict
 from .utils import default_topic_id, dump_json, dump_yaml, load_json, load_yaml, now_iso
-
 
 TICKETS_DIR = Path(".exo/tickets")
 LOCK_FILE = Path(".exo/locks/ticket.lock.json")
@@ -624,13 +623,11 @@ def validate_ticket(gov: Governance, ticket: Ticket | dict[str, Any]) -> TicketS
 
     # Validate kind and risk enums
     kind_raw = data.get("kind")
-    if isinstance(kind_raw, str) and kind_raw.strip():
-        if kind_raw.strip().lower() not in TICKET_KINDS:
-            reasons.append(f"ticket.kind must be one of {sorted(TICKET_KINDS)}")
+    if isinstance(kind_raw, str) and kind_raw.strip() and kind_raw.strip().lower() not in TICKET_KINDS:
+        reasons.append(f"ticket.kind must be one of {sorted(TICKET_KINDS)}")
     risk_raw = data.get("risk")
-    if isinstance(risk_raw, str) and risk_raw.strip():
-        if risk_raw.strip().lower() not in INTENT_RISKS:
-            reasons.append(f"ticket.risk must be one of {sorted(INTENT_RISKS)}")
+    if isinstance(risk_raw, str) and risk_raw.strip() and risk_raw.strip().lower() not in INTENT_RISKS:
+        reasons.append(f"ticket.risk must be one of {sorted(INTENT_RISKS)}")
 
     intent = data.get("intent")
     if (not isinstance(intent, str) or not intent.strip()) and is_persistent:
@@ -678,9 +675,8 @@ def validate_ticket(gov: Governance, ticket: Ticket | dict[str, Any]) -> TicketS
         except ValueError:
             reasons.append("ticket.created_at must be RFC3339 date-time")
 
-    if not isinstance(expires_at_raw, str):
-        if not is_persistent:
-            reasons.append("ticket.expires_at must be RFC3339 date-time")
+    if not isinstance(expires_at_raw, str) and not is_persistent:
+        reasons.append("ticket.expires_at must be RFC3339 date-time")
     if isinstance(expires_at_raw, str):
         try:
             expires_at = datetime.fromisoformat(expires_at_raw)

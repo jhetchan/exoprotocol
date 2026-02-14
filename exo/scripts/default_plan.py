@@ -4,7 +4,6 @@ import re
 from datetime import datetime
 from typing import Any
 
-
 TASK_RE = re.compile(r"^\*\s+(T\d+):\s+(.+)$", re.MULTILINE)
 EPIC_RE = re.compile(r"^###\s+(EPIC-\d+):\s+(.+)$", re.MULTILINE)
 

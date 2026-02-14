@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-
 DecisionStatus = Literal["ALLOW", "DENY", "REQUIRE_ATTESTATION"]
 TicketValidationStatus = Literal["VALID", "INVALID"]
 TicketKind = Literal["intent", "epic", "task"]

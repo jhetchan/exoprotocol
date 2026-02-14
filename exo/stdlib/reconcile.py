@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -181,11 +181,10 @@ def reconcile_session(
 
     # Use the most specific scope: ticket's own scope, falling back to intent root
     scope = ticket.get("scope") or {}
-    if not scope.get("allow") or scope.get("allow") == ["**"]:
-        if intent_root:
-            root_scope = intent_root.get("scope") or {}
-            if root_scope.get("allow") and root_scope.get("allow") != ["**"]:
-                scope = root_scope
+    if (not scope.get("allow") or scope.get("allow") == ["**"]) and intent_root:
+        root_scope = intent_root.get("scope") or {}
+        if root_scope.get("allow") and root_scope.get("allow") != ["**"]:
+            scope = root_scope
 
     # Boundary: merge ticket boundary with intent root boundary
     ticket_boundary = str(ticket.get("boundary") or "")

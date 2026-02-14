@@ -19,19 +19,15 @@ from typing import Any
 
 from exo.kernel import governance as governance_mod
 from exo.stdlib.requirements import (
-    RequirementDef,
-    ReqCodeRef,
-    ReqTraceReport,
-    ReqTraceViolation,
+    REQ_TAG_PATTERN,
+    VALID_PRIORITIES,
+    VALID_STATUSES,
+    format_req_trace_human,
     load_requirements,
+    req_trace_to_dict,
+    requirements_to_list,
     scan_req_refs,
     trace_requirements,
-    req_trace_to_dict,
-    format_req_trace_human,
-    requirements_to_list,
-    VALID_STATUSES,
-    VALID_PRIORITIES,
-    REQ_TAG_PATTERN,
 )
 
 
@@ -128,7 +124,7 @@ class TestLoadRequirements:
         repo = _bootstrap_repo(tmp_path)
         try:
             load_requirements(repo)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_MANIFEST_MISSING" in str(e)
 
@@ -137,7 +133,7 @@ class TestLoadRequirements:
         _write_requirements_yaml(repo, [{"title": "No ID"}])
         try:
             load_requirements(repo)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_ENTRY_MISSING_ID" in str(e)
 
@@ -146,7 +142,7 @@ class TestLoadRequirements:
         _write_requirements_yaml(repo, [{"id": "REQ-001"}])
         try:
             load_requirements(repo)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_ENTRY_MISSING_TITLE" in str(e)
 
@@ -161,7 +157,7 @@ class TestLoadRequirements:
         )
         try:
             load_requirements(repo)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_DUPLICATE_ID" in str(e)
 
@@ -175,7 +171,7 @@ class TestLoadRequirements:
         )
         try:
             load_requirements(repo)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_INVALID_STATUS" in str(e)
 
@@ -189,7 +185,7 @@ class TestLoadRequirements:
         )
         try:
             load_requirements(repo)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_INVALID_PRIORITY" in str(e)
 
@@ -198,7 +194,7 @@ class TestLoadRequirements:
         _write_requirements_yaml(repo, ["not a dict"])
         try:
             load_requirements(repo)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_ENTRY_INVALID" in str(e)
 
@@ -562,10 +558,10 @@ class TestReqTagPatterns:
 
 class TestValidConstants:
     def test_valid_statuses(self) -> None:
-        assert VALID_STATUSES == frozenset({"active", "deprecated", "deleted"})
+        assert frozenset({"active", "deprecated", "deleted"}) == VALID_STATUSES
 
     def test_valid_priorities(self) -> None:
-        assert VALID_PRIORITIES == frozenset({"high", "medium", "low"})
+        assert frozenset({"high", "medium", "low"}) == VALID_PRIORITIES
 
 
 # ── CLI Integration ──────────────────────────────────────────────────
@@ -802,6 +798,6 @@ class TestEdgeCases:
         )
         try:
             load_requirements(repo)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_MANIFEST_INVALID" in str(e)
