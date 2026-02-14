@@ -19,7 +19,6 @@ from typing import Any
 from exo.kernel.utils import now_iso
 from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION
 
-
 # ── Dataclasses ────────────────────────────────────────────────────
 
 
@@ -58,6 +57,13 @@ class CIDetection:
 
 
 @dataclass
+class AgentMemoryPath:
+    agent: str  # claude_code | cursor | windsurf
+    path: str  # absolute path to memory file/dir
+    exists: bool  # whether the path currently exists on disk
+
+
+@dataclass
 class ScanReport:
     languages: list[LanguageDetection] = field(default_factory=list)
     sensitive_files: list[SensitiveFile] = field(default_factory=list)
@@ -65,13 +71,14 @@ class ScanReport:
     existing_governance: list[ExistingGovernance] = field(default_factory=list)
     ci_systems: list[CIDetection] = field(default_factory=list)
     source_dirs: list[str] = field(default_factory=list)
+    agent_memory_paths: list[AgentMemoryPath] = field(default_factory=list)
     scanned_at: str = ""
 
     @property
     def primary_language(self) -> str | None:
         if not self.languages:
             return None
-        best = max(self.languages, key=lambda l: l.confidence)
+        best = max(self.languages, key=lambda lang: lang.confidence)
         return best.language
 
     @property
@@ -285,6 +292,51 @@ def _detect_source_dirs(repo: Path, _languages: list[LanguageDetection]) -> list
     return found
 
 
+def _detect_agent_memory_paths(repo: Path) -> list[AgentMemoryPath]:
+    """Detect known agent memory file paths for this repo."""
+    found: list[AgentMemoryPath] = []
+
+    # Claude Code: ~/.claude/projects/-<path-with-dashes>/memory/MEMORY.md
+    claude_base = Path.home() / ".claude" / "projects"
+    if claude_base.is_dir():
+        # Convert repo path to Claude Code's directory naming: /a/b/c → -a-b-c
+        repo_slug = "-" + str(repo).replace("/", "-").lstrip("-")
+        claude_memory = claude_base / repo_slug / "memory" / "MEMORY.md"
+        found.append(
+            AgentMemoryPath(
+                agent="claude_code",
+                path=str(claude_memory),
+                exists=claude_memory.exists(),
+            )
+        )
+
+    # Cursor: ~/.cursor/ global memory (if it exists)
+    cursor_home = Path.home() / ".cursor"
+    if cursor_home.is_dir():
+        cursor_memory = cursor_home / "rules"
+        if cursor_memory.exists():
+            found.append(
+                AgentMemoryPath(
+                    agent="cursor",
+                    path=str(cursor_memory),
+                    exists=True,
+                )
+            )
+
+    # Windsurf: ~/.windsurf/ global memory (if it exists)
+    windsurf_home = Path.home() / ".windsurf"
+    if windsurf_home.is_dir():
+        found.append(
+            AgentMemoryPath(
+                agent="windsurf",
+                path=str(windsurf_home / "memories"),
+                exists=(windsurf_home / "memories").exists(),
+            )
+        )
+
+    return found
+
+
 # ── Main Scanner ───────────────────────────────────────────────────
 
 
@@ -299,6 +351,7 @@ def scan_repo(repo: Path) -> ScanReport:
         existing_governance=_detect_existing_governance(repo),
         ci_systems=_detect_ci(repo),
         source_dirs=_detect_source_dirs(repo, languages),
+        agent_memory_paths=_detect_agent_memory_paths(repo),
         scanned_at=now_iso(),
     )
 
@@ -455,6 +508,11 @@ def generate_config(report: ScanReport) -> dict[str, Any]:
                 existing_ignore.append(glob_pattern)
         config["git_controls"]["ignore_paths"] = existing_ignore
 
+    # Populate private_memory.watch_paths from detected agent memory paths
+    if report.agent_memory_paths:
+        watch_paths = [amp.path for amp in report.agent_memory_paths]
+        config["private_memory"] = {"watch_paths": watch_paths, "enabled": True}
+
     return config
 
 
@@ -465,7 +523,8 @@ def scan_to_dict(report: ScanReport) -> dict[str, Any]:
     """Convert ScanReport to a plain dict for JSON serialization."""
     return {
         "languages": [
-            {"language": l.language, "markers": l.markers, "confidence": l.confidence} for l in report.languages
+            {"language": lang.language, "markers": lang.markers, "confidence": lang.confidence}
+            for lang in report.languages
         ],
         "sensitive_files": [{"pattern": sf.pattern, "matches": sf.matches} for sf in report.sensitive_files],
         "build_dirs": [{"path": bd.path, "language": bd.language} for bd in report.build_dirs],
@@ -481,6 +540,9 @@ def scan_to_dict(report: ScanReport) -> dict[str, Any]:
         ],
         "ci_systems": [{"system": ci.system, "path": ci.path} for ci in report.ci_systems],
         "source_dirs": report.source_dirs,
+        "agent_memory_paths": [
+            {"agent": amp.agent, "path": amp.path, "exists": amp.exists} for amp in report.agent_memory_paths
+        ],
         "primary_language": report.primary_language,
         "has_existing_exo": report.has_existing_exo,
         "scanned_at": report.scanned_at,

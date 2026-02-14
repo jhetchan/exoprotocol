@@ -16,9 +16,11 @@ from exo.kernel.errors import ExoError
 from exo.kernel.utils import default_topic_id, ensure_dir, now_iso, relative_posix
 from exo.stdlib import distributed_leases
 from exo.stdlib.engine import KernelEngine
-from exo.stdlib.features import trace as run_trace, trace_to_dict, format_trace_human, TraceReport, FEATURES_PATH
-from exo.stdlib.pr_check import PRCheckReport, pr_check as run_pr_check, pr_check_to_dict, format_pr_check_human
-from exo.stdlib.reconcile import DriftReport, reconcile_session, drift_report_to_dict, format_drift_section
+from exo.stdlib.features import FEATURES_PATH, TraceReport, format_trace_human, trace_to_dict
+from exo.stdlib.features import trace as run_trace
+from exo.stdlib.pr_check import PRCheckReport, pr_check_to_dict
+from exo.stdlib.pr_check import pr_check as run_pr_check
+from exo.stdlib.reconcile import DriftReport, drift_report_to_dict, format_drift_section, reconcile_session
 
 try:
     import fcntl as _fcntl
@@ -66,6 +68,7 @@ def _exo_banner(
     trace_passed: bool | None = None,
     trace_violations: int | None = None,
     audit_warnings: list[str] | None = None,
+    memory_leak_warnings: list[str] | None = None,
     branch: str = "",
 ) -> str:
     """Generate the ExoProtocol governance banner strip for session lifecycle events."""
@@ -102,6 +105,9 @@ def _exo_banner(
             lines.append(_pad(f"trace: {trace_label}{trace_detail}"))
         if audit_warnings:
             for w in audit_warnings:
+                lines.append(_pad(f"! {w[: width - 6]}"))
+        if memory_leak_warnings:
+            for w in memory_leak_warnings:
                 lines.append(_pad(f"! {w[: width - 6]}"))
     elif event == "resume":
         lines.append(_pad(">>> EXO SESSION RESUMED"))
@@ -437,7 +443,7 @@ class AgentSessionManager:
         machine_context_lines: list[str] = []
         machine_snap: dict[str, Any] = {}
         try:
-            from exo.stdlib.conflicts import machine_snapshot, format_machine_context
+            from exo.stdlib.conflicts import format_machine_context, machine_snapshot
 
             machine_snap = machine_snapshot()
             resource_profile = str(ticket.get("resource_profile") or "default").strip()
@@ -470,14 +476,14 @@ class AgentSessionManager:
         advisory_lines: list[str] = []
         try:
             from exo.stdlib.conflicts import (
-                detect_scope_conflicts,
-                detect_unmerged_work,
-                detect_ticket_issues,
-                detect_stale_branch,
+                advisories_to_dicts,
                 detect_base_divergence,
                 detect_machine_load,
+                detect_scope_conflicts,
+                detect_stale_branch,
+                detect_ticket_issues,
+                detect_unmerged_work,
                 format_advisories,
-                advisories_to_dicts,
             )
 
             _advisories: list[Any] = []
@@ -649,9 +655,9 @@ class AgentSessionManager:
         if mode != "audit":
             try:
                 from exo.stdlib.reflect import (
-                    reflections_for_bootstrap,
-                    increment_hit_count,
                     format_bootstrap_reflections,
+                    increment_hit_count,
+                    reflections_for_bootstrap,
                 )
 
                 relevant_reflections = reflections_for_bootstrap(self.root, chosen_ticket)
@@ -876,6 +882,30 @@ class AgentSessionManager:
             # Coherence check is advisory — don't block session-finish on failure
             pass
 
+        # --- Private memory leak detection ---
+        memory_leak_warnings: list[dict[str, Any]] = []
+        memory_leak_section: str = ""
+        if str(session.get("mode", "work")).strip() != "audit":
+            try:
+                from exo.stdlib.memory_leak import (
+                    detect_memory_leaks,
+                    format_memory_leak_warnings,
+                )
+                from exo.stdlib.memory_leak import (
+                    warnings_to_dicts as ml_warnings_to_dicts,
+                )
+
+                ml_warnings = detect_memory_leaks(
+                    self.root,
+                    session_id=str(session.get("session_id", "")),
+                    started_at=str(session.get("started_at", "")),
+                )
+                if ml_warnings:
+                    memory_leak_section = format_memory_leak_warnings(ml_warnings)
+                    memory_leak_warnings = ml_warnings_to_dicts(ml_warnings)
+            except Exception:
+                pass  # Advisory — never blocks session-finish
+
         ticket_status = None
         if set_status != "keep":
             ticket_data = tickets.load_ticket(self.root, target_ticket)
@@ -941,6 +971,9 @@ class AgentSessionManager:
         if coherence_section:
             memento_sections.append("")
             memento_sections.append(coherence_section)
+        if memory_leak_section:
+            memento_sections.append("")
+            memento_sections.append(memory_leak_section)
         memento_sections.extend(
             [
                 "",
@@ -1068,6 +1101,7 @@ class AgentSessionManager:
             trace_passed=trace_report.passed if trace_report else None,
             trace_violations=len(trace_report.violations) if trace_report else None,
             audit_warnings=audit_warnings or None,
+            memory_leak_warnings=[w["message"] for w in memory_leak_warnings] if memory_leak_warnings else None,
             branch=finish_branch,
         )
 
@@ -1091,6 +1125,8 @@ class AgentSessionManager:
         }
         if audit_warnings:
             result["audit_warnings"] = audit_warnings
+        if memory_leak_warnings:
+            result["memory_leak_warnings"] = memory_leak_warnings
         if errors_list:
             result["errors"] = errors_list
             result["error_count"] = sum(e["count"] for e in errors_list)
@@ -1377,7 +1413,7 @@ class AgentSessionManager:
             f"model: {session_payload['model']}",
             f"context_window_tokens: {session_payload.get('context_window_tokens') or 'unknown'}",
             f"ticket_id: {target_ticket}",
-            f"ticket_status: active (resumed from paused)",
+            "ticket_status: active (resumed from paused)",
             f"topic_id: {session_payload['topic_id']}",
             f"git_branch: {git_branch}",
             f"lock_owner: {lock_owner}",
@@ -1398,9 +1434,9 @@ class AgentSessionManager:
         # --- Reflection injection (operational learnings) on resume ---
         try:
             from exo.stdlib.reflect import (
-                reflections_for_bootstrap,
-                increment_hit_count,
                 format_bootstrap_reflections,
+                increment_hit_count,
+                reflections_for_bootstrap,
             )
 
             relevant_reflections = reflections_for_bootstrap(self.root, target_ticket)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 DEFAULT_CONSTITUTION = """# Project Constitution
 
 This constitution is literate: human guidance plus machine-parsed `exo-policy` blocks.
@@ -141,6 +140,10 @@ DEFAULT_CONFIG = {
     "privacy": {
         "commit_logs": False,
         "redact_local_paths": True,
+    },
+    "private_memory": {
+        "watch_paths": [],
+        "enabled": True,
     },
     "coherence": {
         "enabled": True,
