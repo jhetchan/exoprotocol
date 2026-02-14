@@ -1,4 +1,5 @@
-# (\/)(°,,°)(\/) [ExoProtocol](https://exoprotocol.dev)
+# (\/)(°,,°)(\/) 
+[ExoProtocol](https://exoprotocol.dev)
 
 [![PyPI](https://img.shields.io/pypi/v/exoprotocol)](https://pypi.org/project/exoprotocol/)
 
