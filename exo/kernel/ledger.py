@@ -607,7 +607,9 @@ def intent_causal_order(root: Path | str, topic_id: str) -> list[str]:
         if not _is_non_empty_str(intent_id):
             continue
         raw_parents = item.get("parents")
-        parents = [str(entry) for entry in raw_parents if _is_non_empty_str(entry)] if isinstance(raw_parents, list) else []
+        parents = (
+            [str(entry) for entry in raw_parents if _is_non_empty_str(entry)] if isinstance(raw_parents, list) else []
+        )
 
         intents[str(intent_id)] = {
             "parents": parents,
@@ -834,9 +836,7 @@ def execution_begun(
             return _make_ref(repo, line_no, item)
         raise ExoError(
             code="IDEMPOTENCY_KEY_COLLISION",
-            message=(
-                "Idempotency key already used for this decision with different execution parameters"
-            ),
+            message=("Idempotency key already used for this decision with different execution parameters"),
             details={
                 "decision_id": decision_id,
                 "idempotency_key": idempotency_key,
@@ -867,8 +867,7 @@ def execution_result(
     repo = Path(root).resolve()
     records = _iter_records_with_meta(repo)
     has_begin = any(
-        item.get("record_type") == "ExecutionBegun" and str(item.get("effect_id")) == effect_id
-        for _, item in records
+        item.get("record_type") == "ExecutionBegun" and str(item.get("effect_id")) == effect_id for _, item in records
     )
     if not has_begin:
         raise ExoError(

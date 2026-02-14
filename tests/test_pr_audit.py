@@ -34,6 +34,7 @@ from exo.orchestrator.session import AgentSessionManager
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _policy_block(rule: dict[str, Any]) -> str:
     return f"\n```yaml exo-policy\n{json.dumps(rule)}\n```\n"
 
@@ -44,15 +45,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
 
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block({
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
             "id": "RULE-SEC-001",
             "type": "filesystem_deny",
             "patterns": ["**/.env*"],
             "actions": ["read", "write"],
             "message": "Secret deny",
-        })
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
 
@@ -68,7 +68,9 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True, text=True)
     subprocess.run(
         ["git", "commit", "-m", "initial commit", "--allow-empty"],
-        cwd=str(repo), capture_output=True, text=True,
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
     )
     subprocess.run(["git", "branch", "-M", "main"], cwd=str(repo), capture_output=True, text=True)
 
@@ -149,7 +151,9 @@ def _seed_intent(repo: Path, intent_id: str = "INTENT-001", **overrides: Any) ->
     return ticket
 
 
-def _seed_task(repo: Path, task_id: str = "TICKET-001", parent_id: str = "INTENT-001", **overrides: Any) -> dict[str, Any]:
+def _seed_task(
+    repo: Path, task_id: str = "TICKET-001", parent_id: str = "INTENT-001", **overrides: Any
+) -> dict[str, Any]:
     ticket = {
         "id": task_id,
         "kind": "task",
@@ -190,14 +194,17 @@ def _setup_pr_audit_repo(tmp_path: Path) -> tuple[Path, str]:
 
     # Write a session index entry that covers this commit's timestamp window
     now = datetime.now(timezone.utc)
-    _write_session_index(repo, [
-        _make_session_entry(
-            session_id="sess-001",
-            ticket_id="TICKET-001",
-            started_at=(now - timedelta(hours=1)).isoformat(),
-            finished_at=(now + timedelta(hours=1)).isoformat(),
-        ),
-    ])
+    _write_session_index(
+        repo,
+        [
+            _make_session_entry(
+                session_id="sess-001",
+                ticket_id="TICKET-001",
+                started_at=(now - timedelta(hours=1)).isoformat(),
+                finished_at=(now + timedelta(hours=1)).isoformat(),
+            ),
+        ],
+    )
 
     return repo, base_sha
 
@@ -205,6 +212,7 @@ def _setup_pr_audit_repo(tmp_path: Path) -> tuple[Path, str]:
 # ---------------------------------------------------------------------------
 # Tests: PR-Aware Audit Session
 # ---------------------------------------------------------------------------
+
 
 class TestPRAuditBootstrap:
     """Test that PR context is injected into audit bootstrap prompt."""
@@ -405,13 +413,16 @@ class TestPRReportContent:
         _make_commit(repo, "src/file.py", "code", "change with drift")
 
         now = datetime.now(timezone.utc)
-        _write_session_index(repo, [
-            _make_session_entry(
-                drift_score=0.85,
-                started_at=(now - timedelta(hours=1)).isoformat(),
-                finished_at=(now + timedelta(hours=1)).isoformat(),
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    drift_score=0.85,
+                    started_at=(now - timedelta(hours=1)).isoformat(),
+                    finished_at=(now + timedelta(hours=1)).isoformat(),
+                ),
+            ],
+        )
 
         mgr = AgentSessionManager(repo, actor="test-actor")
         data = mgr.start(
@@ -531,15 +542,24 @@ class TestPRAuditCLI:
         env = {**os.environ, "EXO_ACTOR": "test-actor"}
         result = subprocess.run(
             [
-                sys.executable, "-m", "exo.cli",
-                "--format", "json",
-                "--repo", str(repo),
+                sys.executable,
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
                 "session-audit",
-                "--ticket-id", "TICKET-001",
-                "--vendor", "openai",
-                "--model", "o1-preview",
-                "--pr-base", base_sha,
-                "--pr-head", "HEAD",
+                "--ticket-id",
+                "TICKET-001",
+                "--vendor",
+                "openai",
+                "--model",
+                "o1-preview",
+                "--pr-base",
+                base_sha,
+                "--pr-head",
+                "HEAD",
             ],
             capture_output=True,
             text=True,
@@ -560,13 +580,20 @@ class TestPRAuditCLI:
         env = {**os.environ, "EXO_ACTOR": "test-actor"}
         result = subprocess.run(
             [
-                sys.executable, "-m", "exo.cli",
-                "--format", "json",
-                "--repo", str(repo),
+                sys.executable,
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
                 "session-audit",
-                "--ticket-id", "TICKET-001",
-                "--vendor", "openai",
-                "--model", "o1-preview",
+                "--ticket-id",
+                "TICKET-001",
+                "--vendor",
+                "openai",
+                "--model",
+                "o1-preview",
             ],
             capture_output=True,
             text=True,
@@ -586,14 +613,22 @@ class TestPRAuditCLI:
         env = {**os.environ, "EXO_ACTOR": "test-actor"}
         result = subprocess.run(
             [
-                sys.executable, "-m", "exo.cli",
-                "--repo", str(repo),
+                sys.executable,
+                "-m",
+                "exo.cli",
+                "--repo",
+                str(repo),
                 "session-audit",
-                "--ticket-id", "TICKET-001",
-                "--vendor", "openai",
-                "--model", "o1-preview",
-                "--pr-base", base_sha,
-                "--pr-head", "HEAD",
+                "--ticket-id",
+                "TICKET-001",
+                "--vendor",
+                "openai",
+                "--model",
+                "o1-preview",
+                "--pr-base",
+                base_sha,
+                "--pr-head",
+                "HEAD",
             ],
             capture_output=True,
             text=True,

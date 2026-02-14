@@ -7,6 +7,7 @@ constitution and config so ``exo init`` adds value from day one.
 
 Storage: scan results are ephemeral (returned, never persisted).
 """
+
 from __future__ import annotations
 
 import copy
@@ -21,11 +22,12 @@ from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION
 
 # ── Dataclasses ────────────────────────────────────────────────────
 
+
 @dataclass
 class LanguageDetection:
     language: str
     markers: list[str]  # which marker files were found
-    confidence: float   # 0.0 – 1.0
+    confidence: float  # 0.0 – 1.0
 
 
 @dataclass
@@ -42,11 +44,11 @@ class BuildDir:
 
 @dataclass
 class ExistingGovernance:
-    kind: str   # claude_md | cursorrules | agents_md | exo_dir
+    kind: str  # claude_md | cursorrules | agents_md | exo_dir
     path: str
-    exo_managed: bool = False   # True if exo governance markers found
-    user_lines: int = 0         # non-blank lines outside markers
-    total_lines: int = 0        # total lines in file
+    exo_managed: bool = False  # True if exo governance markers found
+    user_lines: int = 0  # non-blank lines outside markers
+    total_lines: int = 0  # total lines in file
 
 
 @dataclass
@@ -101,11 +103,24 @@ EXTRA_SENSITIVE_PATTERNS: list[str] = [
     "**/*.keystore",
 ]
 
-_SKIP_DIRS = frozenset({
-    ".git", ".exo", "node_modules", "__pycache__", ".venv",
-    "venv", ".tox", ".mypy_cache", ".pytest_cache", "dist", "build",
-    ".next", ".nuxt", "target",
-})
+_SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".exo",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        "dist",
+        "build",
+        ".next",
+        ".nuxt",
+        "target",
+    }
+)
 
 BUILD_DIRS: dict[str, list[str]] = {
     "common": ["dist", "build", ".cache"],
@@ -136,8 +151,15 @@ LANGUAGE_BUDGETS: dict[str, dict[str, int]] = {
 }
 
 _SOURCE_DIR_CANDIDATES = [
-    "src", "lib", "app", "cmd", "pkg", "internal",
-    "apps", "packages", "modules",
+    "src",
+    "lib",
+    "app",
+    "cmd",
+    "pkg",
+    "internal",
+    "apps",
+    "packages",
+    "modules",
 ]
 
 
@@ -151,11 +173,13 @@ def _detect_languages(repo: Path) -> list[LanguageDetection]:
         found = [m for m in markers if (repo / m).exists()]
         if found:
             confidence = min(1.0, len(found) / max(len(markers), 1))
-            detections.append(LanguageDetection(
-                language=language,
-                markers=found,
-                confidence=confidence,
-            ))
+            detections.append(
+                LanguageDetection(
+                    language=language,
+                    markers=found,
+                    confidence=confidence,
+                )
+            )
     return detections
 
 
@@ -226,13 +250,15 @@ def _detect_existing_governance(repo: Path) -> list[ExistingGovernance]:
                     has_markers = EXO_MARKER_BEGIN in content
                     total = len(content.splitlines())
                     user = _count_user_lines(content) if has_markers else total
-                    found.append(ExistingGovernance(
-                        kind=kind,
-                        path=path_str,
-                        exo_managed=has_markers,
-                        user_lines=user,
-                        total_lines=total,
-                    ))
+                    found.append(
+                        ExistingGovernance(
+                            kind=kind,
+                            path=path_str,
+                            exo_managed=has_markers,
+                            user_lines=user,
+                            total_lines=total,
+                        )
+                    )
                 except OSError:
                     found.append(ExistingGovernance(kind=kind, path=path_str))
     return found
@@ -283,6 +309,7 @@ def scan_repo(repo: Path) -> ScanReport:
 def _base_rules() -> list[dict[str, Any]]:
     """Extract the 8 standard rules from DEFAULT_CONSTITUTION as dicts."""
     import re
+
     blocks: list[dict[str, Any]] = []
     # Match ```yaml exo-policy ... ``` blocks
     pattern = re.compile(
@@ -304,24 +331,28 @@ def _constitution_rules(report: ScanReport) -> list[dict[str, Any]]:
 
     # Add RULE-DEL-001 for detected source dirs (project-specific)
     if report.source_dirs:
-        rules.append({
-            "id": "RULE-DEL-001",
-            "type": "filesystem_deny",
-            "patterns": [f"{d}/**" for d in report.source_dirs],
-            "actions": ["delete"],
-            "message": "Blocked by RULE-DEL-001 (source delete denied by default).",
-        })
+        rules.append(
+            {
+                "id": "RULE-DEL-001",
+                "type": "filesystem_deny",
+                "patterns": [f"{d}/**" for d in report.source_dirs],
+                "actions": ["delete"],
+                "message": "Blocked by RULE-DEL-001 (source delete denied by default).",
+            }
+        )
 
     # Add RULE-SEC-002 for extra sensitive files if any found
     sensitive_patterns = [sf.pattern for sf in report.sensitive_files]
     if sensitive_patterns:
-        rules.append({
-            "id": "RULE-SEC-002",
-            "type": "filesystem_deny",
-            "patterns": sensitive_patterns,
-            "actions": ["read", "write"],
-            "message": "Blocked by RULE-SEC-002 (sensitive files detected by scan).",
-        })
+        rules.append(
+            {
+                "id": "RULE-SEC-002",
+                "type": "filesystem_deny",
+                "patterns": sensitive_patterns,
+                "actions": ["read", "write"],
+                "message": "Blocked by RULE-SEC-002 (sensitive files detected by scan).",
+            }
+        )
 
     return rules
 
@@ -434,17 +465,10 @@ def scan_to_dict(report: ScanReport) -> dict[str, Any]:
     """Convert ScanReport to a plain dict for JSON serialization."""
     return {
         "languages": [
-            {"language": l.language, "markers": l.markers, "confidence": l.confidence}
-            for l in report.languages
+            {"language": l.language, "markers": l.markers, "confidence": l.confidence} for l in report.languages
         ],
-        "sensitive_files": [
-            {"pattern": sf.pattern, "matches": sf.matches}
-            for sf in report.sensitive_files
-        ],
-        "build_dirs": [
-            {"path": bd.path, "language": bd.language}
-            for bd in report.build_dirs
-        ],
+        "sensitive_files": [{"pattern": sf.pattern, "matches": sf.matches} for sf in report.sensitive_files],
+        "build_dirs": [{"path": bd.path, "language": bd.language} for bd in report.build_dirs],
         "existing_governance": [
             {
                 "kind": eg.kind,
@@ -455,10 +479,7 @@ def scan_to_dict(report: ScanReport) -> dict[str, Any]:
             }
             for eg in report.existing_governance
         ],
-        "ci_systems": [
-            {"system": ci.system, "path": ci.path}
-            for ci in report.ci_systems
-        ],
+        "ci_systems": [{"system": ci.system, "path": ci.path} for ci in report.ci_systems],
         "source_dirs": report.source_dirs,
         "primary_language": report.primary_language,
         "has_existing_exo": report.has_existing_exo,

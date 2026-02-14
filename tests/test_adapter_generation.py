@@ -1,4 +1,5 @@
 """Tests for adapter generation (CLAUDE.md / .cursorrules / AGENTS.md from governance state)."""
+
 from __future__ import annotations
 
 import json
@@ -218,10 +219,15 @@ class TestAdapterCLI:
     def test_adapter_generate_via_cli(self, tmp_path: Path) -> None:
         """CLI command generates adapters."""
         repo = _bootstrap_repo(tmp_path)
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "adapter-generate",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "adapter-generate",
+            ]
+        )
         assert rc == 0
         assert (repo / "CLAUDE.md").exists()
         assert (repo / ".cursorrules").exists()
@@ -231,10 +237,17 @@ class TestAdapterCLI:
     def test_adapter_generate_single_target_cli(self, tmp_path: Path) -> None:
         """CLI can target a single adapter."""
         repo = _bootstrap_repo(tmp_path)
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "adapter-generate", "--target", "claude",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "adapter-generate",
+                "--target",
+                "claude",
+            ]
+        )
         assert rc == 0
         assert (repo / "CLAUDE.md").exists()
         assert not (repo / ".cursorrules").exists()
@@ -242,10 +255,16 @@ class TestAdapterCLI:
     def test_adapter_generate_dry_run_cli(self, tmp_path: Path) -> None:
         """CLI dry run does not write files."""
         repo = _bootstrap_repo(tmp_path)
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "adapter-generate", "--dry-run",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "adapter-generate",
+                "--dry-run",
+            ]
+        )
         assert rc == 0
         assert not (repo / "CLAUDE.md").exists()
 
@@ -267,6 +286,7 @@ class TestFormatHelpers:
 # Manifest Conformance: values MUST come from config, not hardcoded
 # ──────────────────────────────────────────────
 
+
 class TestManifestConformance:
     """Verify adapter output loads values from .exo/ manifest.
 
@@ -281,18 +301,12 @@ class TestManifestConformance:
         result = generate_adapters(repo, dry_run=True)
         for target in AGENT_ADAPTER_TARGETS:
             content = result["files"][target]["content"]
-            assert "Source of Truth" in content, (
-                f"{target} adapter missing 'Source of Truth' directive"
-            )
-            assert ".exo/config.yaml" in content, (
-                f"{target} adapter missing config.yaml manifest path"
-            )
+            assert "Source of Truth" in content, f"{target} adapter missing 'Source of Truth' directive"
+            assert ".exo/config.yaml" in content, f"{target} adapter missing config.yaml manifest path"
             assert ".exo/governance.lock.json" in content, (
                 f"{target} adapter missing governance.lock.json manifest path"
             )
-            assert "hardcode" in content.lower(), (
-                f"{target} adapter missing anti-hardcode directive"
-            )
+            assert "hardcode" in content.lower(), f"{target} adapter missing anti-hardcode directive"
 
     def test_test_driven_workflow_directive_in_all_targets(self, tmp_path: Path) -> None:
         """All agent adapters must contain the test-driven manifest-first workflow section."""
@@ -356,12 +370,8 @@ checks_allowlist:
 
         for target in AGENT_ADAPTER_TARGETS:
             content = result["files"][target]["content"]
-            assert "max files changed: 37" in content, (
-                f"{target} adapter missing config budget max_files=37"
-            )
-            assert "max LOC changed: 891" in content, (
-                f"{target} adapter missing config budget max_loc=891"
-            )
+            assert "max files changed: 37" in content, f"{target} adapter missing config budget max_files=37"
+            assert "max LOC changed: 891" in content, f"{target} adapter missing config budget max_loc=891"
 
     def test_checks_allowlist_comes_from_config(self, tmp_path: Path) -> None:
         """Custom checks in config must appear; default checks must NOT."""
@@ -424,17 +434,14 @@ class TestDefaultFallbacks:
         exo_dir = repo / ".exo"
         exo_dir.mkdir(parents=True, exist_ok=True)
 
-        constitution = (
-            "# Test Constitution\n\n"
-            + _policy_block(
-                {
-                    "id": "RULE-SEC-001",
-                    "type": "filesystem_deny",
-                    "patterns": ["**/.env*"],
-                    "actions": ["read", "write"],
-                    "message": "Secret deny",
-                }
-            )
+        constitution = "# Test Constitution\n\n" + _policy_block(
+            {
+                "id": "RULE-SEC-001",
+                "type": "filesystem_deny",
+                "patterns": ["**/.env*"],
+                "actions": ["read", "write"],
+                "message": "Secret deny",
+            }
         )
         (exo_dir / "CONSTITUTION.md").write_text(constitution)
         governance_mod.compile_constitution(repo)
@@ -453,17 +460,14 @@ class TestDefaultFallbacks:
         exo_dir = repo / ".exo"
         exo_dir.mkdir(parents=True, exist_ok=True)
 
-        constitution = (
-            "# Test Constitution\n\n"
-            + _policy_block(
-                {
-                    "id": "RULE-SEC-001",
-                    "type": "filesystem_deny",
-                    "patterns": ["**/.env*"],
-                    "actions": ["read", "write"],
-                    "message": "Secret deny",
-                }
-            )
+        constitution = "# Test Constitution\n\n" + _policy_block(
+            {
+                "id": "RULE-SEC-001",
+                "type": "filesystem_deny",
+                "patterns": ["**/.env*"],
+                "actions": ["read", "write"],
+                "message": "Secret deny",
+            }
         )
         (exo_dir / "CONSTITUTION.md").write_text(constitution)
         governance_mod.compile_constitution(repo)
@@ -493,6 +497,7 @@ class TestDefaultFallbacks:
 # ──────────────────────────────────────────────
 # Drift Budget Variance: budget values must affect drift score
 # ──────────────────────────────────────────────
+
 
 def _init_git_repo(repo: Path) -> None:
     """Initialize a git repo with an initial commit."""
@@ -583,9 +588,7 @@ class TestDriftBudgetVariance:
             scores.append(report.drift_score)
 
         # Scores should be strictly decreasing as budgets get looser
-        assert scores[0] > scores[1] > scores[2], (
-            f"drift scores should decrease as budget loosens: {scores}"
-        )
+        assert scores[0] > scores[1] > scores[2], f"drift scores should decrease as budget loosens: {scores}"
 
     def test_no_budgets_uses_reconcile_defaults(self, tmp_path: Path) -> None:
         """When ticket has no budgets, reconcile uses documented defaults (12/400)."""
@@ -620,6 +623,7 @@ class TestDriftBudgetVariance:
 # ──────────────────────────────────────────────
 # CI Adapter: GitHub Action workflow generation
 # ──────────────────────────────────────────────
+
 
 class TestCIAdapterGeneration:
     """Verify ci target generates a valid GitHub Action workflow."""
@@ -789,6 +793,7 @@ ci:
 # Marker Helpers: unit tests for merge primitives
 # ──────────────────────────────────────────────
 
+
 class TestMarkerHelpers:
     """Verify low-level marker wrap/extract/count helpers."""
 
@@ -829,6 +834,7 @@ class TestMarkerHelpers:
 # ──────────────────────────────────────────────
 # Brownfield Merge: adapter generation with existing files
 # ──────────────────────────────────────────────
+
 
 class TestBrownfieldMerge:
     """Verify adapter generation preserves user content in existing files."""
@@ -964,6 +970,7 @@ class TestBrownfieldMerge:
 # Drift detection with markers (governance hash in merged files)
 # ──────────────────────────────────────────────
 
+
 class TestDriftWithMarkers:
     """Verify drift detection finds governance hash inside merged files."""
 
@@ -974,6 +981,7 @@ class TestDriftWithMarkers:
         generate_adapters(repo)
 
         from exo.stdlib.drift import _check_adapters
+
         section = _check_adapters(repo)
         # All adapter files should be fresh (including merged CLAUDE.md)
         assert section.status == "pass", f"Expected pass, got {section.status}: {section.summary}"
@@ -986,17 +994,20 @@ class TestDriftWithMarkers:
 
         # Modify constitution to change governance hash
         old_const = (repo / ".exo" / "CONSTITUTION.md").read_text()
-        new_const = old_const + _policy_block({
-            "id": "RULE-EXTRA-999",
-            "type": "filesystem_deny",
-            "patterns": ["*.bak"],
-            "actions": ["write"],
-            "message": "No backups",
-        })
+        new_const = old_const + _policy_block(
+            {
+                "id": "RULE-EXTRA-999",
+                "type": "filesystem_deny",
+                "patterns": ["*.bak"],
+                "actions": ["write"],
+                "message": "No backups",
+            }
+        )
         (repo / ".exo" / "CONSTITUTION.md").write_text(new_const)
         governance_mod.compile_constitution(repo)
 
         from exo.stdlib.drift import _check_adapters
+
         section = _check_adapters(repo)
         assert section.status == "fail"
 
@@ -1009,5 +1020,6 @@ class TestDriftWithMarkers:
         generate_adapters(repo)
 
         from exo.stdlib.drift import _check_adapters
+
         section = _check_adapters(repo)
         assert section.status == "pass", f"Expected pass, got {section.status}: {section.summary}"

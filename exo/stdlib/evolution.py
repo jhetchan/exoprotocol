@@ -289,7 +289,9 @@ def ensure_layout(repo: Path) -> None:
 
     schema_path = repo / PROPOSAL_SCHEMA_PATH
     if not schema_path.exists():
-        schema_path.write_text(json.dumps(proposal_schema_template(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+        schema_path.write_text(
+            json.dumps(proposal_schema_template(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
+        )
 
     templates: list[tuple[Path, str]] = [
         (repo / OBS_TEMPLATE_PATH, OBS_TEMPLATE),
@@ -681,9 +683,7 @@ def gate_summary(proposal: dict[str, Any], trusted_approvers: list[str]) -> dict
 
     human_approvals = [item for item in approvals if item.get("reviewer_type") == "human"]
     trusted_or_human = [
-        item
-        for item in approvals
-        if item.get("reviewer_type") == "human" or str(item.get("reviewer")) in trusted
+        item for item in approvals if item.get("reviewer_type") == "human" or str(item.get("reviewer")) in trusted
     ]
 
     ready = len(trusted_or_human) >= required_approvals

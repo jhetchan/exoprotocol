@@ -214,10 +214,7 @@ def check_action(
             Decision(
                 status="DENY",
                 reasons=[
-                    (
-                        "Layer-4 memory is advisory and read-only during governed execution: "
-                        f"{normalized_action.target}"
-                    )
+                    (f"Layer-4 memory is advisory and read-only during governed execution: {normalized_action.target}")
                 ],
                 required_evidence=[],
                 constraints={"rule": "MEMORY_READ_ONLY_EXECUTION"},

@@ -110,14 +110,16 @@ def build_intent_timeline(repo: Path) -> dict[str, Any]:
         tid = str(t.get("id", "")).strip()
         root = resolve_intent_root(repo, t)
         if root is None:
-            orphans.append({
-                "id": tid,
-                "kind": str(t.get("kind", "task")),
-                "title": str(t.get("title") or t.get("intent") or ""),
-                "status": str(t.get("status", "")),
-                "parent_id": t.get("parent_id"),
-                "sessions": _format_sessions(sessions_by_ticket.get(tid, [])),
-            })
+            orphans.append(
+                {
+                    "id": tid,
+                    "kind": str(t.get("kind", "task")),
+                    "title": str(t.get("title") or t.get("intent") or ""),
+                    "status": str(t.get("status", "")),
+                    "parent_id": t.get("parent_id"),
+                    "sessions": _format_sessions(sessions_by_ticket.get(tid, [])),
+                }
+            )
 
     # Summary stats
     completed_intents = [i for i in intent_trees if i.get("status") == "done"]
@@ -234,17 +236,19 @@ def _format_descendant(
 def _format_sessions(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     formatted: list[dict[str, Any]] = []
     for s in sessions:
-        formatted.append({
-            "session_id": str(s.get("session_id", "")),
-            "actor": str(s.get("actor", "")),
-            "vendor": str(s.get("vendor", "")),
-            "model": str(s.get("model", "")),
-            "started_at": str(s.get("started_at", "")),
-            "finished_at": str(s.get("finished_at", "")),
-            "age": _age_label(s.get("finished_at") or s.get("started_at")),
-            "verify": str(s.get("verify", "")),
-            "drift_score": s.get("drift_score"),
-        })
+        formatted.append(
+            {
+                "session_id": str(s.get("session_id", "")),
+                "actor": str(s.get("actor", "")),
+                "vendor": str(s.get("vendor", "")),
+                "model": str(s.get("model", "")),
+                "started_at": str(s.get("started_at", "")),
+                "finished_at": str(s.get("finished_at", "")),
+                "age": _age_label(s.get("finished_at") or s.get("started_at")),
+                "verify": str(s.get("verify", "")),
+                "drift_score": s.get("drift_score"),
+            }
+        )
     return formatted
 
 
@@ -296,7 +300,7 @@ def format_timeline_human(timeline: dict[str, Any]) -> str:
 
         lines.append(
             f"{intent['id']}  {intent.get('kind', 'intent')}  "
-            f"\"{intent.get('title', '')}\"  "
+            f'"{intent.get("title", "")}"  '
             f"{status}  {drift_label}{stale_label}"
         )
 
@@ -315,7 +319,7 @@ def format_timeline_human(timeline: dict[str, Any]) -> str:
         # Show boundary
         boundary = intent.get("boundary", "")
         if boundary:
-            lines.append(f"  └─ boundary: \"{boundary}\"")
+            lines.append(f'  └─ boundary: "{boundary}"')
 
         lines.append("")
 
@@ -324,7 +328,7 @@ def format_timeline_human(timeline: dict[str, Any]) -> str:
     if orphans:
         lines.append("Orphan tickets (no intent root):")
         for o in orphans:
-            lines.append(f"  {o['id']}  {o.get('kind', 'task')}  \"{o.get('title', '')}\"  {o.get('status', '')}")
+            lines.append(f'  {o["id"]}  {o.get("kind", "task")}  "{o.get("title", "")}"  {o.get("status", "")}')
         lines.append("")
 
     # Summary
@@ -349,7 +353,7 @@ def _format_descendant_human(desc: dict[str, Any], lines: list[str], depth: int)
     indent = "  " * depth
     prefix = "├─" if depth > 0 else ""
     status = desc.get("status", "")
-    lines.append(f"{indent}{prefix} {desc['id']}  {desc.get('kind', 'task')}  \"{desc.get('title', '')}\"  {status}")
+    lines.append(f'{indent}{prefix} {desc["id"]}  {desc.get("kind", "task")}  "{desc.get("title", "")}"  {status}')
 
     for s in desc.get("sessions", []):
         drift_s = f"drift:{s['drift_score']}" if s.get("drift_score") is not None else "drift:—"

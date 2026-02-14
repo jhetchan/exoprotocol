@@ -24,17 +24,19 @@ SESSION_INDEX_PATH = ".exo/memory/sessions/index.jsonl"
 # Dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class StartAdvisory:
-    kind: str          # scope_conflict | unmerged_work | ticket_branch_mismatch | ticket_contention
-    severity: str      # "warning" | "info"
-    message: str       # Human-readable one-liner
+    kind: str  # scope_conflict | unmerged_work | ticket_branch_mismatch | ticket_contention
+    severity: str  # "warning" | "info"
+    message: str  # Human-readable one-liner
     detail: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
 # Scope overlap helpers
 # ---------------------------------------------------------------------------
+
 
 def _share_directory_prefix(pa: str, pb: str) -> bool:
     """True if two glob patterns share a non-trivial directory prefix."""
@@ -80,8 +82,8 @@ def _scopes_overlap(
     nobody has customised scope.  But if one ticket has specific scope, the
     warning fires — that's the point of setting scope.
     """
-    allow_a = (scope_a.get("allow") or ["**"])
-    allow_b = (scope_b.get("allow") or ["**"])
+    allow_a = scope_a.get("allow") or ["**"]
+    allow_b = scope_b.get("allow") or ["**"]
 
     # Both default → skip (too noisy)
     if allow_a == ["**"] and allow_b == ["**"]:
@@ -117,6 +119,7 @@ def _scopes_overlap(
 # 1. Scope conflict detection
 # ---------------------------------------------------------------------------
 
+
 def detect_scope_conflicts(
     repo: Path,
     ticket_id: str,
@@ -141,26 +144,28 @@ def detect_scope_conflicts(
             sib_actor = sib.get("actor", "?")
             sib_branch = sib.get("git_branch", "")
             branch_tag = f" on {sib_branch}" if sib_branch else ""
-            advisories.append(StartAdvisory(
-                kind="scope_conflict",
-                severity="warning",
-                message=(
-                    f"{sib_actor} working on {sib_ticket_id}{branch_tag} — "
-                    f"overlapping scope: {', '.join(patterns)}"
-                ),
-                detail={
-                    "sibling_actor": sib_actor,
-                    "sibling_ticket": sib_ticket_id,
-                    "sibling_branch": sib_branch,
-                    "overlapping_patterns": patterns,
-                },
-            ))
+            advisories.append(
+                StartAdvisory(
+                    kind="scope_conflict",
+                    severity="warning",
+                    message=(
+                        f"{sib_actor} working on {sib_ticket_id}{branch_tag} — overlapping scope: {', '.join(patterns)}"
+                    ),
+                    detail={
+                        "sibling_actor": sib_actor,
+                        "sibling_ticket": sib_ticket_id,
+                        "sibling_branch": sib_branch,
+                        "overlapping_patterns": patterns,
+                    },
+                )
+            )
     return advisories
 
 
 # ---------------------------------------------------------------------------
 # 2. Unmerged work advisory
 # ---------------------------------------------------------------------------
+
 
 def _merged_branches(repo: Path, branch: str) -> set[str]:
     """Return set of branch names that have been merged into *branch*."""
@@ -256,6 +261,7 @@ def detect_unmerged_work(
         if row_ticket_id:
             try:
                 from exo.kernel import tickets
+
                 row_ticket = tickets.load_ticket(repo, row_ticket_id)
                 row_scope = row_ticket.get("scope") or {}
                 overlaps, patterns = _scopes_overlap(ticket_scope, row_scope)
@@ -270,28 +276,30 @@ def detect_unmerged_work(
         seen_branches.add(row_branch)
         row_actor = str(row.get("actor", "?"))
         row_summary = str(row.get("summary", "")).strip()[:80]
-        advisories.append(StartAdvisory(
-            kind="unmerged_work",
-            severity="info",
-            message=(
-                f"Unmerged work on branch {row_branch} "
-                f"(ticket={row_ticket_id or '?'}, actor={row_actor})"
-                + (f" — {row_summary}" if row_summary else "")
-            ),
-            detail={
-                "branch": row_branch,
-                "ticket_id": row_ticket_id,
-                "actor": row_actor,
-                "overlapping_patterns": patterns,
-                "session_id": str(row.get("session_id", "")),
-            },
-        ))
+        advisories.append(
+            StartAdvisory(
+                kind="unmerged_work",
+                severity="info",
+                message=(
+                    f"Unmerged work on branch {row_branch} "
+                    f"(ticket={row_ticket_id or '?'}, actor={row_actor})" + (f" — {row_summary}" if row_summary else "")
+                ),
+                detail={
+                    "branch": row_branch,
+                    "ticket_id": row_ticket_id,
+                    "actor": row_actor,
+                    "overlapping_patterns": patterns,
+                    "session_id": str(row.get("session_id", "")),
+                },
+            )
+        )
     return advisories
 
 
 # ---------------------------------------------------------------------------
 # 3. Ticket gating (branch mismatch + contention)
 # ---------------------------------------------------------------------------
+
 
 def detect_ticket_issues(
     repo: Path,
@@ -318,20 +326,22 @@ def detect_ticket_issues(
                     break
 
         if latest_branch and latest_branch != current_branch:
-            advisories.append(StartAdvisory(
-                kind="ticket_branch_mismatch",
-                severity="warning",
-                message=(
-                    f"{ticket_id} was previously worked on branch "
-                    f"{latest_branch}, but you're on {current_branch}. "
-                    f"Ensure prior work has been merged or rebased."
-                ),
-                detail={
-                    "ticket_id": ticket_id,
-                    "previous_branch": latest_branch,
-                    "current_branch": current_branch,
-                },
-            ))
+            advisories.append(
+                StartAdvisory(
+                    kind="ticket_branch_mismatch",
+                    severity="warning",
+                    message=(
+                        f"{ticket_id} was previously worked on branch "
+                        f"{latest_branch}, but you're on {current_branch}. "
+                        f"Ensure prior work has been merged or rebased."
+                    ),
+                    detail={
+                        "ticket_id": ticket_id,
+                        "previous_branch": latest_branch,
+                        "current_branch": current_branch,
+                    },
+                )
+            )
 
     # --- b) Ticket contention: active sibling on same ticket ---
     for sib in siblings:
@@ -340,27 +350,30 @@ def detect_ticket_issues(
             sib_actor = sib.get("actor", "?")
             sib_branch = sib.get("git_branch", "")
             branch_tag = f" on {sib_branch}" if sib_branch else ""
-            advisories.append(StartAdvisory(
-                kind="ticket_contention",
-                severity="warning",
-                message=(
-                    f"{sib_actor} is also actively working on "
-                    f"{ticket_id}{branch_tag}. "
-                    f"Coordinate to avoid conflicting changes."
-                ),
-                detail={
-                    "sibling_actor": sib_actor,
-                    "sibling_branch": sib_branch,
-                    "ticket_id": ticket_id,
-                    "sibling_session_id": sib.get("session_id", ""),
-                },
-            ))
+            advisories.append(
+                StartAdvisory(
+                    kind="ticket_contention",
+                    severity="warning",
+                    message=(
+                        f"{sib_actor} is also actively working on "
+                        f"{ticket_id}{branch_tag}. "
+                        f"Coordinate to avoid conflicting changes."
+                    ),
+                    detail={
+                        "sibling_actor": sib_actor,
+                        "sibling_branch": sib_branch,
+                        "ticket_id": ticket_id,
+                        "sibling_session_id": sib.get("session_id", ""),
+                    },
+                )
+            )
     return advisories
 
 
 # ---------------------------------------------------------------------------
 # 4. Stale branch detection (branch freshness)
 # ---------------------------------------------------------------------------
+
 
 def _upstream_status(repo: Path, branch: str) -> tuple[int, int]:
     """Return (behind, ahead) commit counts relative to upstream tracking branch.
@@ -402,42 +415,47 @@ def detect_stale_branch(
 
     if ahead > 0:
         # Diverged: local commits AND upstream commits
-        return [StartAdvisory(
-            kind="stale_branch",
-            severity="warning",
-            message=(
-                f"{current_branch} has diverged: {ahead} local commit(s), "
-                f"{behind} upstream commit(s). "
-                f"Rebase with caution — conflicts may occur."
-            ),
-            detail={
-                "branch": current_branch,
-                "behind": behind,
-                "ahead": ahead,
-                "diverged": True,
-            },
-        )]
+        return [
+            StartAdvisory(
+                kind="stale_branch",
+                severity="warning",
+                message=(
+                    f"{current_branch} has diverged: {ahead} local commit(s), "
+                    f"{behind} upstream commit(s). "
+                    f"Rebase with caution — conflicts may occur."
+                ),
+                detail={
+                    "branch": current_branch,
+                    "behind": behind,
+                    "ahead": ahead,
+                    "diverged": True,
+                },
+            )
+        ]
     else:
         # Simply behind
-        return [StartAdvisory(
-            kind="stale_branch",
-            severity="warning",
-            message=(
-                f"{current_branch} is {behind} commit(s) behind upstream. "
-                f"Run `git pull --rebase` before making changes."
-            ),
-            detail={
-                "branch": current_branch,
-                "behind": behind,
-                "ahead": 0,
-                "diverged": False,
-            },
-        )]
+        return [
+            StartAdvisory(
+                kind="stale_branch",
+                severity="warning",
+                message=(
+                    f"{current_branch} is {behind} commit(s) behind upstream. "
+                    f"Run `git pull --rebase` before making changes."
+                ),
+                detail={
+                    "branch": current_branch,
+                    "behind": behind,
+                    "ahead": 0,
+                    "diverged": False,
+                },
+            )
+        ]
 
 
 # ---------------------------------------------------------------------------
 # 5. Base branch divergence
 # ---------------------------------------------------------------------------
+
 
 def _base_divergence(repo: Path, current_branch: str, base_branch: str) -> tuple[int, int]:
     """Return (behind_base, ahead_of_base) commit counts.
@@ -448,8 +466,7 @@ def _base_divergence(repo: Path, current_branch: str, base_branch: str) -> tuple
     """
     try:
         result = subprocess.run(
-            ["git", "rev-list", "--left-right", "--count",
-             f"{current_branch}...{base_branch}"],
+            ["git", "rev-list", "--left-right", "--count", f"{current_branch}...{base_branch}"],
             cwd=str(repo),
             capture_output=True,
             text=True,
@@ -459,7 +476,7 @@ def _base_divergence(repo: Path, current_branch: str, base_branch: str) -> tuple
             return 0, 0
         parts = result.stdout.strip().split()
         if len(parts) == 2:
-            ahead = int(parts[0])   # left side = current_branch
+            ahead = int(parts[0])  # left side = current_branch
             behind = int(parts[1])  # right side = base_branch
             return behind, ahead
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
@@ -490,54 +507,61 @@ def detect_base_divergence(
         return []
 
     if ahead > 0:
-        return [StartAdvisory(
-            kind="base_divergence",
-            severity="warning",
-            message=(
-                f"{current_branch} is {behind} commit(s) behind {base_branch} "
-                f"(with {ahead} local commit(s)). "
-                f"Run `git pull --rebase origin {base_branch}` to reduce merge lag."
-            ),
-            detail={
-                "branch": current_branch,
-                "base_branch": base_branch,
-                "behind": behind,
-                "ahead": ahead,
-            },
-        )]
+        return [
+            StartAdvisory(
+                kind="base_divergence",
+                severity="warning",
+                message=(
+                    f"{current_branch} is {behind} commit(s) behind {base_branch} "
+                    f"(with {ahead} local commit(s)). "
+                    f"Run `git pull --rebase origin {base_branch}` to reduce merge lag."
+                ),
+                detail={
+                    "branch": current_branch,
+                    "base_branch": base_branch,
+                    "behind": behind,
+                    "ahead": ahead,
+                },
+            )
+        ]
     else:
-        return [StartAdvisory(
-            kind="base_divergence",
-            severity="warning",
-            message=(
-                f"{current_branch} is {behind} commit(s) behind {base_branch}. "
-                f"Run `git pull --rebase origin {base_branch}` before making changes."
-            ),
-            detail={
-                "branch": current_branch,
-                "base_branch": base_branch,
-                "behind": behind,
-                "ahead": 0,
-            },
-        )]
+        return [
+            StartAdvisory(
+                kind="base_divergence",
+                severity="warning",
+                message=(
+                    f"{current_branch} is {behind} commit(s) behind {base_branch}. "
+                    f"Run `git pull --rebase origin {base_branch}` before making changes."
+                ),
+                detail={
+                    "branch": current_branch,
+                    "base_branch": base_branch,
+                    "behind": behind,
+                    "ahead": 0,
+                },
+            )
+        ]
 
 
 # ---------------------------------------------------------------------------
 # 6. Git workflow directives
 # ---------------------------------------------------------------------------
 
+
 def format_git_workflow(base_branch: str) -> str:
     """Static git workflow directives for the bootstrap prompt.
 
     Uses the actual base branch from the lock workspace — never hardcoded.
     """
-    return "\n".join([
-        "## Git Workflow",
-        f"- Before pushing, rebase on base branch: `git pull --rebase origin {base_branch}`",
-        "- Pull latest before starting work: `git pull --rebase`",
-        "- Keep commits atomic and branches short-lived",
-        "",
-    ])
+    return "\n".join(
+        [
+            "## Git Workflow",
+            f"- Before pushing, rebase on base branch: `git pull --rebase origin {base_branch}`",
+            "- Pull latest before starting work: `git pull --rebase`",
+            "- Keep commits atomic and branches short-lived",
+            "",
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -554,15 +578,20 @@ def _ram_info_darwin() -> tuple[float | None, float | None]:
     try:
         result = subprocess.run(
             ["sysctl", "-n", "hw.memsize"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
-            total_gb = round(int(result.stdout.strip()) / (1024 ** 3), 1)
+            total_gb = round(int(result.stdout.strip()) / (1024**3), 1)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
         pass
     try:
         result = subprocess.run(
-            ["vm_stat"], capture_output=True, text=True, timeout=5,
+            ["vm_stat"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             lines = result.stdout.splitlines()
@@ -582,7 +611,7 @@ def _ram_info_darwin() -> tuple[float | None, float | None]:
                 elif "Pages inactive:" in line:
                     val = line.split(":")[1].strip().rstrip(".")
                     free_pages += int(val)
-            available_gb = round(free_pages * page_size / (1024 ** 3), 1)
+            available_gb = round(free_pages * page_size / (1024**3), 1)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
         pass
     return total_gb, available_gb
@@ -596,9 +625,9 @@ def _ram_info_linux() -> tuple[float | None, float | None]:
         with open("/proc/meminfo", encoding="utf-8") as fh:
             for line in fh:
                 if line.startswith("MemTotal:"):
-                    total_gb = round(int(line.split()[1]) / (1024 ** 2), 1)
+                    total_gb = round(int(line.split()[1]) / (1024**2), 1)
                 elif line.startswith("MemAvailable:"):
-                    available_gb = round(int(line.split()[1]) / (1024 ** 2), 1)
+                    available_gb = round(int(line.split()[1]) / (1024**2), 1)
     except (OSError, ValueError):
         pass
     return total_gb, available_gb
@@ -683,34 +712,38 @@ def detect_machine_load(
         msg = f"System under load ({', '.join(parts)}). Prefer sequential execution."
         if sibling_count > 0:
             msg += f" {sibling_count} sibling session(s) also running."
-        advisories.append(StartAdvisory(
-            kind="machine_load",
-            severity="warning",
-            message=msg,
-            detail={
-                "cpu_count": cpu,
-                "load_avg_1m": load,
-                "ram_available_gb": avail_gb,
-                "sibling_count": sibling_count,
-                "load_high": load_high,
-                "ram_low": ram_low,
-            },
-        ))
+        advisories.append(
+            StartAdvisory(
+                kind="machine_load",
+                severity="warning",
+                message=msg,
+                detail={
+                    "cpu_count": cpu,
+                    "load_avg_1m": load,
+                    "ram_available_gb": avail_gb,
+                    "sibling_count": sibling_count,
+                    "load_high": load_high,
+                    "ram_low": ram_low,
+                },
+            )
+        )
     elif resource_profile == "heavy":
-        advisories.append(StartAdvisory(
-            kind="machine_load",
-            severity="info",
-            message=(
-                "Ticket resource_profile is 'heavy'. "
-                "Serialize CPU/memory-intensive operations even if system load is normal."
-            ),
-            detail={
-                "resource_profile": resource_profile,
-                "cpu_count": cpu,
-                "load_avg_1m": load,
-                "ram_available_gb": avail_gb,
-            },
-        ))
+        advisories.append(
+            StartAdvisory(
+                kind="machine_load",
+                severity="info",
+                message=(
+                    "Ticket resource_profile is 'heavy'. "
+                    "Serialize CPU/memory-intensive operations even if system load is normal."
+                ),
+                detail={
+                    "resource_profile": resource_profile,
+                    "cpu_count": cpu,
+                    "load_avg_1m": load,
+                    "ram_available_gb": avail_gb,
+                },
+            )
+        )
 
     return advisories
 
@@ -718,6 +751,7 @@ def detect_machine_load(
 # ---------------------------------------------------------------------------
 # Formatting / serialisation
 # ---------------------------------------------------------------------------
+
 
 def format_advisories(advisories: list[StartAdvisory]) -> str:
     """Markdown section for bootstrap injection.  Empty string if no advisories."""

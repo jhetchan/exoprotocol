@@ -37,17 +37,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -72,7 +69,9 @@ def _seed_intent(repo: Path, intent_id: str = "INTENT-001", **overrides: Any) ->
     return ticket
 
 
-def _seed_epic(repo: Path, epic_id: str = "TICKET-001", parent_id: str = "INTENT-001", **overrides: Any) -> dict[str, Any]:
+def _seed_epic(
+    repo: Path, epic_id: str = "TICKET-001", parent_id: str = "INTENT-001", **overrides: Any
+) -> dict[str, Any]:
     ticket = {
         "id": epic_id,
         "kind": "epic",
@@ -86,7 +85,9 @@ def _seed_epic(repo: Path, epic_id: str = "TICKET-001", parent_id: str = "INTENT
     return ticket
 
 
-def _seed_task(repo: Path, task_id: str = "TICKET-002", parent_id: str = "TICKET-001", **overrides: Any) -> dict[str, Any]:
+def _seed_task(
+    repo: Path, task_id: str = "TICKET-002", parent_id: str = "TICKET-001", **overrides: Any
+) -> dict[str, Any]:
     ticket = {
         "id": task_id,
         "kind": "task",
@@ -105,6 +106,7 @@ def _seed_task(repo: Path, task_id: str = "TICKET-002", parent_id: str = "TICKET
 # Phase A: Schema Extension
 # ──────────────────────────────────────────────
 
+
 class TestSchemaExtension:
     def test_normalize_ticket_adds_intent_fields(self, tmp_path: Path) -> None:
         normalized = tickets_mod.normalize_ticket({"id": "TICKET-100", "title": "test"})
@@ -116,15 +118,17 @@ class TestSchemaExtension:
         assert normalized["children"] == []
 
     def test_normalize_ticket_preserves_intent_fields(self, tmp_path: Path) -> None:
-        normalized = tickets_mod.normalize_ticket({
-            "id": "INTENT-001",
-            "kind": "intent",
-            "brain_dump": "raw brain dump",
-            "boundary": "do not touch tests/",
-            "success_condition": "all tests pass",
-            "risk": "high",
-            "children": ["TICKET-001"],
-        })
+        normalized = tickets_mod.normalize_ticket(
+            {
+                "id": "INTENT-001",
+                "kind": "intent",
+                "brain_dump": "raw brain dump",
+                "boundary": "do not touch tests/",
+                "success_condition": "all tests pass",
+                "risk": "high",
+                "children": ["TICKET-001"],
+            }
+        )
         assert normalized["kind"] == "intent"
         assert normalized["brain_dump"] == "raw brain dump"
         assert normalized["boundary"] == "do not touch tests/"
@@ -160,30 +164,49 @@ class TestSchemaExtension:
     def test_validate_ticket_rejects_invalid_kind(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         gov = governance_mod.load_governance(repo)
-        ticket = {"id": "TICKET-100", "intent": "test", "kind": "bad_kind",
-                  "scope": {"allow": ["**"]}, "ttl_hours": 1,
-                  "created_at": tickets_mod.now_iso(),
-                  "expires_at": "2099-01-01T00:00:00+00:00", "nonce": "abc"}
+        ticket = {
+            "id": "TICKET-100",
+            "intent": "test",
+            "kind": "bad_kind",
+            "scope": {"allow": ["**"]},
+            "ttl_hours": 1,
+            "created_at": tickets_mod.now_iso(),
+            "expires_at": "2099-01-01T00:00:00+00:00",
+            "nonce": "abc",
+        }
         status = tickets_mod.validate_ticket(gov, ticket)
         assert any("ticket.kind" in r for r in status.reasons)
 
     def test_validate_ticket_rejects_invalid_risk(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         gov = governance_mod.load_governance(repo)
-        ticket = {"id": "TICKET-100", "intent": "test", "risk": "extreme",
-                  "scope": {"allow": ["**"]}, "ttl_hours": 1,
-                  "created_at": tickets_mod.now_iso(),
-                  "expires_at": "2099-01-01T00:00:00+00:00", "nonce": "abc"}
+        ticket = {
+            "id": "TICKET-100",
+            "intent": "test",
+            "risk": "extreme",
+            "scope": {"allow": ["**"]},
+            "ttl_hours": 1,
+            "created_at": tickets_mod.now_iso(),
+            "expires_at": "2099-01-01T00:00:00+00:00",
+            "nonce": "abc",
+        }
         status = tickets_mod.validate_ticket(gov, ticket)
         assert any("ticket.risk" in r for r in status.reasons)
 
     def test_validate_ticket_accepts_valid_kind_and_risk(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         gov = governance_mod.load_governance(repo)
-        ticket = {"id": "TICKET-100", "intent": "test", "kind": "epic", "risk": "high",
-                  "scope": {"allow": ["**"]}, "ttl_hours": 1,
-                  "created_at": tickets_mod.now_iso(),
-                  "expires_at": "2099-01-01T00:00:00+00:00", "nonce": "abc"}
+        ticket = {
+            "id": "TICKET-100",
+            "intent": "test",
+            "kind": "epic",
+            "risk": "high",
+            "scope": {"allow": ["**"]},
+            "ttl_hours": 1,
+            "created_at": tickets_mod.now_iso(),
+            "expires_at": "2099-01-01T00:00:00+00:00",
+            "nonce": "abc",
+        }
         status = tickets_mod.validate_ticket(gov, ticket)
         assert not any("ticket.kind" in r for r in status.reasons)
         assert not any("ticket.risk" in r for r in status.reasons)
@@ -192,6 +215,7 @@ class TestSchemaExtension:
 # ──────────────────────────────────────────────
 # Phase B: Intent Hierarchy Validation
 # ──────────────────────────────────────────────
+
 
 class TestIntentHierarchy:
     def test_intent_root_is_valid(self, tmp_path: Path) -> None:
@@ -278,6 +302,7 @@ class TestIntentHierarchy:
 # Phase C: Drift Detection / Reconciliation
 # ──────────────────────────────────────────────
 
+
 class TestDriftDetection:
     def test_scope_compliance_all_in_scope(self, tmp_path: Path) -> None:
         repo = tmp_path
@@ -295,9 +320,7 @@ class TestDriftDetection:
         (repo / "docs").mkdir(parents=True)
         (repo / "docs" / "README.md").write_text("docs\n")
         scope = {"allow": ["src/auth/**"], "deny": []}
-        compliance, out_of_scope = _check_scope_compliance(
-            ["src/auth/login.py", "docs/README.md"], scope, repo
-        )
+        compliance, out_of_scope = _check_scope_compliance(["src/auth/login.py", "docs/README.md"], scope, repo)
         assert compliance == 0.5
         assert out_of_scope == ["docs/README.md"]
 
@@ -401,6 +424,7 @@ class TestDriftDetection:
 # Phase D: Intent Timeline
 # ──────────────────────────────────────────────
 
+
 class TestIntentTimeline:
     def test_empty_timeline(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -469,9 +493,7 @@ class TestIntentTimeline:
             "verify": "passed",
             "drift_score": 0.15,
         }
-        (index_dir / "index.jsonl").write_text(
-            json.dumps(row, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        (index_dir / "index.jsonl").write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
 
         timeline = build_intent_timeline(repo)
         assert len(timeline["intents"]) == 1
@@ -491,14 +513,24 @@ from exo.cli import main as cli_main
 class TestIntentCreate:
     def test_intent_create_via_cli(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "intent-create", "Build auth system",
-            "--brain-dump", "I want login and logout",
-            "--boundary", "only touch src/auth/",
-            "--success-condition", "login returns 200",
-            "--risk", "high",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "intent-create",
+                "Build auth system",
+                "--brain-dump",
+                "I want login and logout",
+                "--boundary",
+                "only touch src/auth/",
+                "--success-condition",
+                "login returns 200",
+                "--risk",
+                "high",
+            ]
+        )
         assert rc == 0
         # Verify the intent ticket was created
         ticket = tickets_mod.load_ticket(repo, "INTENT-001")
@@ -512,26 +544,44 @@ class TestIntentCreate:
     def test_intent_create_auto_increments_id(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "intent-create", "Second intent",
-            "--brain-dump", "Another brain dump",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "intent-create",
+                "Second intent",
+                "--brain-dump",
+                "Another brain dump",
+            ]
+        )
         assert rc == 0
         ticket = tickets_mod.load_ticket(repo, "INTENT-002")
         assert ticket["kind"] == "intent"
 
     def test_intent_create_with_scope(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "intent-create", "Scoped intent",
-            "--brain-dump", "Only allow certain files",
-            "--scope-allow", "src/**",
-            "--scope-deny", "src/vendor/**",
-            "--max-files", "5",
-            "--max-loc", "200",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "intent-create",
+                "Scoped intent",
+                "--brain-dump",
+                "Only allow certain files",
+                "--scope-allow",
+                "src/**",
+                "--scope-deny",
+                "src/vendor/**",
+                "--max-files",
+                "5",
+                "--max-loc",
+                "200",
+            ]
+        )
         assert rc == 0
         ticket = tickets_mod.load_ticket(repo, "INTENT-001")
         assert ticket["scope"]["allow"] == ["src/**"]
@@ -544,12 +594,20 @@ class TestTicketCreate:
     def test_ticket_create_task_under_intent(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "ticket-create", "Implement login endpoint",
-            "--kind", "task",
-            "--parent", "INTENT-001",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "ticket-create",
+                "Implement login endpoint",
+                "--kind",
+                "task",
+                "--parent",
+                "INTENT-001",
+            ]
+        )
         assert rc == 0
         ticket = tickets_mod.load_ticket(repo, "TICKET-001")
         assert ticket["kind"] == "task"
@@ -561,12 +619,20 @@ class TestTicketCreate:
     def test_ticket_create_epic_under_intent(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "ticket-create", "Auth epic",
-            "--kind", "epic",
-            "--parent", "INTENT-001",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "ticket-create",
+                "Auth epic",
+                "--kind",
+                "epic",
+                "--parent",
+                "INTENT-001",
+            ]
+        )
         assert rc == 0
         ticket = tickets_mod.load_ticket(repo, "TICKET-001-EPIC")
         assert ticket["kind"] == "epic"
@@ -576,12 +642,20 @@ class TestTicketCreate:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
         _seed_epic(repo, epic_id="TICKET-001-EPIC", parent_id="INTENT-001")
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "ticket-create", "Login handler",
-            "--kind", "task",
-            "--parent", "TICKET-001-EPIC",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "ticket-create",
+                "Login handler",
+                "--kind",
+                "task",
+                "--parent",
+                "TICKET-001-EPIC",
+            ]
+        )
         assert rc == 0
         ticket = tickets_mod.load_ticket(repo, "TICKET-002")
         assert ticket["parent_id"] == "TICKET-001-EPIC"
@@ -590,34 +664,58 @@ class TestTicketCreate:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
         _seed_epic(repo, epic_id="TICKET-001-EPIC", parent_id="INTENT-001")
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "ticket-create", "Nested epic",
-            "--kind", "epic",
-            "--parent", "TICKET-001-EPIC",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "ticket-create",
+                "Nested epic",
+                "--kind",
+                "epic",
+                "--parent",
+                "TICKET-001-EPIC",
+            ]
+        )
         assert rc == 1  # Should fail — epic parent must be intent
 
     def test_ticket_create_rejects_task_under_task(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
         _seed_task(repo, task_id="TICKET-001", parent_id="INTENT-001")
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "ticket-create", "Sub task",
-            "--kind", "task",
-            "--parent", "TICKET-001",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "ticket-create",
+                "Sub task",
+                "--kind",
+                "task",
+                "--parent",
+                "TICKET-001",
+            ]
+        )
         assert rc == 1  # Should fail — task parent must be intent or epic
 
     def test_ticket_create_rejects_missing_parent(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "ticket-create", "Orphan task",
-            "--kind", "task",
-            "--parent", "INTENT-999",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "ticket-create",
+                "Orphan task",
+                "--kind",
+                "task",
+                "--parent",
+                "INTENT-999",
+            ]
+        )
         assert rc == 1  # Parent doesn't exist
 
     def test_full_hierarchy_creation(self, tmp_path: Path) -> None:
@@ -625,29 +723,54 @@ class TestTicketCreate:
         repo = _bootstrap_repo(tmp_path)
 
         # 1. Create intent
-        cli_main([
-            "--repo", str(repo), "--format", "json",
-            "intent-create", "Build payments",
-            "--brain-dump", "Users need to pay for stuff",
-            "--boundary", "only src/payments/",
-            "--success-condition", "Stripe checkout works",
-        ])
+        cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "intent-create",
+                "Build payments",
+                "--brain-dump",
+                "Users need to pay for stuff",
+                "--boundary",
+                "only src/payments/",
+                "--success-condition",
+                "Stripe checkout works",
+            ]
+        )
 
         # 2. Create epic under intent
-        cli_main([
-            "--repo", str(repo), "--format", "json",
-            "ticket-create", "Payment integration epic",
-            "--kind", "epic",
-            "--parent", "INTENT-001",
-        ])
+        cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "ticket-create",
+                "Payment integration epic",
+                "--kind",
+                "epic",
+                "--parent",
+                "INTENT-001",
+            ]
+        )
 
         # 3. Create task under epic
-        cli_main([
-            "--repo", str(repo), "--format", "json",
-            "ticket-create", "Add Stripe webhook handler",
-            "--kind", "task",
-            "--parent", "TICKET-001-EPIC",
-        ])
+        cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "ticket-create",
+                "Add Stripe webhook handler",
+                "--kind",
+                "task",
+                "--parent",
+                "TICKET-001-EPIC",
+            ]
+        )
 
         # Validate hierarchy
         task = tickets_mod.load_ticket(repo, "TICKET-002")
@@ -883,13 +1006,21 @@ class TestAuditSession:
         """Test session-audit CLI command."""
         repo = _setup_session_repo(tmp_path)
         monkeypatch.setenv("EXO_ACTOR", "test-actor")
-        rc = cli_main([
-            "--repo", str(repo), "--format", "json",
-            "session-audit",
-            "--ticket-id", "TICKET-001",
-            "--vendor", "openai",
-            "--model", "o1-preview",
-        ])
+        rc = cli_main(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "session-audit",
+                "--ticket-id",
+                "TICKET-001",
+                "--vendor",
+                "openai",
+                "--model",
+                "o1-preview",
+            ]
+        )
         assert rc == 0
 
     def test_audit_mode_invalid_rejected(self, tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ benefit from accumulated knowledge without the 4-step evolution pipeline.
 
 Storage: ``.exo/memory/reflections/REF-NNN.yaml`` — one file per reflection.
 """
+
 from __future__ import annotations
 
 import re
@@ -190,10 +191,7 @@ def reflections_for_bootstrap(
     Capped at MAX_BOOTSTRAP_REFLECTIONS.
     """
     all_active = load_reflections(repo, status="active")
-    relevant = [
-        r for r in all_active
-        if r.scope == "global" or r.scope == ticket_id
-    ]
+    relevant = [r for r in all_active if r.scope == "global" or r.scope == ticket_id]
     # Sort: severity (critical first), then newest first
     relevant.sort(key=lambda r: (_SEVERITY_ORDER.get(r.severity, 99), r.created_at))
     return relevant[:_MAX_BOOTSTRAP_REFLECTIONS]
@@ -410,6 +408,7 @@ def generate_learnings(repo: Path) -> str:
     # Section 2: Failure modes from memory index
     try:
         from exo.stdlib.evolution import load_memory_index
+
         index = load_memory_index(repo)
         failure_modes = index.get("failure_modes", [])
         if failure_modes:

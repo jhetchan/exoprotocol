@@ -9,6 +9,7 @@ Verifies:
 - format_advisories() and advisories_to_dicts()
 - Integration: advisories injected into session bootstrap prompt
 """
+
 from __future__ import annotations
 
 import json
@@ -52,6 +53,7 @@ from exo.stdlib.conflicts import (
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 def _policy_block(payload: dict) -> str:
     return "```yaml exo-policy\n" + json.dumps(payload, ensure_ascii=True, indent=2) + "\n```\n"
 
@@ -60,15 +62,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block({
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
             "id": "RULE-SEC-001",
             "type": "filesystem_deny",
             "patterns": ["**/.env*"],
             "actions": ["read", "write"],
             "message": "Secret deny",
-        })
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -82,18 +83,21 @@ def _seed_ticket(
     scope_allow: list[str] | None = None,
     scope_deny: list[str] | None = None,
 ) -> None:
-    tickets_mod.save_ticket(repo, {
-        "id": ticket_id,
-        "type": "feature",
-        "title": f"Test ticket {ticket_id}",
-        "status": "active",
-        "priority": 4,
-        "scope": {
-            "allow": scope_allow if scope_allow is not None else ["**"],
-            "deny": scope_deny if scope_deny is not None else [],
+    tickets_mod.save_ticket(
+        repo,
+        {
+            "id": ticket_id,
+            "type": "feature",
+            "title": f"Test ticket {ticket_id}",
+            "status": "active",
+            "priority": 4,
+            "scope": {
+                "allow": scope_allow if scope_allow is not None else ["**"],
+                "deny": scope_deny if scope_deny is not None else [],
+            },
+            "checks": [],
         },
-        "checks": [],
-    })
+    )
 
 
 def _acquire_lock(repo: Path, ticket_id: str = "TICKET-111", owner: str = "agent:test") -> None:
@@ -114,9 +118,7 @@ def _write_sibling(repo: Path, actor: str, ticket_id: str, branch: str = "") -> 
         "started_at": datetime.now(timezone.utc).isoformat(),
         "pid": 99999,
     }
-    (cache_dir / f"{safe_actor}.active.json").write_text(
-        json.dumps(payload), encoding="utf-8"
-    )
+    (cache_dir / f"{safe_actor}.active.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _write_index_row(repo: Path, row: dict) -> None:
@@ -154,63 +156,47 @@ class TestStartAdvisory:
 class TestScopesOverlap:
     def test_both_default_no_overlap(self) -> None:
         """Both tickets with default ["**"] → no warning (too noisy)."""
-        overlaps, patterns = _scopes_overlap(
-            {"allow": ["**"]}, {"allow": ["**"]}
-        )
+        overlaps, patterns = _scopes_overlap({"allow": ["**"]}, {"allow": ["**"]})
         assert not overlaps
         assert patterns == []
 
     def test_one_default_one_specific(self) -> None:
         """One default, one specific → overlap = specific patterns."""
-        overlaps, patterns = _scopes_overlap(
-            {"allow": ["**"]}, {"allow": ["src/**", "tests/**"]}
-        )
+        overlaps, patterns = _scopes_overlap({"allow": ["**"]}, {"allow": ["src/**", "tests/**"]})
         assert overlaps
         assert patterns == ["src/**", "tests/**"]
 
     def test_one_specific_one_default(self) -> None:
         """Reverse of above."""
-        overlaps, patterns = _scopes_overlap(
-            {"allow": ["src/api/**"]}, {"allow": ["**"]}
-        )
+        overlaps, patterns = _scopes_overlap({"allow": ["src/api/**"]}, {"allow": ["**"]})
         assert overlaps
         assert patterns == ["src/api/**"]
 
     def test_both_specific_matching(self) -> None:
         """Both specific with exact matching patterns → overlap."""
-        overlaps, patterns = _scopes_overlap(
-            {"allow": ["src/**"]}, {"allow": ["src/**"]}
-        )
+        overlaps, patterns = _scopes_overlap({"allow": ["src/**"]}, {"allow": ["src/**"]})
         assert overlaps
         assert "src/**" in patterns
 
     def test_both_specific_disjoint(self) -> None:
         """Both specific with completely disjoint patterns → no overlap."""
-        overlaps, patterns = _scopes_overlap(
-            {"allow": ["src/**"]}, {"allow": ["docs/**"]}
-        )
+        overlaps, patterns = _scopes_overlap({"allow": ["src/**"]}, {"allow": ["docs/**"]})
         assert not overlaps
         assert patterns == []
 
     def test_fnmatch_parent_child(self) -> None:
         """src/** vs src/api/** → overlap (parent subsumes child)."""
-        overlaps, patterns = _scopes_overlap(
-            {"allow": ["src/**"]}, {"allow": ["src/api/**"]}
-        )
+        overlaps, patterns = _scopes_overlap({"allow": ["src/**"]}, {"allow": ["src/api/**"]})
         assert overlaps
 
     def test_directory_prefix_sharing(self) -> None:
         """src/api/auth.py vs src/api/routes.py → overlap via shared prefix."""
-        overlaps, patterns = _scopes_overlap(
-            {"allow": ["src/api/auth.py"]}, {"allow": ["src/api/routes.py"]}
-        )
+        overlaps, patterns = _scopes_overlap({"allow": ["src/api/auth.py"]}, {"allow": ["src/api/routes.py"]})
         assert overlaps
 
     def test_empty_allow_no_overlap(self) -> None:
         """Empty allow lists → no overlap."""
-        overlaps, patterns = _scopes_overlap(
-            {"allow": []}, {"allow": []}
-        )
+        overlaps, patterns = _scopes_overlap({"allow": []}, {"allow": []})
         assert not overlaps
 
 
@@ -241,14 +227,19 @@ class TestDetectScopeConflicts:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-111", scope_allow=["src/**"])
         _seed_ticket(repo, "TICKET-222", scope_allow=["src/api/**"])
-        siblings = [{
-            "actor": "agent:other",
-            "ticket_id": "TICKET-222",
-            "git_branch": "feature/api",
-            "session_id": "SES-OTHER",
-        }]
+        siblings = [
+            {
+                "actor": "agent:other",
+                "ticket_id": "TICKET-222",
+                "git_branch": "feature/api",
+                "session_id": "SES-OTHER",
+            }
+        ]
         result = detect_scope_conflicts(
-            repo, "TICKET-111", {"allow": ["src/**"]}, siblings,
+            repo,
+            "TICKET-111",
+            {"allow": ["src/**"]},
+            siblings,
         )
         assert len(result) == 1
         assert result[0].kind == "scope_conflict"
@@ -260,25 +251,35 @@ class TestDetectScopeConflicts:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-111", scope_allow=["src/**"])
         _seed_ticket(repo, "TICKET-222", scope_allow=["docs/**"])
-        siblings = [{
-            "actor": "agent:other",
-            "ticket_id": "TICKET-222",
-            "git_branch": "feature/docs",
-        }]
+        siblings = [
+            {
+                "actor": "agent:other",
+                "ticket_id": "TICKET-222",
+                "git_branch": "feature/docs",
+            }
+        ]
         result = detect_scope_conflicts(
-            repo, "TICKET-111", {"allow": ["src/**"]}, siblings,
+            repo,
+            "TICKET-111",
+            {"allow": ["src/**"]},
+            siblings,
         )
         assert result == []
 
     def test_sibling_missing_ticket(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        siblings = [{
-            "actor": "agent:other",
-            "ticket_id": "TICKET-MISSING",
-            "git_branch": "feature/x",
-        }]
+        siblings = [
+            {
+                "actor": "agent:other",
+                "ticket_id": "TICKET-MISSING",
+                "git_branch": "feature/x",
+            }
+        ]
         result = detect_scope_conflicts(
-            repo, "TICKET-111", {"allow": ["src/**"]}, siblings,
+            repo,
+            "TICKET-111",
+            {"allow": ["src/**"]},
+            siblings,
         )
         assert result == []  # gracefully skipped
 
@@ -292,7 +293,10 @@ class TestDetectScopeConflicts:
             {"actor": "agent:b", "ticket_id": "TICKET-333", "git_branch": "f/b"},
         ]
         result = detect_scope_conflicts(
-            repo, "TICKET-111", {"allow": ["src/**"]}, siblings,
+            repo,
+            "TICKET-111",
+            {"allow": ["src/**"]},
+            siblings,
         )
         assert len(result) == 1  # Only TICKET-222 overlaps
         assert "agent:a" in result[0].message
@@ -304,44 +308,44 @@ class TestDetectScopeConflicts:
 class TestDetectUnmergedWork:
     def test_no_index(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        result = detect_unmerged_work(
-            repo, "main", "TICKET-111", {"allow": ["src/**"]}
-        )
+        result = detect_unmerged_work(repo, "main", "TICKET-111", {"allow": ["src/**"]})
         assert result == []
 
     @patch("exo.stdlib.conflicts._merged_branches", return_value={"main", "feature/merged"})
     def test_merged_branch_no_advisory(self, _mock: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-222", scope_allow=["src/**"])
-        _write_index_row(repo, {
-            "session_id": "SES-OLD",
-            "ticket_id": "TICKET-222",
-            "actor": "agent:other",
-            "git_branch": "feature/merged",
-            "mode": "work",
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-        })
-        result = detect_unmerged_work(
-            repo, "main", "TICKET-111", {"allow": ["src/**"]}
+        _write_index_row(
+            repo,
+            {
+                "session_id": "SES-OLD",
+                "ticket_id": "TICKET-222",
+                "actor": "agent:other",
+                "git_branch": "feature/merged",
+                "mode": "work",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
+        result = detect_unmerged_work(repo, "main", "TICKET-111", {"allow": ["src/**"]})
         assert result == []
 
     @patch("exo.stdlib.conflicts._merged_branches", return_value={"main"})
     def test_unmerged_branch_with_overlap(self, _mock: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-222", scope_allow=["src/**"])
-        _write_index_row(repo, {
-            "session_id": "SES-UNMERGED",
-            "ticket_id": "TICKET-222",
-            "actor": "agent:other",
-            "git_branch": "feature/unmerged",
-            "mode": "work",
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-            "summary": "added API endpoint",
-        })
-        result = detect_unmerged_work(
-            repo, "main", "TICKET-111", {"allow": ["src/**"]}
+        _write_index_row(
+            repo,
+            {
+                "session_id": "SES-UNMERGED",
+                "ticket_id": "TICKET-222",
+                "actor": "agent:other",
+                "git_branch": "feature/unmerged",
+                "mode": "work",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "summary": "added API endpoint",
+            },
         )
+        result = detect_unmerged_work(repo, "main", "TICKET-111", {"allow": ["src/**"]})
         assert len(result) == 1
         assert result[0].kind == "unmerged_work"
         assert result[0].severity == "info"
@@ -351,17 +355,18 @@ class TestDetectUnmergedWork:
     def test_unmerged_branch_no_overlap(self, _mock: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-222", scope_allow=["docs/**"])
-        _write_index_row(repo, {
-            "session_id": "SES-UNMERGED",
-            "ticket_id": "TICKET-222",
-            "actor": "agent:other",
-            "git_branch": "feature/docs",
-            "mode": "work",
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-        })
-        result = detect_unmerged_work(
-            repo, "main", "TICKET-111", {"allow": ["src/**"]}
+        _write_index_row(
+            repo,
+            {
+                "session_id": "SES-UNMERGED",
+                "ticket_id": "TICKET-222",
+                "actor": "agent:other",
+                "git_branch": "feature/docs",
+                "mode": "work",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
+        result = detect_unmerged_work(repo, "main", "TICKET-111", {"allow": ["src/**"]})
         assert result == []
 
     @patch("exo.stdlib.conflicts._merged_branches", return_value={"main"})
@@ -369,24 +374,29 @@ class TestDetectUnmergedWork:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-222", scope_allow=["src/**"])
         old_date = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        _write_index_row(repo, {
-            "session_id": "SES-OLD",
-            "ticket_id": "TICKET-222",
-            "actor": "agent:other",
-            "git_branch": "feature/old",
-            "mode": "work",
-            "finished_at": old_date,
-        })
+        _write_index_row(
+            repo,
+            {
+                "session_id": "SES-OLD",
+                "ticket_id": "TICKET-222",
+                "actor": "agent:other",
+                "git_branch": "feature/old",
+                "mode": "work",
+                "finished_at": old_date,
+            },
+        )
         result = detect_unmerged_work(
-            repo, "main", "TICKET-111", {"allow": ["src/**"]}, max_age_days=14,
+            repo,
+            "main",
+            "TICKET-111",
+            {"allow": ["src/**"]},
+            max_age_days=14,
         )
         assert result == []
 
     def test_empty_branch_skipped(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        result = detect_unmerged_work(
-            repo, "", "TICKET-111", {"allow": ["src/**"]}
-        )
+        result = detect_unmerged_work(repo, "", "TICKET-111", {"allow": ["src/**"]})
         assert result == []
 
 
@@ -401,25 +411,31 @@ class TestDetectTicketIssues:
 
     def test_prior_same_branch(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_index_row(repo, {
-            "session_id": "SES-PRIOR",
-            "ticket_id": "TICKET-111",
-            "actor": "agent:old",
-            "git_branch": "feature/auth",
-            "mode": "work",
-        })
+        _write_index_row(
+            repo,
+            {
+                "session_id": "SES-PRIOR",
+                "ticket_id": "TICKET-111",
+                "actor": "agent:old",
+                "git_branch": "feature/auth",
+                "mode": "work",
+            },
+        )
         result = detect_ticket_issues(repo, "TICKET-111", "feature/auth", [])
         assert result == []
 
     def test_prior_different_branch(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_index_row(repo, {
-            "session_id": "SES-PRIOR",
-            "ticket_id": "TICKET-111",
-            "actor": "agent:old",
-            "git_branch": "feature/auth-v1",
-            "mode": "work",
-        })
+        _write_index_row(
+            repo,
+            {
+                "session_id": "SES-PRIOR",
+                "ticket_id": "TICKET-111",
+                "actor": "agent:old",
+                "git_branch": "feature/auth-v1",
+                "mode": "work",
+            },
+        )
         result = detect_ticket_issues(repo, "TICKET-111", "feature/auth-v2", [])
         assert len(result) >= 1
         mismatch = [a for a in result if a.kind == "ticket_branch_mismatch"]
@@ -429,12 +445,14 @@ class TestDetectTicketIssues:
 
     def test_sibling_same_ticket_contention(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        siblings = [{
-            "actor": "agent:cursor",
-            "ticket_id": "TICKET-111",
-            "git_branch": "feature/auth",
-            "session_id": "SES-SIB",
-        }]
+        siblings = [
+            {
+                "actor": "agent:cursor",
+                "ticket_id": "TICKET-111",
+                "git_branch": "feature/auth",
+                "session_id": "SES-SIB",
+            }
+        ]
         result = detect_ticket_issues(repo, "TICKET-111", "feature/auth", siblings)
         contention = [a for a in result if a.kind == "ticket_contention"]
         assert len(contention) == 1
@@ -443,19 +461,24 @@ class TestDetectTicketIssues:
 
     def test_both_mismatch_and_contention(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_index_row(repo, {
-            "session_id": "SES-PRIOR",
-            "ticket_id": "TICKET-111",
-            "actor": "agent:old",
-            "git_branch": "feature/v1",
-            "mode": "work",
-        })
-        siblings = [{
-            "actor": "agent:cursor",
-            "ticket_id": "TICKET-111",
-            "git_branch": "feature/v2",
-            "session_id": "SES-SIB",
-        }]
+        _write_index_row(
+            repo,
+            {
+                "session_id": "SES-PRIOR",
+                "ticket_id": "TICKET-111",
+                "actor": "agent:old",
+                "git_branch": "feature/v1",
+                "mode": "work",
+            },
+        )
+        siblings = [
+            {
+                "actor": "agent:cursor",
+                "ticket_id": "TICKET-111",
+                "git_branch": "feature/v2",
+                "session_id": "SES-SIB",
+            }
+        ]
         result = detect_ticket_issues(repo, "TICKET-111", "feature/v2", siblings)
         kinds = {a.kind for a in result}
         assert "ticket_branch_mismatch" in kinds
@@ -469,13 +492,16 @@ class TestDetectTicketIssues:
     def test_audit_sessions_ignored(self, tmp_path: Path) -> None:
         """Audit sessions shouldn't trigger branch mismatch."""
         repo = _bootstrap_repo(tmp_path)
-        _write_index_row(repo, {
-            "session_id": "SES-AUDIT",
-            "ticket_id": "TICKET-111",
-            "actor": "agent:auditor",
-            "git_branch": "feature/other",
-            "mode": "audit",
-        })
+        _write_index_row(
+            repo,
+            {
+                "session_id": "SES-AUDIT",
+                "ticket_id": "TICKET-111",
+                "actor": "agent:auditor",
+                "git_branch": "feature/other",
+                "mode": "audit",
+            },
+        )
         result = detect_ticket_issues(repo, "TICKET-111", "feature/main", [])
         mismatch = [a for a in result if a.kind == "ticket_branch_mismatch"]
         assert mismatch == []
@@ -541,16 +567,23 @@ class TestSessionStartAdvisories:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         bootstrap = result["bootstrap_prompt"]
         assert "Start Advisories" in bootstrap
-        assert ("scope_conflict" in str(result.get("start_advisories") or "")
-                or "agent:other" in bootstrap)
+        assert "scope_conflict" in str(result.get("start_advisories") or "") or "agent:other" in bootstrap
 
-    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
-        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
-    })
+    @patch(
+        "exo.stdlib.conflicts.machine_snapshot",
+        return_value={
+            "cpu_count": 8,
+            "load_avg_1m": 1.0,
+            "ram_total_gb": 16.0,
+            "ram_available_gb": 12.0,
+        },
+    )
     @patch("exo.orchestrator.session._current_git_branch", return_value="main")
     def test_no_conflicts_no_section(self, _mock_branch: object, _mock_snap: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -560,7 +593,9 @@ class TestSessionStartAdvisories:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         bootstrap = result["bootstrap_prompt"]
         assert "Start Advisories" not in bootstrap
@@ -576,7 +611,9 @@ class TestSessionStartAdvisories:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         advisories = result.get("start_advisories")
         assert advisories is not None
@@ -594,7 +631,9 @@ class TestSessionStartAdvisories:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         session = result["session"]
         advisories = session.get("start_advisories")
@@ -608,10 +647,14 @@ class TestSessionStartAdvisories:
 class TestMergedBranches:
     @patch("exo.stdlib.conflicts.subprocess.run")
     def test_parses_git_output(self, mock_run: object, tmp_path: Path) -> None:
-        mock_run.return_value = type("R", (), {
-            "returncode": 0,
-            "stdout": "  main\n* feature/current\n  feature/old\n",
-        })()
+        mock_run.return_value = type(
+            "R",
+            (),
+            {
+                "returncode": 0,
+                "stdout": "  main\n* feature/current\n  feature/old\n",
+            },
+        )()
         result = _merged_branches(tmp_path, "main")
         assert "main" in result
         assert "feature/current" in result
@@ -858,25 +901,31 @@ class TestResourceProfiles:
 
     def test_ticket_resource_profile_heavy(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        tickets_mod.save_ticket(repo, {
-            "id": "TICKET-222",
-            "type": "feature",
-            "title": "Heavy task",
-            "status": "active",
-            "resource_profile": "heavy",
-        })
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "TICKET-222",
+                "type": "feature",
+                "title": "Heavy task",
+                "status": "active",
+                "resource_profile": "heavy",
+            },
+        )
         ticket = tickets_mod.load_ticket(repo, "TICKET-222")
         assert ticket["resource_profile"] == "heavy"
 
     def test_ticket_resource_profile_invalid_defaults(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        tickets_mod.save_ticket(repo, {
-            "id": "TICKET-333",
-            "type": "feature",
-            "title": "Bad profile",
-            "status": "active",
-            "resource_profile": "ultra",
-        })
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "TICKET-333",
+                "type": "feature",
+                "title": "Bad profile",
+                "status": "active",
+                "resource_profile": "ultra",
+            },
+        )
         ticket = tickets_mod.load_ticket(repo, "TICKET-333")
         assert ticket["resource_profile"] == "default"
 
@@ -893,7 +942,9 @@ class TestMachineContextIntegration:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         bootstrap = result["bootstrap_prompt"]
         assert "## Machine Context" in bootstrap
@@ -907,7 +958,9 @@ class TestMachineContextIntegration:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         session = result["session"]
         snap = session.get("machine_snapshot")
@@ -917,18 +970,23 @@ class TestMachineContextIntegration:
     @patch("exo.orchestrator.session._current_git_branch", return_value="main")
     def test_heavy_ticket_directive_in_bootstrap(self, _mock_branch: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        tickets_mod.save_ticket(repo, {
-            "id": "TICKET-HEAVY",
-            "type": "feature",
-            "title": "Heavy pipeline",
-            "status": "active",
-            "resource_profile": "heavy",
-        })
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "TICKET-HEAVY",
+                "type": "feature",
+                "title": "Heavy pipeline",
+                "status": "active",
+                "resource_profile": "heavy",
+            },
+        )
         _acquire_lock(repo, "TICKET-HEAVY")
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-HEAVY", vendor="anthropic", model="claude",
+            ticket_id="TICKET-HEAVY",
+            vendor="anthropic",
+            model="claude",
         )
         bootstrap = result["bootstrap_prompt"]
         assert "DIRECTIVE" in bootstrap
@@ -1035,9 +1093,15 @@ class TestFormatGitWorkflow:
 
 
 class TestGitWorkflowIntegration:
-    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
-        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
-    })
+    @patch(
+        "exo.stdlib.conflicts.machine_snapshot",
+        return_value={
+            "cpu_count": 8,
+            "load_avg_1m": 1.0,
+            "ram_total_gb": 16.0,
+            "ram_available_gb": 12.0,
+        },
+    )
     @patch("exo.orchestrator.session._current_git_branch", return_value="feature/api")
     def test_git_workflow_in_bootstrap(self, _mock_branch: object, _mock_snap: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -1046,34 +1110,54 @@ class TestGitWorkflowIntegration:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         bootstrap = result["bootstrap_prompt"]
         assert "## Git Workflow" in bootstrap
         assert "git pull --rebase origin main" in bootstrap
 
-    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
-        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
-    })
+    @patch(
+        "exo.stdlib.conflicts.machine_snapshot",
+        return_value={
+            "cpu_count": 8,
+            "load_avg_1m": 1.0,
+            "ram_total_gb": 16.0,
+            "ram_available_gb": 12.0,
+        },
+    )
     @patch("exo.orchestrator.session._current_git_branch", return_value="feature/api")
     def test_git_workflow_uses_lock_base(self, _mock_branch: object, _mock_snap: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-111")
         tickets_mod.acquire_lock(
-            repo, "TICKET-111", owner="agent:test", role="developer",
-            duration_hours=1, base="sandbox",
+            repo,
+            "TICKET-111",
+            owner="agent:test",
+            role="developer",
+            duration_hours=1,
+            base="sandbox",
         )
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         bootstrap = result["bootstrap_prompt"]
         assert "git pull --rebase origin sandbox" in bootstrap
 
-    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
-        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
-    })
+    @patch(
+        "exo.stdlib.conflicts.machine_snapshot",
+        return_value={
+            "cpu_count": 8,
+            "load_avg_1m": 1.0,
+            "ram_total_gb": 16.0,
+            "ram_available_gb": 12.0,
+        },
+    )
     @patch("exo.orchestrator.session._current_git_branch", return_value="feature/api")
     def test_git_workflow_not_in_audit_mode(self, _mock_branch: object, _mock_snap: object, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -1082,19 +1166,31 @@ class TestGitWorkflowIntegration:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
             mode="audit",
         )
         bootstrap = result["bootstrap_prompt"]
         assert "## Git Workflow" not in bootstrap
 
     @patch("exo.stdlib.conflicts._base_divergence", return_value=(25, 3))
-    @patch("exo.stdlib.conflicts.machine_snapshot", return_value={
-        "cpu_count": 8, "load_avg_1m": 1.0, "ram_total_gb": 16.0, "ram_available_gb": 12.0,
-    })
+    @patch(
+        "exo.stdlib.conflicts.machine_snapshot",
+        return_value={
+            "cpu_count": 8,
+            "load_avg_1m": 1.0,
+            "ram_total_gb": 16.0,
+            "ram_available_gb": 12.0,
+        },
+    )
     @patch("exo.orchestrator.session._current_git_branch", return_value="feature/api")
     def test_base_divergence_advisory_in_bootstrap(
-        self, _mock_branch: object, _mock_snap: object, _mock_div: object, tmp_path: Path,
+        self,
+        _mock_branch: object,
+        _mock_snap: object,
+        _mock_div: object,
+        tmp_path: Path,
     ) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_ticket(repo, "TICKET-111")
@@ -1102,7 +1198,9 @@ class TestGitWorkflowIntegration:
 
         manager = AgentSessionManager(repo, actor="agent:test")
         result = manager.start(
-            ticket_id="TICKET-111", vendor="anthropic", model="claude",
+            ticket_id="TICKET-111",
+            vendor="anthropic",
+            model="claude",
         )
         bootstrap = result["bootstrap_prompt"]
         assert "Start Advisories" in bootstrap

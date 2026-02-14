@@ -7,6 +7,7 @@ manifest to detect orphan references, uncovered requirements, and deleted usage.
 This is deterministic (regex-based, no LLM) and designed to run as a governed
 check at session-finish or in CI.
 """
+
 from __future__ import annotations
 
 import re
@@ -30,22 +31,46 @@ REQ_TAG_PATTERN = re.compile(
 
 # Default file extensions to scan (same as features module)
 DEFAULT_SCAN_GLOBS = [
-    "**/*.py", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx",
-    "**/*.rs", "**/*.go", "**/*.java", "**/*.kt",
-    "**/*.c", "**/*.cpp", "**/*.h", "**/*.hpp",
-    "**/*.rb", "**/*.swift", "**/*.cs",
+    "**/*.py",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.rs",
+    "**/*.go",
+    "**/*.java",
+    "**/*.kt",
+    "**/*.c",
+    "**/*.cpp",
+    "**/*.h",
+    "**/*.hpp",
+    "**/*.rb",
+    "**/*.swift",
+    "**/*.cs",
 ]
 
 # Directories to always skip
-SKIP_DIRS = frozenset({
-    ".git", ".exo", "node_modules", "__pycache__", ".venv",
-    "venv", ".tox", ".mypy_cache", ".pytest_cache", "dist", "build",
-})
+SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".exo",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        "dist",
+        "build",
+    }
+)
 
 
 @dataclass(frozen=True)
 class RequirementDef:
     """A requirement definition from the manifest."""
+
     id: str
     title: str
     status: str = "active"  # active | deprecated | deleted
@@ -57,6 +82,7 @@ class RequirementDef:
 @dataclass(frozen=True)
 class ReqCodeRef:
     """A @req: reference found in source code."""
+
     req_id: str
     file: str  # relative path
     line: int
@@ -65,6 +91,7 @@ class ReqCodeRef:
 @dataclass(frozen=True)
 class ReqTraceViolation:
     """A requirement traceability violation found by the linter."""
+
     kind: str  # orphan_ref | deleted_ref | deprecated_ref | uncovered_req
     req_id: str
     file: str  # relative path or "(manifest)"
@@ -76,6 +103,7 @@ class ReqTraceViolation:
 @dataclass
 class ReqTraceReport:
     """Result of running the requirement traceability linter."""
+
     reqs_total: int
     reqs_active: int
     reqs_deprecated: int
@@ -169,14 +197,16 @@ def load_requirements(repo: Path) -> list[RequirementDef]:
         else:
             tags = ()
 
-        reqs.append(RequirementDef(
-            id=rid,
-            title=title,
-            status=status,
-            description=str(entry.get("description", "")).strip(),
-            priority=priority,
-            tags=tags,
-        ))
+        reqs.append(
+            RequirementDef(
+                id=rid,
+                title=title,
+                status=status,
+                description=str(entry.get("description", "")).strip(),
+                priority=priority,
+                tags=tags,
+            )
+        )
 
     return reqs
 
@@ -217,11 +247,13 @@ def scan_req_refs(repo: Path, *, globs: list[str] | None = None) -> list[ReqCode
                 for rid in raw_ids.split(","):
                     rid = rid.strip()
                     if rid:
-                        refs.append(ReqCodeRef(
-                            req_id=rid,
-                            file=rel,
-                            line=line_num,
-                        ))
+                        refs.append(
+                            ReqCodeRef(
+                                req_id=rid,
+                                file=rel,
+                                line=line_num,
+                            )
+                        )
 
     return refs
 
@@ -260,36 +292,42 @@ def trace_requirements(
         req = req_map.get(ref.req_id)
 
         if req is None:
-            violations.append(ReqTraceViolation(
-                kind="orphan_ref",
-                req_id=ref.req_id,
-                file=ref.file,
-                line=ref.line,
-                message=f"@req: {ref.req_id} is not defined in requirements.yaml",
-                severity="error",
-            ))
+            violations.append(
+                ReqTraceViolation(
+                    kind="orphan_ref",
+                    req_id=ref.req_id,
+                    file=ref.file,
+                    line=ref.line,
+                    message=f"@req: {ref.req_id} is not defined in requirements.yaml",
+                    severity="error",
+                )
+            )
             continue
 
         covered_ids.add(ref.req_id)
 
         if req.status == "deleted":
-            violations.append(ReqTraceViolation(
-                kind="deleted_ref",
-                req_id=ref.req_id,
-                file=ref.file,
-                line=ref.line,
-                message=f"requirement '{ref.req_id}' is deleted — code reference should be removed",
-                severity="error",
-            ))
+            violations.append(
+                ReqTraceViolation(
+                    kind="deleted_ref",
+                    req_id=ref.req_id,
+                    file=ref.file,
+                    line=ref.line,
+                    message=f"requirement '{ref.req_id}' is deleted — code reference should be removed",
+                    severity="error",
+                )
+            )
         elif req.status == "deprecated":
-            violations.append(ReqTraceViolation(
-                kind="deprecated_ref",
-                req_id=ref.req_id,
-                file=ref.file,
-                line=ref.line,
-                message=f"requirement '{ref.req_id}' is deprecated — schedule for removal",
-                severity="warning",
-            ))
+            violations.append(
+                ReqTraceViolation(
+                    kind="deprecated_ref",
+                    req_id=ref.req_id,
+                    file=ref.file,
+                    line=ref.line,
+                    message=f"requirement '{ref.req_id}' is deprecated — schedule for removal",
+                    severity="warning",
+                )
+            )
 
     # Check for uncovered requirements
     uncovered: list[str] = []
@@ -301,14 +339,16 @@ def trace_requirements(
             if req.id not in covered_ids:
                 uncovered.append(req.id)
                 if req.status == "active":
-                    violations.append(ReqTraceViolation(
-                        kind="uncovered_req",
-                        req_id=req.id,
-                        file="(manifest)",
-                        line=None,
-                        message=f"requirement '{req.id}' has no @req: annotations in code",
-                        severity="warning",
-                    ))
+                    violations.append(
+                        ReqTraceViolation(
+                            kind="uncovered_req",
+                            req_id=req.id,
+                            file="(manifest)",
+                            line=None,
+                            message=f"requirement '{req.id}' has no @req: annotations in code",
+                            severity="warning",
+                        )
+                    )
 
     for req in reqs:
         if req.status == "deprecated" and req.id in covered_ids:

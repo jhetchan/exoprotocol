@@ -8,6 +8,7 @@ Verifies:
 - Branch drift detection at session-finish
 - scan_sessions() includes git_branch per entry
 """
+
 from __future__ import annotations
 
 import json
@@ -38,15 +39,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block({
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
             "id": "RULE-SEC-001",
             "type": "filesystem_deny",
             "patterns": ["**/.env*"],
             "actions": ["read", "write"],
             "message": "Secret deny",
-        })
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -55,15 +55,18 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
 
 
 def _seed_ticket(repo: Path, ticket_id: str = "TICKET-111") -> None:
-    tickets_mod.save_ticket(repo, {
-        "id": ticket_id,
-        "type": "feature",
-        "title": "Branch awareness test ticket",
-        "status": "active",
-        "priority": 4,
-        "scope": {"allow": ["README.md", ".exo/**"], "deny": []},
-        "checks": [],
-    })
+    tickets_mod.save_ticket(
+        repo,
+        {
+            "id": ticket_id,
+            "type": "feature",
+            "title": "Branch awareness test ticket",
+            "status": "active",
+            "priority": 4,
+            "scope": {"allow": ["README.md", ".exo/**"], "deny": []},
+            "checks": [],
+        },
+    )
 
 
 def _acquire_lock(repo: Path, ticket_id: str = "TICKET-111", owner: str = "agent:test") -> None:
@@ -212,9 +215,7 @@ class TestSiblingAwareness:
             "git_branch": "feature/other-work",
             "pid": 99999,
         }
-        (cache_dir / "agent-other.active.json").write_text(
-            json.dumps(sibling_payload), encoding="utf-8"
-        )
+        (cache_dir / "agent-other.active.json").write_text(json.dumps(sibling_payload), encoding="utf-8")
 
         _acquire_lock(repo)
         manager = AgentSessionManager(repo, actor="agent:test")
@@ -242,9 +243,7 @@ class TestSiblingAwareness:
             "git_branch": "main",
             "pid": 99999,
         }
-        (cache_dir / "agent-test.active.json").write_text(
-            json.dumps(own_payload), encoding="utf-8"
-        )
+        (cache_dir / "agent-test.active.json").write_text(json.dumps(own_payload), encoding="utf-8")
 
         _acquire_lock(repo)
         manager = AgentSessionManager(repo, actor="agent:test")
@@ -270,10 +269,12 @@ class TestSiblingAwareness:
 
         cache_dir = repo / SESSION_CACHE_DIR
         ensure_dir(cache_dir)
-        for i, (actor, ticket, branch) in enumerate([
-            ("agent:alice", "TICKET-222", "feature/alice"),
-            ("agent:bob", "TICKET-333", "feature/bob"),
-        ]):
+        for i, (actor, ticket, branch) in enumerate(
+            [
+                ("agent:alice", "TICKET-222", "feature/alice"),
+                ("agent:bob", "TICKET-333", "feature/bob"),
+            ]
+        ):
             payload = {
                 "session_id": f"SES-SIB-{i}",
                 "status": "active",
@@ -284,9 +285,7 @@ class TestSiblingAwareness:
                 "pid": 99990 + i,
             }
             token = actor.replace(":", "-").replace(".", "-")
-            (cache_dir / f"{token}.active.json").write_text(
-                json.dumps(payload), encoding="utf-8"
-            )
+            (cache_dir / f"{token}.active.json").write_text(json.dumps(payload), encoding="utf-8")
 
         _acquire_lock(repo)
         manager = AgentSessionManager(repo, actor="agent:test")
@@ -450,9 +449,7 @@ class TestScanSessionsBranch:
             "git_branch": "feature/scan-test",
             "pid": 12345,
         }
-        (cache_dir / "agent-scan.active.json").write_text(
-            json.dumps(payload), encoding="utf-8"
-        )
+        (cache_dir / "agent-scan.active.json").write_text(json.dumps(payload), encoding="utf-8")
 
         scan = scan_sessions(repo)
         active = scan["active_sessions"]
@@ -473,9 +470,7 @@ class TestScanSessionsBranch:
             "pid": 12345,
             # no git_branch key — simulates pre-feature session
         }
-        (cache_dir / "agent-old.active.json").write_text(
-            json.dumps(payload), encoding="utf-8"
-        )
+        (cache_dir / "agent-old.active.json").write_text(json.dumps(payload), encoding="utf-8")
 
         scan = scan_sessions(repo)
         active = scan["active_sessions"]

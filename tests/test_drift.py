@@ -42,17 +42,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -61,6 +58,7 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
 
 def _write_features_yaml(repo: Path, features: list[dict[str, Any]]) -> None:
     import yaml
+
     (repo / ".exo" / "features.yaml").write_text(
         yaml.dump({"features": features}, default_flow_style=False),
         encoding="utf-8",
@@ -69,6 +67,7 @@ def _write_features_yaml(repo: Path, features: list[dict[str, Any]]) -> None:
 
 def _write_requirements_yaml(repo: Path, requirements: list[dict[str, Any]]) -> None:
     import yaml
+
     (repo / ".exo" / "requirements.yaml").write_text(
         yaml.dump({"requirements": requirements}, default_flow_style=False),
         encoding="utf-8",
@@ -95,7 +94,6 @@ def _write_adapter(repo: Path, filename: str, governance_hash: str) -> None:
 
 
 class TestCheckGovernance:
-
     def test_pass_when_hashes_match(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         section = _check_governance(repo)
@@ -107,13 +105,16 @@ class TestCheckGovernance:
         repo = _bootstrap_repo(tmp_path)
         # Modify constitution after compiling lock
         (repo / ".exo" / "CONSTITUTION.md").write_text(
-            "# Modified Constitution\n\n" + _policy_block({
-                "id": "RULE-NEW-001",
-                "type": "filesystem_deny",
-                "patterns": ["*.secret"],
-                "actions": ["read"],
-                "message": "Modified rule",
-            }),
+            "# Modified Constitution\n\n"
+            + _policy_block(
+                {
+                    "id": "RULE-NEW-001",
+                    "type": "filesystem_deny",
+                    "patterns": ["*.secret"],
+                    "actions": ["read"],
+                    "message": "Modified rule",
+                }
+            ),
             encoding="utf-8",
         )
         section = _check_governance(repo)
@@ -140,7 +141,6 @@ class TestCheckGovernance:
 
 
 class TestCheckAdapters:
-
     def test_pass_when_hashes_match(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         lock = governance_mod.load_governance_lock(repo)
@@ -186,7 +186,6 @@ class TestCheckAdapters:
 
 
 class TestCheckFeatures:
-
     def test_skip_when_no_manifest(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         section = _check_features(repo)
@@ -213,7 +212,6 @@ class TestCheckFeatures:
 
 
 class TestCheckRequirements:
-
     def test_skip_when_no_manifest(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         section = _check_requirements(repo)
@@ -240,7 +238,6 @@ class TestCheckRequirements:
 
 
 class TestCheckSessions:
-
     def test_pass_when_no_sessions(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         section = _check_sessions(repo)
@@ -252,7 +249,6 @@ class TestCheckSessions:
 
 
 class TestDrift:
-
     def test_all_pass(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         report = drift(repo)
@@ -264,13 +260,16 @@ class TestDrift:
         repo = _bootstrap_repo(tmp_path)
         # Modify constitution after compiling lock
         (repo / ".exo" / "CONSTITUTION.md").write_text(
-            "# Modified\n\n" + _policy_block({
-                "id": "RULE-NEW-001",
-                "type": "filesystem_deny",
-                "patterns": ["*.secret"],
-                "actions": ["read"],
-                "message": "New rule",
-            }),
+            "# Modified\n\n"
+            + _policy_block(
+                {
+                    "id": "RULE-NEW-001",
+                    "type": "filesystem_deny",
+                    "patterns": ["*.secret"],
+                    "actions": ["read"],
+                    "message": "New rule",
+                }
+            ),
             encoding="utf-8",
         )
         report = drift(repo)
@@ -331,7 +330,6 @@ class TestDrift:
 
 
 class TestDriftReport:
-
     def test_to_dict_structure(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         report = drift(repo)
@@ -378,12 +376,13 @@ class TestDriftReport:
 
 
 class TestCLIDrift:
-
     def test_json_output(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "drift"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -395,7 +394,9 @@ class TestCLIDrift:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "human", "--repo", str(repo), "drift"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         assert "Governance Drift: PASS" in result.stdout
@@ -403,9 +404,23 @@ class TestCLIDrift:
     def test_skip_flags(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "drift",
-             "--skip-adapters", "--skip-features", "--skip-requirements", "--skip-sessions"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "drift",
+                "--skip-adapters",
+                "--skip-features",
+                "--skip-requirements",
+                "--skip-sessions",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -417,7 +432,9 @@ class TestCLIDrift:
         _write_source_file(repo, "src/bad.py", "# @feature: ghost\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "drift"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         # exo drift returns ok=True but with passed=False (report is the data)
         assert result.returncode == 0
@@ -427,9 +444,10 @@ class TestCLIDrift:
     def test_stale_hours_flag(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "drift",
-             "--stale-hours", "24"],
-            capture_output=True, text=True, timeout=30,
+            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "drift", "--stale-hours", "24"],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)

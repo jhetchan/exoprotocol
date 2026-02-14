@@ -14,6 +14,7 @@ Covers:
 - CLI human/JSON output
 - format_scan_human output
 """
+
 from __future__ import annotations
 
 import copy
@@ -53,7 +54,6 @@ from exo.stdlib.scan import (
 
 
 class TestScanDetection:
-
     def test_detect_python(self, tmp_path: Path) -> None:
         (tmp_path / "pyproject.toml").write_text("[build-system]", encoding="utf-8")
         (tmp_path / "requirements.txt").write_text("flask\n", encoding="utf-8")
@@ -120,7 +120,6 @@ class TestScanDetection:
 
 
 class TestScanSensitiveFiles:
-
     def test_detect_pem_files(self, tmp_path: Path) -> None:
         certs = tmp_path / "certs"
         certs.mkdir()
@@ -159,7 +158,6 @@ class TestScanSensitiveFiles:
 
 
 class TestScanBuildDirs:
-
     def test_detect_node_modules(self, tmp_path: Path) -> None:
         (tmp_path / "node_modules").mkdir()
         langs = [LanguageDetection(language="node", markers=["package.json"], confidence=0.5)]
@@ -193,7 +191,6 @@ class TestScanBuildDirs:
 
 
 class TestScanExistingGovernance:
-
     def test_detect_claude_md(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Rules", encoding="utf-8")
         found = _detect_existing_governance(tmp_path)
@@ -219,6 +216,7 @@ class TestScanExistingGovernance:
     def test_detect_exo_managed_file(self, tmp_path: Path) -> None:
         """File with exo governance markers is detected as exo_managed."""
         from exo.stdlib.adapters import EXO_MARKER_BEGIN, EXO_MARKER_END
+
         content = f"# My Rules\n\n{EXO_MARKER_BEGIN}\ngoverned\n{EXO_MARKER_END}\n"
         (tmp_path / "CLAUDE.md").write_text(content, encoding="utf-8")
         found = _detect_existing_governance(tmp_path)
@@ -259,7 +257,6 @@ class TestScanExistingGovernance:
 
 
 class TestScanCI:
-
     def test_detect_github_actions(self, tmp_path: Path) -> None:
         wf = tmp_path / ".github" / "workflows"
         wf.mkdir(parents=True)
@@ -285,7 +282,6 @@ class TestScanCI:
 
 
 class TestScanSourceDirs:
-
     def test_detect_src(self, tmp_path: Path) -> None:
         (tmp_path / "src").mkdir()
         found = _detect_source_dirs(tmp_path, [])
@@ -307,7 +303,6 @@ class TestScanSourceDirs:
 
 
 class TestConstitutionGeneration:
-
     def test_base_rules_preserved(self) -> None:
         """Default constitution has 6 rules — base extraction should find them all."""
         rules = _base_rules()
@@ -366,7 +361,6 @@ class TestConstitutionGeneration:
 
 
 class TestConfigGeneration:
-
     def test_python_checks(self) -> None:
         report = ScanReport(
             languages=[LanguageDetection(language="python", markers=["pyproject.toml"], confidence=0.5)]
@@ -376,17 +370,13 @@ class TestConfigGeneration:
             assert check in config["checks_allowlist"]
 
     def test_node_checks(self) -> None:
-        report = ScanReport(
-            languages=[LanguageDetection(language="node", markers=["package.json"], confidence=0.5)]
-        )
+        report = ScanReport(languages=[LanguageDetection(language="node", markers=["package.json"], confidence=0.5)])
         config = generate_config(report)
         for check in LANGUAGE_CHECKS["node"]:
             assert check in config["checks_allowlist"]
 
     def test_budgets_match_language(self) -> None:
-        report = ScanReport(
-            languages=[LanguageDetection(language="node", markers=["package.json"], confidence=0.5)]
-        )
+        report = ScanReport(languages=[LanguageDetection(language="node", markers=["package.json"], confidence=0.5)])
         config = generate_config(report)
         expected = LANGUAGE_BUDGETS["node"]
         assert config["defaults"]["ticket_budgets"]["max_files_changed"] == expected["max_files_changed"]
@@ -420,12 +410,12 @@ def _policy_block(rule: dict[str, Any]) -> str:
 
 
 class TestSmartInit:
-
     def test_init_scan_python(self, tmp_path: Path) -> None:
         """Init with scan on a Python project should detect Python."""
         (tmp_path / "pyproject.toml").write_text("[build-system]", encoding="utf-8")
         (tmp_path / "src").mkdir()
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         result = engine.init(scan=True)
         data = result.get("data", result)
@@ -437,6 +427,7 @@ class TestSmartInit:
         """Init with scan on a Node project should detect Node."""
         (tmp_path / "package.json").write_text("{}", encoding="utf-8")
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         result = engine.init(scan=True)
         data = result.get("data", result)
@@ -448,6 +439,7 @@ class TestSmartInit:
         """Init with scan=False should NOT include scan data."""
         (tmp_path / "pyproject.toml").write_text("[build-system]", encoding="utf-8")
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         result = engine.init(scan=False)
         data = result.get("data", result)
@@ -456,6 +448,7 @@ class TestSmartInit:
     def test_return_includes_scan_data(self, tmp_path: Path) -> None:
         """Return dict should include scan report."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         result = engine.init(scan=True)
         data = result.get("data", result)
@@ -466,6 +459,7 @@ class TestSmartInit:
     def test_return_includes_adapters_generated(self, tmp_path: Path) -> None:
         """Return dict should include adapters_generated paths."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         result = engine.init(scan=True)
         data = result.get("data", result)
@@ -478,10 +472,10 @@ class TestSmartInit:
 
 
 class TestScanIdempotent:
-
     def test_reinit_preserves_existing_constitution(self, tmp_path: Path) -> None:
         """Re-running init should NOT overwrite existing constitution."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=True)
         # Read constitution
@@ -506,13 +500,14 @@ class TestScanIdempotent:
 
 
 class TestScanCLI:
-
     def test_cli_human_output(self, tmp_path: Path) -> None:
         """CLI scan should produce human-readable output."""
         from exo.cli import main
+
         (tmp_path / "pyproject.toml").write_text("[build-system]", encoding="utf-8")
         # Need .exo scaffold for scan command
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         # Run scan CLI
@@ -522,8 +517,10 @@ class TestScanCLI:
     def test_cli_json_output(self, tmp_path: Path) -> None:
         """CLI scan --format json should produce valid JSON."""
         from exo.cli import main
+
         (tmp_path / "package.json").write_text("{}", encoding="utf-8")
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         exit_code = main(["--repo", str(tmp_path), "--format", "json", "scan"])
@@ -533,6 +530,7 @@ class TestScanCLI:
         """CLI scan on empty repo should still succeed."""
         from exo.cli import main
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         exit_code = main(["--repo", str(tmp_path), "--format", "human", "scan"])
@@ -543,7 +541,6 @@ class TestScanCLI:
 
 
 class TestFormatScanHuman:
-
     def test_with_findings(self) -> None:
         report = ScanReport(
             languages=[
@@ -576,7 +573,6 @@ class TestFormatScanHuman:
 
 
 class TestScanReportProperties:
-
     def test_primary_language_picks_highest_confidence(self) -> None:
         report = ScanReport(
             languages=[
@@ -591,15 +587,11 @@ class TestScanReportProperties:
         assert report.primary_language is None
 
     def test_has_existing_exo_true(self) -> None:
-        report = ScanReport(
-            existing_governance=[ExistingGovernance(kind="exo_dir", path=".exo")]
-        )
+        report = ScanReport(existing_governance=[ExistingGovernance(kind="exo_dir", path=".exo")])
         assert report.has_existing_exo is True
 
     def test_has_existing_exo_false(self) -> None:
-        report = ScanReport(
-            existing_governance=[ExistingGovernance(kind="claude_md", path="CLAUDE.md")]
-        )
+        report = ScanReport(existing_governance=[ExistingGovernance(kind="claude_md", path="CLAUDE.md")])
         assert report.has_existing_exo is False
 
 
@@ -607,7 +599,6 @@ class TestScanReportProperties:
 
 
 class TestScanToDict:
-
     def test_all_fields_present(self) -> None:
         report = ScanReport(
             languages=[LanguageDetection(language="python", markers=["pyproject.toml"], confidence=0.5)],

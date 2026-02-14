@@ -7,6 +7,7 @@ against the manifest to detect orphan code, invalid tags, and deprecated usage.
 This is deterministic (regex-based, no LLM) and designed to run as a governed
 check at session-finish or in CI.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -28,22 +29,46 @@ END_TAG_PATTERN = re.compile(r"[#/]\s*@endfeature", re.IGNORECASE)
 
 # Default file extensions to scan
 DEFAULT_SCAN_GLOBS = [
-    "**/*.py", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx",
-    "**/*.rs", "**/*.go", "**/*.java", "**/*.kt",
-    "**/*.c", "**/*.cpp", "**/*.h", "**/*.hpp",
-    "**/*.rb", "**/*.swift", "**/*.cs",
+    "**/*.py",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.rs",
+    "**/*.go",
+    "**/*.java",
+    "**/*.kt",
+    "**/*.c",
+    "**/*.cpp",
+    "**/*.h",
+    "**/*.hpp",
+    "**/*.rb",
+    "**/*.swift",
+    "**/*.cs",
 ]
 
 # Directories to always skip
-SKIP_DIRS = frozenset({
-    ".git", ".exo", "node_modules", "__pycache__", ".venv",
-    "venv", ".tox", ".mypy_cache", ".pytest_cache", "dist", "build",
-})
+SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".exo",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        "dist",
+        "build",
+    }
+)
 
 
 @dataclass(frozen=True)
 class FeatureDef:
     """A feature definition from the manifest."""
+
     id: str
     status: str  # active | experimental | deprecated | deleted
     description: str = ""
@@ -55,6 +80,7 @@ class FeatureDef:
 @dataclass(frozen=True)
 class CodeTag:
     """A @feature tag found in source code."""
+
     feature_id: str
     file: str  # relative path
     line: int
@@ -64,6 +90,7 @@ class CodeTag:
 @dataclass(frozen=True)
 class TraceViolation:
     """A traceability violation found by the linter."""
+
     kind: str  # invalid_tag | deprecated_usage | deleted_usage | unbound_feature | locked_edit
     feature_id: str
     file: str  # relative path or "(manifest)"
@@ -75,6 +102,7 @@ class TraceViolation:
 @dataclass
 class TraceReport:
     """Result of running the traceability linter."""
+
     features_total: int
     features_active: int
     features_deprecated: int
@@ -152,14 +180,16 @@ def load_features(repo: Path) -> list[FeatureDef]:
         else:
             files = ()
 
-        features.append(FeatureDef(
-            id=fid,
-            status=status,
-            description=str(entry.get("description", "")).strip(),
-            owner=str(entry.get("owner", "")).strip(),
-            files=files,
-            allow_agent_edit=bool(entry.get("allow_agent_edit", True)),
-        ))
+        features.append(
+            FeatureDef(
+                id=fid,
+                status=status,
+                description=str(entry.get("description", "")).strip(),
+                owner=str(entry.get("owner", "")).strip(),
+                files=files,
+                allow_agent_edit=bool(entry.get("allow_agent_edit", True)),
+            )
+        )
 
     return features
 
@@ -204,21 +234,25 @@ def scan_tags(repo: Path, *, globs: list[str] | None = None) -> list[CodeTag]:
             end_match = END_TAG_PATTERN.search(line)
             if end_match and open_tags:
                 fid, start = open_tags.pop()
-                tags.append(CodeTag(
-                    feature_id=fid,
-                    file=rel,
-                    line=start,
-                    end_line=line_num,
-                ))
+                tags.append(
+                    CodeTag(
+                        feature_id=fid,
+                        file=rel,
+                        line=start,
+                        end_line=line_num,
+                    )
+                )
 
         # Any tags without @endfeature are still valid (single-point binding)
         for fid, start in open_tags:
-            tags.append(CodeTag(
-                feature_id=fid,
-                file=rel,
-                line=start,
-                end_line=None,
-            ))
+            tags.append(
+                CodeTag(
+                    feature_id=fid,
+                    file=rel,
+                    line=start,
+                    end_line=None,
+                )
+            )
 
     return tags
 
@@ -259,46 +293,54 @@ def trace(
 
         if feat is None:
             # Invalid tag — references non-existent feature
-            violations.append(TraceViolation(
-                kind="invalid_tag",
-                feature_id=tag.feature_id,
-                file=tag.file,
-                line=tag.line,
-                message=f"@feature: {tag.feature_id} is not defined in features.yaml",
-                severity="error",
-            ))
+            violations.append(
+                TraceViolation(
+                    kind="invalid_tag",
+                    feature_id=tag.feature_id,
+                    file=tag.file,
+                    line=tag.line,
+                    message=f"@feature: {tag.feature_id} is not defined in features.yaml",
+                    severity="error",
+                )
+            )
             continue
 
         bound_ids.add(tag.feature_id)
 
         if feat.status == "deleted":
-            violations.append(TraceViolation(
-                kind="deleted_usage",
-                feature_id=tag.feature_id,
-                file=tag.file,
-                line=tag.line,
-                message=f"feature '{tag.feature_id}' is deleted — code should be removed",
-                severity="error",
-            ))
+            violations.append(
+                TraceViolation(
+                    kind="deleted_usage",
+                    feature_id=tag.feature_id,
+                    file=tag.file,
+                    line=tag.line,
+                    message=f"feature '{tag.feature_id}' is deleted — code should be removed",
+                    severity="error",
+                )
+            )
         elif feat.status == "deprecated":
-            violations.append(TraceViolation(
-                kind="deprecated_usage",
-                feature_id=tag.feature_id,
-                file=tag.file,
-                line=tag.line,
-                message=f"feature '{tag.feature_id}' is deprecated — schedule for removal",
-                severity="warning",
-            ))
+            violations.append(
+                TraceViolation(
+                    kind="deprecated_usage",
+                    feature_id=tag.feature_id,
+                    file=tag.file,
+                    line=tag.line,
+                    message=f"feature '{tag.feature_id}' is deprecated — schedule for removal",
+                    severity="warning",
+                )
+            )
 
         if not feat.allow_agent_edit:
-            violations.append(TraceViolation(
-                kind="locked_edit",
-                feature_id=tag.feature_id,
-                file=tag.file,
-                line=tag.line,
-                message=f"feature '{tag.feature_id}' has allow_agent_edit=false — human-only modification",
-                severity="warning",
-            ))
+            violations.append(
+                TraceViolation(
+                    kind="locked_edit",
+                    feature_id=tag.feature_id,
+                    file=tag.file,
+                    line=tag.line,
+                    message=f"feature '{tag.feature_id}' has allow_agent_edit=false — human-only modification",
+                    severity="warning",
+                )
+            )
 
     # Check for unbound features (features with no code tags)
     unbound: list[str] = []
@@ -310,14 +352,16 @@ def trace(
             if feat.id not in bound_ids:
                 unbound.append(feat.id)
                 if feat.status == "active":
-                    violations.append(TraceViolation(
-                        kind="unbound_feature",
-                        feature_id=feat.id,
-                        file="(manifest)",
-                        line=None,
-                        message=f"feature '{feat.id}' has no @feature: tags in code",
-                        severity="warning",
-                    ))
+                    violations.append(
+                        TraceViolation(
+                            kind="unbound_feature",
+                            feature_id=feat.id,
+                            file="(manifest)",
+                            line=None,
+                            message=f"feature '{feat.id}' has no @feature: tags in code",
+                            severity="warning",
+                        )
+                    )
 
     for feat in features:
         if feat.status == "deprecated" and feat.id in bound_ids:
@@ -406,6 +450,7 @@ def generate_scope_deny(features: list[FeatureDef]) -> list[str]:
 @dataclass(frozen=True)
 class PruneAction:
     """A single code block removal performed by prune."""
+
     feature_id: str
     file: str  # relative path
     start_line: int
@@ -416,6 +461,7 @@ class PruneAction:
 @dataclass
 class PruneReport:
     """Result of running the prune operation."""
+
     pruned: list[PruneAction]
     files_modified: list[str]
     total_lines_removed: int
@@ -457,9 +503,7 @@ def prune(
         prune_statuses.add("deprecated")
 
     # Collect prunable feature IDs
-    prunable_ids: set[str] = {
-        f.id for f in features if f.status in prune_statuses
-    }
+    prunable_ids: set[str] = {f.id for f in features if f.status in prune_statuses}
 
     if not prunable_ids:
         return PruneReport(
@@ -515,14 +559,16 @@ def prune(
         new_lines = list(lines)
         for start_idx, end_idx, fid in removals:
             lines_removed = end_idx - start_idx + 1
-            actions.append(PruneAction(
-                feature_id=fid,
-                file=rel,
-                start_line=start_idx + 1,  # 1-indexed
-                end_line=end_idx + 1,  # 1-indexed
-                lines_removed=lines_removed,
-            ))
-            del new_lines[start_idx:end_idx + 1]
+            actions.append(
+                PruneAction(
+                    feature_id=fid,
+                    file=rel,
+                    start_line=start_idx + 1,  # 1-indexed
+                    end_line=end_idx + 1,  # 1-indexed
+                    lines_removed=lines_removed,
+                )
+            )
+            del new_lines[start_idx : end_idx + 1]
 
         modified_files.add(rel)
 
@@ -571,7 +617,11 @@ def format_prune_human(report: PruneReport) -> str:
     if report.pruned:
         lines.append("  details:")
         for action in report.pruned:
-            loc = f"{action.file}:{action.start_line}-{action.end_line}" if action.start_line != action.end_line else f"{action.file}:{action.start_line}"
+            loc = (
+                f"{action.file}:{action.start_line}-{action.end_line}"
+                if action.start_line != action.end_line
+                else f"{action.file}:{action.start_line}"
+            )
             lines.append(f"    - [{action.feature_id}] {loc} ({action.lines_removed} lines)")
 
     return "\n".join(lines)

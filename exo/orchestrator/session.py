@@ -102,7 +102,7 @@ def _exo_banner(
             lines.append(_pad(f"trace: {trace_label}{trace_detail}"))
         if audit_warnings:
             for w in audit_warnings:
-                lines.append(_pad(f"! {w[:width - 6]}"))
+                lines.append(_pad(f"! {w[: width - 6]}"))
     elif event == "resume":
         lines.append(_pad(">>> EXO SESSION RESUMED"))
         lines.append(_pad(f"protocol: ExoProtocol {EXO_PROTOCOL_VERSION} | mode: work"))
@@ -229,7 +229,9 @@ class AgentSessionManager:
 
     def _write_active(self, payload: dict[str, Any]) -> None:
         ensure_dir(self.active_session_path.parent)
-        self.active_session_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True) + "\n", encoding="utf-8")
+        self.active_session_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True) + "\n", encoding="utf-8"
+        )
 
     def start(
         self,
@@ -284,7 +286,9 @@ class AgentSessionManager:
                 self.active_session_path.unlink(missing_ok=True)
             else:
                 existing_ticket = str(existing.get("ticket_id", "")).strip()
-                target_ticket = str(ticket_id).strip() if isinstance(ticket_id, str) and ticket_id.strip() else existing_ticket
+                target_ticket = (
+                    str(ticket_id).strip() if isinstance(ticket_id, str) and ticket_id.strip() else existing_ticket
+                )
                 if existing_ticket and target_ticket and existing_ticket != target_ticket:
                     raise ExoError(
                         code="SESSION_ALREADY_ACTIVE",
@@ -313,7 +317,13 @@ class AgentSessionManager:
         if acquire_lock and not lock:
             if distributed:
                 manager = distributed_leases.GitDistributedLeaseManager(self.root)
-                out = manager.claim(chosen_ticket, owner=self.actor, role=(role or "developer"), duration_hours=duration_hours, remote=remote)
+                out = manager.claim(
+                    chosen_ticket,
+                    owner=self.actor,
+                    role=(role or "developer"),
+                    duration_hours=duration_hours,
+                    remote=remote,
+                )
                 lock = dict(out.get("lock", {}))
             else:
                 lock = tickets.acquire_lock(
@@ -407,10 +417,7 @@ class AgentSessionManager:
             sibling_scan = scan_sessions(self.root)
             sibling_active = sibling_scan.get("active_sessions", [])
             # Exclude our own session (just created, not yet written)
-            siblings = [
-                s for s in sibling_active
-                if s.get("actor", "") != self.actor
-            ]
+            siblings = [s for s in sibling_active if s.get("actor", "") != self.actor]
             if siblings:
                 sibling_lines.append("## Sibling Sessions (other agents working concurrently)")
                 for sib in siblings:
@@ -431,6 +438,7 @@ class AgentSessionManager:
         machine_snap: dict[str, Any] = {}
         try:
             from exo.stdlib.conflicts import machine_snapshot, format_machine_context
+
             machine_snap = machine_snapshot()
             resource_profile = str(ticket.get("resource_profile") or "default").strip()
             mc_text = format_machine_context(machine_snap, resource_profile)
@@ -452,6 +460,7 @@ class AgentSessionManager:
         if mode != "audit":
             try:
                 from exo.stdlib.conflicts import format_git_workflow
+
                 git_workflow_lines = format_git_workflow(lock_base).split("\n")
             except Exception:
                 pass
@@ -470,22 +479,42 @@ class AgentSessionManager:
                 format_advisories,
                 advisories_to_dicts,
             )
+
             _advisories: list[Any] = []
             _advisories.extend(detect_stale_branch(self.root, git_branch))
             _advisories.extend(detect_base_divergence(self.root, git_branch, lock_base))
-            _advisories.extend(detect_scope_conflicts(
-                self.root, chosen_ticket, ticket.get("scope") or {}, siblings,
-            ))
-            _advisories.extend(detect_unmerged_work(
-                self.root, git_branch, chosen_ticket, ticket.get("scope") or {},
-            ))
-            _advisories.extend(detect_ticket_issues(
-                self.root, chosen_ticket, git_branch, siblings,
-            ))
+            _advisories.extend(
+                detect_scope_conflicts(
+                    self.root,
+                    chosen_ticket,
+                    ticket.get("scope") or {},
+                    siblings,
+                )
+            )
+            _advisories.extend(
+                detect_unmerged_work(
+                    self.root,
+                    git_branch,
+                    chosen_ticket,
+                    ticket.get("scope") or {},
+                )
+            )
+            _advisories.extend(
+                detect_ticket_issues(
+                    self.root,
+                    chosen_ticket,
+                    git_branch,
+                    siblings,
+                )
+            )
             resource_profile = str(ticket.get("resource_profile") or "default").strip()
-            _advisories.extend(detect_machine_load(
-                machine_snap, sibling_count=len(siblings), resource_profile=resource_profile,
-            ))
+            _advisories.extend(
+                detect_machine_load(
+                    machine_snap,
+                    sibling_count=len(siblings),
+                    resource_profile=resource_profile,
+                )
+            )
             if _advisories:
                 fmt = format_advisories(_advisories)
                 if fmt:
@@ -547,26 +576,30 @@ class AgentSessionManager:
             bootstrap_lines.extend(advisory_lines)
 
         if mode == "audit":
-            bootstrap_lines.extend([
-                "## Audit Directives",
-                "- ROLE: You are a Red Team Auditor. Your job is to FIND problems, not confirm safety.",
-                "- GOAL: Find bugs, drift, bias, or violations. You succeed by finding issues, not by saying 'all clear'.",
-                "- CONSTRAINT: Do not summarize previous work. Do not read prior session mementos.",
-                "- PROOF: You must produce a runnable test or script that demonstrates your findings.",
-                f"- writing_model: {writing_session.get('model', 'unknown') if writing_session else 'unknown'}",
-                f"- writing_vendor: {writing_session.get('vendor', 'unknown') if writing_session else 'unknown'}",
-                f"- writing_session_id: {writing_session.get('session_id', 'unknown') if writing_session else 'unknown'}",
-                "",
-            ])
+            bootstrap_lines.extend(
+                [
+                    "## Audit Directives",
+                    "- ROLE: You are a Red Team Auditor. Your job is to FIND problems, not confirm safety.",
+                    "- GOAL: Find bugs, drift, bias, or violations. You succeed by finding issues, not by saying 'all clear'.",
+                    "- CONSTRAINT: Do not summarize previous work. Do not read prior session mementos.",
+                    "- PROOF: You must produce a runnable test or script that demonstrates your findings.",
+                    f"- writing_model: {writing_session.get('model', 'unknown') if writing_session else 'unknown'}",
+                    f"- writing_vendor: {writing_session.get('vendor', 'unknown') if writing_session else 'unknown'}",
+                    f"- writing_session_id: {writing_session.get('session_id', 'unknown') if writing_session else 'unknown'}",
+                    "",
+                ]
+            )
             if pr_check_report is not None:
-                bootstrap_lines.extend([
-                    "## PR Governance Report",
-                    f"- range: {pr_check_report.base_ref}..{pr_check_report.head_ref}",
-                    f"- verdict: {pr_check_report.verdict}",
-                    f"- commits: {pr_check_report.total_commits} total, {pr_check_report.governed_commits} governed, {pr_check_report.ungoverned_commits} ungoverned",
-                    f"- governance: {'intact' if pr_check_report.governance_intact else 'DRIFT DETECTED'}",
-                    f"- changed files: {len(pr_check_report.changed_files)}",
-                ])
+                bootstrap_lines.extend(
+                    [
+                        "## PR Governance Report",
+                        f"- range: {pr_check_report.base_ref}..{pr_check_report.head_ref}",
+                        f"- verdict: {pr_check_report.verdict}",
+                        f"- commits: {pr_check_report.total_commits} total, {pr_check_report.governed_commits} governed, {pr_check_report.ungoverned_commits} ungoverned",
+                        f"- governance: {'intact' if pr_check_report.governance_intact else 'DRIFT DETECTED'}",
+                        f"- changed files: {len(pr_check_report.changed_files)}",
+                    ]
+                )
                 if pr_check_report.sessions:
                     bootstrap_lines.append("- sessions:")
                     for sv in pr_check_report.sessions:
@@ -583,28 +616,34 @@ class AgentSessionManager:
                     bootstrap_lines.append("- reasons:")
                     for r in pr_check_report.reasons:
                         bootstrap_lines.append(f"  - {r}")
-                bootstrap_lines.extend([
-                    "",
-                    "## PR Review Directives",
-                    "- FOCUS: Review the PR diff for governance compliance, code quality, and security.",
-                    "- UNGOVERNED: Flag any commits made outside governed sessions — these bypass oversight.",
-                    "- SCOPE: Verify files changed fall within ticket scope allow/deny globs.",
-                    "- DRIFT: Sessions with high drift scores indicate work that deviated from ticket scope.",
-                    "- VERDICT: The PR verdict above is automated; override it with your own assessment if warranted.",
-                    "",
-                ])
+                bootstrap_lines.extend(
+                    [
+                        "",
+                        "## PR Review Directives",
+                        "- FOCUS: Review the PR diff for governance compliance, code quality, and security.",
+                        "- UNGOVERNED: Flag any commits made outside governed sessions — these bypass oversight.",
+                        "- SCOPE: Verify files changed fall within ticket scope allow/deny globs.",
+                        "- DRIFT: Sessions with high drift scores indicate work that deviated from ticket scope.",
+                        "- VERDICT: The PR verdict above is automated; override it with your own assessment if warranted.",
+                        "",
+                    ]
+                )
             if audit_persona:
-                bootstrap_lines.extend([
-                    "## Audit Persona (from .exo/audit_persona.md)",
-                    audit_persona,
-                    "",
-                ])
+                bootstrap_lines.extend(
+                    [
+                        "## Audit Persona (from .exo/audit_persona.md)",
+                        audit_persona,
+                        "",
+                    ]
+                )
         else:
-            bootstrap_lines.extend([
-                "## Prior Session Memento",
-                (prior_summary if prior_summary else "(none)"),
-                "",
-            ])
+            bootstrap_lines.extend(
+                [
+                    "## Prior Session Memento",
+                    (prior_summary if prior_summary else "(none)"),
+                    "",
+                ]
+            )
 
         # --- Reflection injection (operational learnings) ---
         if mode != "audit":
@@ -626,19 +665,21 @@ class AgentSessionManager:
             except Exception:  # noqa: BLE001
                 pass  # Reflection injection is advisory — never blocks session start
 
-        bootstrap_lines.extend([
-            "## Current Task",
-            (task.strip() if isinstance(task, str) and task.strip() else "(not provided)"),
-            "",
-            "## Lifecycle Commands",
-            f"- heartbeat: EXO_ACTOR={self.actor} python3 -m exo.cli lease-heartbeat --ticket-id {chosen_ticket} --owner {self.actor}",
-            f"- run worker once: EXO_ACTOR={self.actor} python3 -m exo.cli worker-poll --require-session --limit 50",
-            f"- suspend: EXO_ACTOR={self.actor} python3 -m exo.cli session-suspend --reason \"<why pausing>\"",
-            (
-                f"- finish: EXO_ACTOR={self.actor} python3 -m exo.cli session-finish --summary \"<what changed>\" "
-                f"--set-status review --ticket-id {chosen_ticket}"
-            ),
-        ])
+        bootstrap_lines.extend(
+            [
+                "## Current Task",
+                (task.strip() if isinstance(task, str) and task.strip() else "(not provided)"),
+                "",
+                "## Lifecycle Commands",
+                f"- heartbeat: EXO_ACTOR={self.actor} python3 -m exo.cli lease-heartbeat --ticket-id {chosen_ticket} --owner {self.actor}",
+                f"- run worker once: EXO_ACTOR={self.actor} python3 -m exo.cli worker-poll --require-session --limit 50",
+                f'- suspend: EXO_ACTOR={self.actor} python3 -m exo.cli session-suspend --reason "<why pausing>"',
+                (
+                    f'- finish: EXO_ACTOR={self.actor} python3 -m exo.cli session-finish --summary "<what changed>" '
+                    f"--set-status review --ticket-id {chosen_ticket}"
+                ),
+            ]
+        )
         bootstrap_text = "\n".join(bootstrap_lines).rstrip() + "\n"
         ensure_dir(self.bootstrap_path.parent)
         self.bootstrap_path.write_text(bootstrap_text, encoding="utf-8")
@@ -793,13 +834,15 @@ class AgentSessionManager:
             # Warn or block if drift exceeds threshold
             effective_threshold = drift_threshold if drift_threshold is not None else 0.7
             if drift_report.drift_score > effective_threshold and not skip_check:
-                self._log_event({
-                    "event": "session_drift_warning",
-                    "session_id": str(session.get("session_id", "")),
-                    "ticket_id": target_ticket,
-                    "drift_score": drift_report.drift_score,
-                    "threshold": effective_threshold,
-                })
+                self._log_event(
+                    {
+                        "event": "session_drift_warning",
+                        "session_id": str(session.get("session_id", "")),
+                        "ticket_id": target_ticket,
+                        "drift_score": drift_report.drift_score,
+                        "threshold": effective_threshold,
+                    }
+                )
         except Exception:
             # Drift detection is advisory — don't block session-finish on failure
             pass
@@ -827,6 +870,7 @@ class AgentSessionManager:
         coherence_data: dict[str, Any] | None = None
         try:
             from exo.stdlib.coherence import check_coherence, coherence_to_dict, format_coherence_human
+
             coherence_report = check_coherence(self.root, base=git_base)
             coherence_data = coherence_to_dict(coherence_report)
             coherence_section = format_coherence_human(coherence_report)
@@ -846,7 +890,11 @@ class AgentSessionManager:
         release_details: dict[str, Any] | None = None
         if effective_release:
             active_lock = tickets.load_lock(self.root)
-            if active_lock and str(active_lock.get("ticket_id", "")).strip() == target_ticket and isinstance(active_lock.get("distributed"), dict):
+            if (
+                active_lock
+                and str(active_lock.get("ticket_id", "")).strip() == target_ticket
+                and isinstance(active_lock.get("distributed"), dict)
+            ):
                 distributed_meta = active_lock.get("distributed", {})
                 remote = str(distributed_meta.get("remote", "origin")).strip() or "origin"
                 manager = distributed_leases.GitDistributedLeaseManager(self.root)
@@ -895,18 +943,20 @@ class AgentSessionManager:
         if coherence_section:
             memento_sections.append("")
             memento_sections.append(coherence_section)
-        memento_sections.extend([
-            "",
-            "## Artifacts",
-            ("\n".join(f"- {item}" for item in artifacts_list) if artifacts_list else "- (none)"),
-            "",
-            "## Blockers",
-            ("\n".join(f"- {item}" for item in blockers_list) if blockers_list else "- (none)"),
-            "",
-            "## Next Step",
-            (next_step_value if next_step_value else "(none)"),
-            "",
-        ])
+        memento_sections.extend(
+            [
+                "",
+                "## Artifacts",
+                ("\n".join(f"- {item}" for item in artifacts_list) if artifacts_list else "- (none)"),
+                "",
+                "## Blockers",
+                ("\n".join(f"- {item}" for item in blockers_list) if blockers_list else "- (none)"),
+                "",
+                "## Next Step",
+                (next_step_value if next_step_value else "(none)"),
+                "",
+            ]
+        )
         # --- Audit session warnings (advisory) ---
         session_mode = str(session.get("mode", "work")).strip()
         audit_warnings: list[str] = []
@@ -932,11 +982,13 @@ class AgentSessionManager:
         if errors:
             for err in errors:
                 if isinstance(err, dict) and err.get("message"):
-                    errors_list.append({
-                        "tool": str(err.get("tool", "unknown")),
-                        "message": str(err.get("message", "")),
-                        "count": int(err.get("count", 1)),
-                    })
+                    errors_list.append(
+                        {
+                            "tool": str(err.get("tool", "unknown")),
+                            "message": str(err.get("message", "")),
+                            "count": int(err.get("count", 1)),
+                        }
+                    )
         if errors_list:
             memento_sections.append("")
             memento_sections.append("## Errors Encountered")
@@ -1364,18 +1416,20 @@ class AgentSessionManager:
         except Exception:  # noqa: BLE001
             pass  # Reflection injection is advisory — never blocks session resume
 
-        bootstrap_lines.extend([
-            "## Previous Task",
-            (str(suspended.get("task", "")).strip() if suspended.get("task") else "(not provided)"),
-            "",
-            "## Lifecycle Commands",
-            f"- heartbeat: EXO_ACTOR={self.actor} python3 -m exo.cli lease-heartbeat --ticket-id {target_ticket} --owner {self.actor}",
-            f"- suspend: EXO_ACTOR={self.actor} python3 -m exo.cli session-suspend --reason \"<why pausing>\"",
-            (
-                f"- finish: EXO_ACTOR={self.actor} python3 -m exo.cli session-finish --summary \"<what changed>\" "
-                f"--set-status review --ticket-id {target_ticket}"
-            ),
-        ])
+        bootstrap_lines.extend(
+            [
+                "## Previous Task",
+                (str(suspended.get("task", "")).strip() if suspended.get("task") else "(not provided)"),
+                "",
+                "## Lifecycle Commands",
+                f"- heartbeat: EXO_ACTOR={self.actor} python3 -m exo.cli lease-heartbeat --ticket-id {target_ticket} --owner {self.actor}",
+                f'- suspend: EXO_ACTOR={self.actor} python3 -m exo.cli session-suspend --reason "<why pausing>"',
+                (
+                    f'- finish: EXO_ACTOR={self.actor} python3 -m exo.cli session-finish --summary "<what changed>" '
+                    f"--set-status review --ticket-id {target_ticket}"
+                ),
+            ]
+        )
         bootstrap_text = "\n".join(bootstrap_lines).rstrip() + "\n"
         ensure_dir(self.bootstrap_path.parent)
         self.bootstrap_path.write_text(bootstrap_text, encoding="utf-8")

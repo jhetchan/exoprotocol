@@ -7,6 +7,7 @@ feature traceability, requirement traceability, and session health.
 This is designed to run as a single health-check command (`exo drift`)
 that aggregates results from all governance subsystems.
 """
+
 from __future__ import annotations
 
 import re
@@ -32,6 +33,7 @@ FEATURES_PATH = Path(".exo/features.yaml")
 @dataclass
 class DriftSection:
     """Result of a single drift check subsystem."""
+
     name: str
     status: str  # pass | fail | skip | error
     summary: str
@@ -43,6 +45,7 @@ class DriftSection:
 @dataclass
 class DriftReport:
     """Composite result of all drift checks."""
+
     sections: list[DriftSection]
     overall: str = ""  # pass | fail
     checked_at: str = ""
@@ -136,6 +139,7 @@ def _check_adapters(repo: Path) -> DriftSection:
 
     try:
         from exo.kernel.utils import load_json
+
         lock = load_json(lock_path)
     except Exception:
         return DriftSection(
@@ -217,6 +221,7 @@ def _check_features(repo: Path) -> DriftSection:
 
     try:
         from exo.stdlib.features import trace, trace_to_dict
+
         report = trace(repo)
         errors = sum(1 for v in report.violations if v.severity == "error")
         warnings = sum(1 for v in report.violations if v.severity == "warning")
@@ -265,6 +270,7 @@ def _check_requirements(repo: Path) -> DriftSection:
 
     try:
         from exo.stdlib.requirements import trace_requirements, req_trace_to_dict
+
         report = trace_requirements(repo)
         errors = sum(1 for v in report.violations if v.severity == "error")
         warnings = sum(1 for v in report.violations if v.severity == "warning")
@@ -314,6 +320,7 @@ def _check_coherence(repo: Path) -> DriftSection:
 
     try:
         from exo.stdlib.coherence import check_coherence, coherence_to_dict
+
         report = check_coherence(repo)
         warnings = report.warning_count
 
@@ -362,6 +369,7 @@ def _check_sessions(repo: Path, stale_hours: float = 48.0) -> DriftSection:
     """Check for stale or orphaned sessions."""
     try:
         from exo.orchestrator import scan_sessions
+
         data = scan_sessions(repo, stale_hours=stale_hours)
         stale = data.get("stale_sessions", [])
         active = data.get("active_sessions", [])
@@ -386,8 +394,7 @@ def _check_sessions(repo: Path, stale_hours: float = 48.0) -> DriftSection:
                     "suspended": len(suspended),
                     "stale": len(stale),
                     "stale_sessions": [
-                        {"session_id": s.get("session_id", ""), "age_hours": s.get("age_hours", 0)}
-                        for s in stale
+                        {"session_id": s.get("session_id", ""), "age_hours": s.get("age_hours", 0)} for s in stale
                     ],
                 },
             )

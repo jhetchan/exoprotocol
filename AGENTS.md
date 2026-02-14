@@ -17,3 +17,96 @@ This repository uses Exo's vendor-agnostic protocol as the primary agent contrac
 
 If an adapter conflicts with canonical protocol:
 - `EXO_PROTOCOL.md` wins.
+
+<!-- exo:governance:begin -->
+<!-- Governance hash: 88fe490d86f8c193 -->
+# ExoProtocol — Agent Operating Instructions
+
+This repository is governed by ExoProtocol. All AI agent work must follow the session lifecycle.
+
+## ExoProtocol Governance
+
+- kernel: exo-kernel 0.1.0
+- lock hash: `88fe490d86f8c193...`
+- generated: 2026-02-14T21:39:08+08:00
+
+### Filesystem Deny Rules
+
+- **RULE-SEC-001**: deny read, write on `~/.aws/**`, `~/.ssh/**`, `**/.env*`
+- **RULE-GIT-001**: deny read, write, delete on `.git/**`
+- **RULE-KRN-001**: deny write, delete on `exo/kernel/**`
+- **RULE-DEL-001**: deny delete on `src/**`
+
+### Structural Rules
+
+- **RULE-LOCK-001** (require_lock): Blocked by RULE-LOCK-001 (acquire a ticket lock first).
+- **RULE-CHECK-001** (require_checks): Blocked by RULE-CHECK-001 (checks must pass before done).
+- **RULE-EVO-001** (evolution_gate): Practice is mutable, governance requires explicit human approval.
+- **RULE-EVO-002** (patch_first): Patch-first evolution required.
+
+### Default Budgets
+
+- max files changed: 12
+- max LOC changed: 400
+
+### Approved Checks
+
+- `npm test`
+- `npm run lint`
+- `pytest`
+- `python -m pytest`
+- `python3 -m compileall exo`
+- `python3 -m pytest`
+
+### Source of Truth
+
+The values above are a **snapshot** generated from the governance manifest.
+
+Manifest paths:
+- `.exo/config.yaml` — budgets, checks allowlist, scheduler config
+- `.exo/governance.lock.json` — compiled rules, deny patterns, source hash
+
+### Test-Driven, Manifest-First Workflow
+
+This principle applies to **all code you write** — governance and application logic alike.
+
+1. **Config/contract is the source of truth.** When a value is defined in a config file,
+   schema, manifest, or contract — code must load it from that source at runtime.
+   Never copy a value from a config file and paste it as a literal in source code.
+2. **Tests verify the wiring, not the value.** Tests must assert that code reads from
+   the config/contract, not that it produces a specific hardcoded result.
+   A test that passes when you swap the config value *and* swap the assertion is useless —
+   it only proves both sides were copy-pasted from the same place.
+3. **If you can change a config value and no test breaks, the test is missing.**
+   Every configurable value should have at least one test that will vary the input
+   and verify the output follows.
+
+Examples:
+- **BAD**: `assert budget == 10` (hardcoded, passes even if config is ignored)
+- **GOOD**: set config to 42, assert output contains 42 and not the old default
+- **BAD**: `MAX_RETRIES = 3` (literal in source when retries is in config)
+- **GOOD**: `max_retries = load_config()['max_retries']`
+
+## Session Lifecycle
+
+1. `exo session-start --ticket-id <TICKET> --vendor <VENDOR> --model <MODEL> --task "<TASK>"`
+2. Read `.exo/cache/sessions/<actor>.bootstrap.md`
+3. Execute work within ticket scope
+4. `exo session-finish --ticket-id <TICKET> --summary "<SUMMARY>" --set-status review`
+
+## Enforcement
+
+- Governance rules are enforced at the kernel level, not by prompt
+- The bootstrap file contains your session's scope, checks, and lifecycle commands
+- Drift detection runs at session-finish and is recorded in the session memento
+- Audit sessions may be triggered to review your work independently
+
+## Non-Negotiables
+
+- No governed execution without active session
+- Respect lock ownership and ticket scope
+- Verification is default at finish; break-glass must be explicit
+- All configurable values must be loaded from their source of truth at runtime — never hardcode, always test
+- Read `.exo/LEARNINGS.md` for operational learnings from prior sessions
+
+<!-- exo:governance:end -->
