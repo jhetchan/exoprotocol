@@ -79,6 +79,14 @@ When you discover a reusable pattern, gotcha, or operational insight during a se
 add the absolute path to your memory file (e.g., `~/.claude/.../memory/MEMORY.md`) so that
 ExoProtocol can detect when you write to private memory without creating a shared reflection.
 
+### End-of-Work Reflection
+
+When you complete significant work or the user appears to be wrapping up:
+- **Proactively** run `exo reflect --pattern '<what kept happening>' --insight '<what was learned>'`
+  for each non-trivial insight discovered during the conversation
+- Do NOT wait for `session-finish` — many users close the editor without explicit session end
+- Good reflection triggers: bug fixes, CI failures, gotchas, architectural decisions, workflow improvements
+
 ## Session Lifecycle
 
 Before starting any work:
