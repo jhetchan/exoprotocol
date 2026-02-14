@@ -309,12 +309,12 @@ class TestScanSourceDirs:
 class TestConstitutionGeneration:
 
     def test_base_rules_preserved(self) -> None:
-        """Default constitution has 8 rules — base extraction should find them all."""
+        """Default constitution has 6 rules — base extraction should find them all."""
         rules = _base_rules()
-        assert len(rules) == 8
+        assert len(rules) == 6
         ids = [r["id"] for r in rules]
         assert "RULE-SEC-001" in ids
-        assert "RULE-DEL-001" in ids
+        assert "RULE-GIT-001" in ids
 
     def test_source_dirs_customize_delete_rule(self, tmp_path: Path) -> None:
         report = ScanReport(source_dirs=["src", "lib"])
@@ -349,17 +349,17 @@ class TestConstitutionGeneration:
         (exo_dir / "CONSTITUTION.md").write_text(constitution_text, encoding="utf-8")
         result = governance_mod.compile_constitution(tmp_path)
         assert "source_hash" in result
-        # Should have 9 rules (8 base + RULE-SEC-002)
+        # Should have 8 rules (6 base + RULE-DEL-001 dynamic + RULE-SEC-002)
         lock_path = exo_dir / "governance.lock.json"
         lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
-        assert len(lock_data["rules"]) == 9
+        assert len(lock_data["rules"]) == 8
 
     def test_sentinel_no_source_dirs(self, tmp_path: Path) -> None:
-        """Without source dirs, RULE-DEL-001 should keep original 'src/**' pattern."""
+        """Without source dirs, RULE-DEL-001 should NOT be present."""
         report = ScanReport()
         rules = _constitution_rules(report)
-        del_rule = [r for r in rules if r.get("id") == "RULE-DEL-001"][0]
-        assert del_rule["patterns"] == ["src/**"]
+        del_rules = [r for r in rules if r.get("id") == "RULE-DEL-001"]
+        assert len(del_rules) == 0
 
 
 # ── Config Generation ────────────────────────────────────────────

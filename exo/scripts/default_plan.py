@@ -31,23 +31,23 @@ def _extract_seed_tickets(input_text: str) -> list[dict[str, Any]]:
         tickets.append(
             {
                 "id": parent_id,
-                "type": "governance",
+                "type": "feature",
                 "title": f"{epic.group(1)}: {epic.group(2)}",
                 "status": "todo",
                 "priority": 5,
                 "parent_id": None,
                 "scope": {
-                    "allow": ["exo/**", ".exo/**", "README.md", "pyproject.toml"],
+                    "allow": ["**"],
                     "deny": [".env*", "**/.ssh/**", "**/.aws/**", ".git/**"],
                 },
                 "budgets": {
                     "max_files_changed": 12,
                     "max_loc_changed": 400,
                 },
-                "checks": ["python3 -m compileall exo"],
+                "checks": [],
                 "notes": ["Generated from planning input."],
                 "blockers": [],
-                "labels": ["kernel", "epic"],
+                "labels": ["epic"],
             }
         )
 
@@ -62,17 +62,17 @@ def _extract_seed_tickets(input_text: str) -> list[dict[str, Any]]:
                 "priority": 4 if idx > 3 else 5,
                 "parent_id": parent_id,
                 "scope": {
-                    "allow": ["exo/**", ".exo/**", "README.md", "pyproject.toml"],
+                    "allow": ["**"],
                     "deny": [".env*", "**/.ssh/**", "**/.aws/**", ".git/**"],
                 },
                 "budgets": {
                     "max_files_changed": 12,
                     "max_loc_changed": 400,
                 },
-                "checks": ["python3 -m compileall exo"],
+                "checks": [],
                 "notes": ["Generated from planning input."],
                 "blockers": [],
-                "labels": ["kernel", "planned"],
+                "labels": ["planned"],
             }
         )
 

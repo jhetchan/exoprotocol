@@ -302,12 +302,15 @@ def _constitution_rules(report: ScanReport) -> list[dict[str, Any]]:
     """Customize rules based on scan findings."""
     rules = _base_rules()
 
-    # Customize RULE-DEL-001 patterns for detected source dirs
+    # Add RULE-DEL-001 for detected source dirs (project-specific)
     if report.source_dirs:
-        for rule in rules:
-            if rule.get("id") == "RULE-DEL-001":
-                rule["patterns"] = [f"{d}/**" for d in report.source_dirs]
-                break
+        rules.append({
+            "id": "RULE-DEL-001",
+            "type": "filesystem_deny",
+            "patterns": [f"{d}/**" for d in report.source_dirs],
+            "actions": ["delete"],
+            "message": "Blocked by RULE-DEL-001 (source delete denied by default).",
+        })
 
     # Add RULE-SEC-002 for extra sensitive files if any found
     sensitive_patterns = [sf.pattern for sf in report.sensitive_files]
@@ -351,7 +354,7 @@ def _rules_to_constitution(rules: list[dict[str, Any]]) -> str:
         "RULE-EVO-002": "No self-evolution applies without proposal + patch + approval + audit trail.",
     }
 
-    lines = ["# ExoProtocol Constitution (Kernel v0.1)", ""]
+    lines = ["# Project Constitution", ""]
     lines.append("This constitution is literate: human guidance plus machine-parsed `exo-policy` blocks.")
     lines.append("")
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 
-DEFAULT_CONSTITUTION = """# ExoProtocol Constitution (Kernel v0.1)
+DEFAULT_CONSTITUTION = """# Project Constitution
 
 This constitution is literate: human guidance plus machine-parsed `exo-policy` blocks.
+Edit these rules to match your project's needs, then run `exo build-governance` to recompile.
 
 ## Article: Secrets
 [RULE-SEC-001] Agents must never read or write host credential stores or dotenv secrets.
@@ -30,32 +31,6 @@ This constitution is literate: human guidance plus machine-parsed `exo-policy` b
   "patterns": [".git/**"],
   "actions": ["read", "write", "delete"],
   "message": "Blocked by RULE-GIT-001 (.git internals are protected)."
-}
-```
-
-## Article: Kernel is out-of-band
-[RULE-KRN-001] Governed flows must never mutate kernel sources.
-
-```yaml exo-policy
-{
-  "id": "RULE-KRN-001",
-  "type": "filesystem_deny",
-  "patterns": ["exo/kernel/**"],
-  "actions": ["write", "delete"],
-  "message": "Blocked by RULE-KRN-001 (kernel updates are out-of-band and human-only)."
-}
-```
-
-## Article: Protected deletions
-[RULE-DEL-001] Source deletes are denied by default.
-
-```yaml exo-policy
-{
-  "id": "RULE-DEL-001",
-  "type": "filesystem_deny",
-  "patterns": ["src/**"],
-  "actions": ["delete"],
-  "message": "Blocked by RULE-DEL-001 (src delete denied by default)."
 }
 ```
 
@@ -123,11 +98,9 @@ DEFAULT_CONFIG = {
         "pytest",
         "python -m pytest",
         "python3 -m pytest",
-        "python3 -m compileall exo",
     ],
     "do_allowlist": [
         "npm run build",
-        "python3 -m compileall exo",
     ],
     "recall_paths": [
         ".exo",
