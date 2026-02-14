@@ -83,8 +83,8 @@ Works with Claude Code, Cursor, and any MCP-compatible client. Every CLI command
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — layer model, key concepts, module map
-- [exoprotocol.dev](https://exoprotocol.dev) — project site
+- [Architecture](https://exoprotocol.dev/#architecture) — layer model, key concepts, module map
+- [exoprotocol.dev](https://exoprotocol.dev/) — project site
 
 ## License
 
