@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from exo.kernel.utils import dump_yaml, ensure_dir, load_yaml, now_iso
+from exo.kernel.utils import dump_yaml, ensure_dir, gen_timestamp_id, load_yaml, now_iso
 
 OBS_DIR = Path(".exo/observations")
 PATCH_DIR = Path(".exo/patches")
@@ -306,59 +306,20 @@ def ensure_layout(repo: Path) -> None:
         memory_template_path.write_text(MEMORY_TEMPLATE_TEXT, encoding="utf-8")
 
 
-def _next_simple_id(repo: Path, directory: Path, prefix: str, suffix: str, width: int = 3) -> str:
-    ensure_dir(repo / directory)
-    pattern = re.compile(rf"^{re.escape(prefix)}-(\d+){re.escape(suffix)}$")
-
-    values: list[int] = []
-    for path in (repo / directory).glob(f"{prefix}-*{suffix}"):
-        match = pattern.match(path.name)
-        if match:
-            values.append(int(match.group(1)))
-
-    nxt = max(values) + 1 if values else 1
-    return f"{prefix}-{nxt:0{width}d}"
-
-
 def next_observation_id(repo: Path) -> str:
-    today = datetime.now().astimezone().date().isoformat()
-    ensure_dir(repo / OBS_DIR)
-    pattern = re.compile(rf"^OBS-{re.escape(today)}-(\d{{3}})\.md$")
-
-    values: list[int] = []
-    for path in (repo / OBS_DIR).glob(f"OBS-{today}-*.md"):
-        match = pattern.match(path.name)
-        if match:
-            values.append(int(match.group(1)))
-
-    nxt = max(values) + 1 if values else 1
-    return f"OBS-{today}-{nxt:03d}"
+    return gen_timestamp_id("OBS")
 
 
 def next_patch_id(repo: Path) -> str:
-    return _next_simple_id(repo, PATCH_DIR, "PATCH", ".json")
+    return gen_timestamp_id("PATCH")
 
 
 def next_proposal_id(repo: Path) -> str:
-    return _next_simple_id(repo, PROP_DIR, "PROP", ".yaml")
+    return gen_timestamp_id("PROP")
 
 
 def next_review_id(repo: Path, proposal_id: str) -> str:
-    pid = normalize_id(proposal_id, "PROP")
-    number = "000"
-    match = re.match(r"^PROP-(\d{3,})$", pid)
-    if match:
-        number = match.group(1)
-
-    ensure_dir(repo / REV_DIR)
-    pattern = re.compile(rf"^REV-{re.escape(number)}-(\d{{3}})\.md$")
-    values: list[int] = []
-    for path in (repo / REV_DIR).glob(f"REV-{number}-*.md"):
-        match = pattern.match(path.name)
-        if match:
-            values.append(int(match.group(1)))
-    nxt = max(values) + 1 if values else 1
-    return f"REV-{number}-{nxt:03d}"
+    return gen_timestamp_id("REV")
 
 
 def observation_path(repo: Path, observation_id: str) -> Path:
@@ -389,10 +350,15 @@ def normalize_id(raw: str, prefix: str) -> str:
 
 def patch_id_for_proposal(proposal_id: str) -> str:
     pid = normalize_id(proposal_id, "PROP")
+    # Legacy PROP-NNN → PATCH-NNN
     match = re.match(r"^PROP-(\d{3,})$", pid)
     if match:
         return f"PATCH-{match.group(1)}"
-    return "PATCH-000"
+    # New timestamp format: replace prefix
+    ts_match = re.match(r"^PROP-(\d{8}-\d{6}-[A-Z0-9]{4})$", pid)
+    if ts_match:
+        return f"PATCH-{ts_match.group(1)}"
+    return gen_timestamp_id("PATCH")
 
 
 def default_patch_ref_for_proposal(proposal_id: str) -> str:
@@ -477,8 +443,8 @@ def validate_proposal_payload(proposal: dict[str, Any]) -> list[str]:
             errors.append(f"unknown field: {key}")
 
     pid = proposal.get("id")
-    if not isinstance(pid, str) or not re.match(r"^PROP-[0-9]{3,}$", pid):
-        errors.append("id must match ^PROP-[0-9]{3,}$")
+    if not isinstance(pid, str) or not re.match(r"^PROP-(\d{3,}|\d{8}-\d{6}-[A-Z0-9]{4})$", pid):
+        errors.append("id must match PROP-NNN or PROP-YYYYMMDD-HHMMSS-XXXX")
 
     created_at = proposal.get("created_at")
     if not isinstance(created_at, str) or not _is_iso_datetime(created_at):
@@ -757,19 +723,4 @@ def save_memory_index(repo: Path, index_data: dict[str, Any]) -> Path:
 
 
 def next_memory_id(index_data: dict[str, Any], prefix: str) -> str:
-    values: list[int] = []
-    for section in ["rules_of_thumb", "failure_modes"]:
-        raw = index_data.get(section)
-        if not isinstance(raw, list):
-            continue
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            iid = str(item.get("id", ""))
-            if not iid.startswith(f"{prefix}-"):
-                continue
-            number = iid.replace(f"{prefix}-", "")
-            if number.isdigit():
-                values.append(int(number))
-    nxt = max(values) + 1 if values else 1
-    return f"{prefix}-{nxt:03d}"
+    return gen_timestamp_id(prefix)

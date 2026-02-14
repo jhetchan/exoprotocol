@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import random
 import re
-import string
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,7 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover
 from . import ledger
 from .errors import ExoError
 from .types import INTENT_RISKS, TICKET_KINDS, Governance, Session, Ticket, TicketStatus, to_dict
-from .utils import default_topic_id, dump_json, dump_yaml, load_json, load_yaml, now_iso
+from .utils import default_topic_id, dump_json, dump_yaml, gen_timestamp_id, load_json, load_yaml, now_iso
 
 TICKETS_DIR = Path(".exo/tickets")
 LOCK_FILE = Path(".exo/locks/ticket.lock.json")
@@ -130,26 +128,12 @@ def save_ticket(repo: Path, ticket: dict[str, Any]) -> Path:
     return path
 
 
-def _gen_suffix(length: int = 4) -> str:
-    """Generate a random alphanumeric suffix for collision-resistant IDs."""
-    chars = string.ascii_uppercase + string.digits
-    return "".join(random.choices(chars, k=length))
-
-
-def _gen_timestamp_id(prefix: str) -> str:
-    """Generate a collision-resistant ID: PREFIX-YYYYMMDD-HHMMSS-XXXX."""
-    now = datetime.now()
-    ts = now.strftime("%Y%m%d-%H%M%S")
-    suffix = _gen_suffix()
-    return f"{prefix}-{ts}-{suffix}"
-
-
 def next_ticket_id(repo: Path) -> str:
-    return _gen_timestamp_id("TKT")
+    return gen_timestamp_id("TKT")
 
 
 def next_intent_id(repo: Path) -> str:
-    return _gen_timestamp_id("INT")
+    return gen_timestamp_id("INT")
 
 
 @contextmanager

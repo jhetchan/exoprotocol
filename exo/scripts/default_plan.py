@@ -4,14 +4,17 @@ import re
 from datetime import datetime
 from typing import Any
 
+from exo.kernel.utils import gen_timestamp_id
+
 TASK_RE = re.compile(r"^\*\s+(T\d+):\s+(.+)$", re.MULTILINE)
 EPIC_RE = re.compile(r"^###\s+(EPIC-\d+):\s+(.+)$", re.MULTILINE)
 
 
 def _build_spec_markdown(input_text: str) -> str:
     now = datetime.now().astimezone().isoformat(timespec="seconds")
+    spec_id = gen_timestamp_id("SPEC")
     return (
-        "# SPEC-Generated\n\n"
+        f"# {spec_id}\n\n"
         f"Generated at {now}.\n\n"
         "## Input\n\n"
         f"{input_text.strip()}\n\n"
@@ -26,7 +29,7 @@ def _extract_seed_tickets(input_text: str) -> list[dict[str, Any]]:
     parent_id = None
 
     if epic:
-        parent_id = "TICKET-000-EPIC"
+        parent_id = gen_timestamp_id("TKT") + "-EPIC"
         tickets.append(
             {
                 "id": parent_id,
@@ -51,14 +54,14 @@ def _extract_seed_tickets(input_text: str) -> list[dict[str, Any]]:
         )
 
     tasks = TASK_RE.findall(input_text)
-    for idx, (_, title) in enumerate(tasks[:6], start=1):
+    for _, title in tasks[:6]:
         tickets.append(
             {
-                "id": f"TICKET-{idx:03d}",
+                "id": gen_timestamp_id("TKT"),
                 "type": "feature",
                 "title": title.strip(),
                 "status": "todo",
-                "priority": 4 if idx > 3 else 5,
+                "priority": 4,
                 "parent_id": parent_id,
                 "scope": {
                     "allow": ["**"],

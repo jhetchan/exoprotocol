@@ -5,7 +5,6 @@ import importlib
 import importlib.util
 import json
 import os
-import re
 import subprocess
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -21,6 +20,7 @@ from exo.kernel.utils import (
     any_pattern_matches,
     dump_yaml,
     ensure_dir,
+    gen_timestamp_id,
     load_yaml,
     now_iso,
     relative_posix,
@@ -1230,14 +1230,8 @@ class KernelEngine:
     def _next_spec_path(self) -> Path:
         specs_dir = self.exo_dir / "specs"
         ensure_dir(specs_dir)
-        existing = list(specs_dir.glob("SPEC-*.md"))
-        numbers: list[int] = []
-        for path in existing:
-            match = re.match(r"SPEC-(\d+)\.md$", path.name)
-            if match:
-                numbers.append(int(match.group(1)))
-        nxt = (max(numbers) + 1) if numbers else 1
-        return specs_dir / f"SPEC-{nxt:03d}.md"
+        spec_id = gen_timestamp_id("SPEC")
+        return specs_dir / f"{spec_id}.md"
 
     def _mark_ticket_status(self, ticket: dict[str, Any], status: str) -> None:
         ticket["status"] = status
@@ -1360,10 +1354,11 @@ class KernelEngine:
                 self._write_system_text(path, script_body)
                 created.append(str(path.relative_to(self.repo)))
 
-        spec_path = self.exo_dir / "specs" / "SPEC-001.md"
+        seed_spec_id = gen_timestamp_id("SPEC")
+        spec_path = self.exo_dir / "specs" / f"{seed_spec_id}.md"
         if seed and not spec_path.exists():
             spec_body = (
-                "# SPEC-001\n\n"
+                f"# {seed_spec_id}\n\n"
                 "Example specification created by `exo init`.\n\n"
                 "Replace this with your project's first spec.\n"
             )

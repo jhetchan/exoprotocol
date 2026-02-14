@@ -11,20 +11,18 @@ Storage: ``.exo/memory/reflections/REF-NNN.yaml`` — one file per reflection.
 from __future__ import annotations
 
 import contextlib
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from exo.kernel.errors import ExoError
-from exo.kernel.utils import dump_yaml, ensure_dir, load_yaml, now_iso
+from exo.kernel.utils import dump_yaml, ensure_dir, gen_timestamp_id, load_yaml, now_iso
 
 REFLECTIONS_DIR = Path(".exo/memory/reflections")
 VALID_SEVERITIES = frozenset({"low", "medium", "high", "critical"})
 VALID_STATUSES = frozenset({"active", "superseded", "dismissed"})
 _SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 _MAX_BOOTSTRAP_REFLECTIONS = 10
-_REF_ID_RE = re.compile(r"^REF-(\d+)$")
 
 
 @dataclass
@@ -48,16 +46,8 @@ class Reflection:
 
 
 def _next_reflection_id(repo: Path) -> str:
-    """Scan reflections dir for existing REF-NNN.yaml files and return next ID."""
-    ref_dir = repo / REFLECTIONS_DIR
-    if not ref_dir.exists():
-        return "REF-001"
-    max_num = 0
-    for path in ref_dir.glob("REF-*.yaml"):
-        m = _REF_ID_RE.match(path.stem)
-        if m:
-            max_num = max(max_num, int(m.group(1)))
-    return f"REF-{max_num + 1:03d}"
+    """Generate a collision-resistant reflection ID: REF-YYYYMMDD-HHMMSS-XXXX."""
+    return gen_timestamp_id("REF")
 
 
 # ── Core API ────────────────────────────────────────────────────────

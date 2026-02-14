@@ -100,12 +100,13 @@ class TestReflectStore:
         assert ref.hit_count == 0
         assert ref.created_at != ""
 
-    def test_auto_increments_id(self, tmp_path: Path) -> None:
+    def test_unique_ids(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         ref1 = reflect(repo, pattern="Pattern 1", insight="Insight 1")
         ref2 = reflect(repo, pattern="Pattern 2", insight="Insight 2")
-        assert ref1.id == "REF-001"
-        assert ref2.id == "REF-002"
+        assert ref1.id.startswith("REF-")
+        assert ref2.id.startswith("REF-")
+        assert ref1.id != ref2.id
 
     def test_validates_severity(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -448,7 +449,7 @@ class TestCLIReflect:
         assert result.returncode == 0
         data = json.loads(result.stdout)
         assert data["ok"]
-        assert data["data"]["id"] == "REF-001"
+        assert data["data"]["id"].startswith("REF-")
         assert data["data"]["pattern"] == "Test pattern"
 
     def test_cli_reflections_lists(self, tmp_path: Path) -> None:
@@ -482,9 +483,9 @@ class TestCLIReflect:
 
     def test_cli_reflect_dismiss(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        reflect(repo, pattern="To dismiss", insight="I1")
+        ref = reflect(repo, pattern="To dismiss", insight="I1")
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "reflect-dismiss", "REF-001"],
+            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "reflect-dismiss", ref.id],
             capture_output=True,
             text=True,
             timeout=30,
@@ -586,14 +587,19 @@ class TestSerialization:
 
 
 class TestIDGeneration:
-    def test_first_id(self, tmp_path: Path) -> None:
+    def test_generates_timestamp_id(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        assert _next_reflection_id(repo) == "REF-001"
+        rid = _next_reflection_id(repo)
+        assert rid.startswith("REF-")
+        # Format: REF-YYYYMMDD-HHMMSS-XXXX
+        import re
 
-    def test_increments(self, tmp_path: Path) -> None:
+        assert re.match(r"^REF-\d{8}-\d{6}-[A-Z0-9]{4}$", rid)
+
+    def test_unique_ids(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        reflect(repo, pattern="P1", insight="I1")
-        assert _next_reflection_id(repo) == "REF-002"
+        ids = {_next_reflection_id(repo) for _ in range(20)}
+        assert len(ids) == 20
 
 
 # ── Constants ───────────────────────────────────────────────────────
