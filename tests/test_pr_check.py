@@ -88,13 +88,26 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _make_commit(repo: Path, filename: str, content: str, message: str) -> str:
-    """Create a file and commit it. Returns the commit SHA."""
+def _make_commit(repo: Path, filename: str, content: str, message: str, *, date: str = "") -> str:
+    """Create a file and commit it. Returns the commit SHA.
+
+    If *date* is provided it is passed via ``--date`` so the author-date
+    is deterministic (avoids timezone-dependent mismatches on CI).
+    """
     (repo / filename).parent.mkdir(parents=True, exist_ok=True)
     (repo / filename).write_text(content, encoding="utf-8")
     _git(repo, "add", filename)
-    _git(repo, "commit", "-m", message)
+    if date:
+        _git(repo, "commit", "-m", message, "--date", date)
+    else:
+        _git(repo, "commit", "-m", message)
     proc = _git(repo, "rev-parse", "HEAD")
+    return proc.stdout.strip()
+
+
+def _get_author_date(repo: Path, ref: str = "HEAD") -> str:
+    """Return the strict-ISO author-date (``%aI``) for *ref*."""
+    proc = _git(repo, "log", "-1", "--format=%aI", ref)
     return proc.stdout.strip()
 
 
@@ -304,14 +317,14 @@ class TestPRCheckIntegration:
 
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        # Create session window covering the commits
-        now = datetime.now(timezone.utc)
-        session_start = (now - timedelta(minutes=5)).isoformat()
+        sha1 = _make_commit(repo, "src/a.py", "print('a')", "add a")
+        sha2 = _make_commit(repo, "src/b.py", "print('b')", "add b")
 
-        _make_commit(repo, "src/a.py", "print('a')", "add a")
-        _make_commit(repo, "src/b.py", "print('b')", "add b")
-
-        session_finish = (now + timedelta(minutes=5)).isoformat()
+        # Derive session window from actual commit timestamps (CI-safe)
+        dt1 = datetime.fromisoformat(_get_author_date(repo, sha1))
+        dt2 = datetime.fromisoformat(_get_author_date(repo, sha2))
+        session_start = (min(dt1, dt2) - timedelta(minutes=5)).isoformat()
+        session_finish = (max(dt1, dt2) + timedelta(minutes=5)).isoformat()
 
         _write_session_index(
             repo,
@@ -353,10 +366,12 @@ class TestPRCheckIntegration:
 
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        now = datetime.now(timezone.utc)
-        session_start = (now - timedelta(minutes=5)).isoformat()
-        _make_commit(repo, "governed.py", "x", "governed commit")
-        session_finish = (now + timedelta(minutes=5)).isoformat()
+        sha1 = _make_commit(repo, "governed.py", "x", "governed commit")
+
+        # Derive session window from actual commit timestamp (CI-safe)
+        dt1 = datetime.fromisoformat(_get_author_date(repo, sha1))
+        session_start = (dt1 - timedelta(minutes=5)).isoformat()
+        session_finish = (dt1 + timedelta(minutes=5)).isoformat()
 
         # Second commit outside any session (far future)
         _git(
@@ -366,7 +381,7 @@ class TestPRCheckIntegration:
             "-m",
             "ungoverned commit",
             "--date",
-            (now + timedelta(hours=10)).isoformat(),
+            (dt1 + timedelta(hours=10)).isoformat(),
         )
 
         _write_session_index(
@@ -396,10 +411,12 @@ class TestPRCheckIntegration:
         _seed_ticket(repo, "TICKET-001")
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        now = datetime.now(timezone.utc)
-        session_start = (now - timedelta(minutes=5)).isoformat()
-        _make_commit(repo, "drift.py", "x", "drifty work")
-        session_finish = (now + timedelta(minutes=5)).isoformat()
+        sha = _make_commit(repo, "drift.py", "x", "drifty work")
+
+        # Derive session window from actual commit timestamp (CI-safe)
+        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        session_start = (dt - timedelta(minutes=5)).isoformat()
+        session_finish = (dt + timedelta(minutes=5)).isoformat()
 
         _write_session_index(
             repo,
@@ -421,10 +438,11 @@ class TestPRCheckIntegration:
         _seed_ticket(repo, "TICKET-001")
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        now = datetime.now(timezone.utc)
-        session_start = (now - timedelta(minutes=5)).isoformat()
-        _make_commit(repo, "x.py", "x", "work")
-        session_finish = (now + timedelta(minutes=5)).isoformat()
+        sha = _make_commit(repo, "x.py", "x", "work")
+
+        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        session_start = (dt - timedelta(minutes=5)).isoformat()
+        session_finish = (dt + timedelta(minutes=5)).isoformat()
 
         _write_session_index(
             repo,
@@ -446,10 +464,11 @@ class TestPRCheckIntegration:
         _seed_ticket(repo, "TICKET-001")
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        now = datetime.now(timezone.utc)
-        session_start = (now - timedelta(minutes=5)).isoformat()
-        _make_commit(repo, "bg.py", "x", "break glass work")
-        session_finish = (now + timedelta(minutes=5)).isoformat()
+        sha = _make_commit(repo, "bg.py", "x", "break glass work")
+
+        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        session_start = (dt - timedelta(minutes=5)).isoformat()
+        session_finish = (dt + timedelta(minutes=5)).isoformat()
 
         _write_session_index(
             repo,
@@ -471,11 +490,12 @@ class TestPRCheckIntegration:
         _seed_ticket(repo, "TICKET-001", scope={"allow": ["src/auth/**"], "deny": []})
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        now = datetime.now(timezone.utc)
-        session_start = (now - timedelta(minutes=5)).isoformat()
         # Commit touches file outside scope
-        _make_commit(repo, "docs/readme.md", "hello", "update docs")
-        session_finish = (now + timedelta(minutes=5)).isoformat()
+        sha = _make_commit(repo, "docs/readme.md", "hello", "update docs")
+
+        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        session_start = (dt - timedelta(minutes=5)).isoformat()
+        session_finish = (dt + timedelta(minutes=5)).isoformat()
 
         _write_session_index(
             repo,
@@ -522,12 +542,15 @@ class TestPRCheckIntegration:
         _seed_ticket(repo, "TICKET-001")
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        now = datetime.now(timezone.utc)
-        session_start = (now - timedelta(minutes=5)).isoformat()
-        _make_commit(repo, "a.py", "a", "first")
+        sha1 = _make_commit(repo, "a.py", "a", "first")
         _make_commit(repo, "b.py", "b", "second")
-        _make_commit(repo, "c.py", "c", "third")
-        session_finish = (now + timedelta(minutes=5)).isoformat()
+        sha3 = _make_commit(repo, "c.py", "c", "third")
+
+        # Derive window from first/last commit (CI-safe)
+        dt1 = datetime.fromisoformat(_get_author_date(repo, sha1))
+        dt3 = datetime.fromisoformat(_get_author_date(repo, sha3))
+        session_start = (min(dt1, dt3) - timedelta(minutes=5)).isoformat()
+        session_finish = (max(dt1, dt3) + timedelta(minutes=5)).isoformat()
 
         _write_session_index(
             repo,
@@ -545,19 +568,26 @@ class TestPRCheckIntegration:
         _seed_ticket(repo, "TICKET-002")
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
 
-        # Session 1 window
-        s1_start = (now - timedelta(minutes=10)).isoformat()
-        s1_finish = (now - timedelta(minutes=5)).isoformat()
-        # Commit in session 1 window
-        _git(repo, "commit", "--allow-empty", "-m", "sess1-commit", "--date", (now - timedelta(minutes=7)).isoformat())
+        # Commit 1 with explicit date
+        c1_date = (now - timedelta(minutes=7)).isoformat()
+        _git(repo, "commit", "--allow-empty", "-m", "sess1-commit", "--date", c1_date)
+        c1_actual = _get_author_date(repo, "HEAD")
 
-        # Session 2 window
-        s2_start = (now - timedelta(minutes=4)).isoformat()
-        s2_finish = now.isoformat()
-        # Commit in session 2 window
-        _git(repo, "commit", "--allow-empty", "-m", "sess2-commit", "--date", (now - timedelta(minutes=2)).isoformat())
+        # Commit 2 with explicit date
+        c2_date = (now - timedelta(minutes=2)).isoformat()
+        _git(repo, "commit", "--allow-empty", "-m", "sess2-commit", "--date", c2_date)
+        c2_actual = _get_author_date(repo, "HEAD")
+
+        # Session windows derived from actual commit timestamps (CI-safe)
+        dt1 = datetime.fromisoformat(c1_actual)
+        dt2 = datetime.fromisoformat(c2_actual)
+
+        s1_start = (dt1 - timedelta(minutes=3)).isoformat()
+        s1_finish = (dt1 + timedelta(minutes=2)).isoformat()
+        s2_start = (dt2 - timedelta(minutes=3)).isoformat()
+        s2_finish = (dt2 + timedelta(minutes=3)).isoformat()
 
         _write_session_index(
             repo,
@@ -820,10 +850,11 @@ class TestEdgeCases:
         _seed_ticket(repo, "TICKET-001")
         base = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
-        now = datetime.now(timezone.utc)
-        session_start = (now - timedelta(minutes=5)).isoformat()
-        _make_commit(repo, "x.py", "x", "work")
-        session_finish = (now + timedelta(minutes=5)).isoformat()
+        sha = _make_commit(repo, "x.py", "x", "work")
+
+        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        session_start = (dt - timedelta(minutes=5)).isoformat()
+        session_finish = (dt + timedelta(minutes=5)).isoformat()
 
         _write_session_index(
             repo,

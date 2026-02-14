@@ -158,11 +158,12 @@ class TestSchemaExtension:
         assert ticket["id"] == "INTENT-001"
         assert ticket["kind"] == "intent"
 
-    def test_next_intent_id(self, tmp_path: Path) -> None:
+    def test_next_intent_id_format(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        assert tickets_mod.next_intent_id(repo) == "INTENT-001"
-        _seed_intent(repo, "INTENT-001")
-        assert tickets_mod.next_intent_id(repo) == "INTENT-002"
+        import re
+
+        iid = tickets_mod.next_intent_id(repo)
+        assert re.match(r"^INT-\d{8}-\d{6}-[A-Z0-9]{4}$", iid), f"Bad format: {iid}"
 
     def test_validate_ticket_rejects_invalid_kind(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -513,9 +514,18 @@ class TestIntentTimeline:
 
 
 class TestIntentCreate:
-    def test_intent_create_via_cli(self, tmp_path: Path) -> None:
+    def _run_cli(self, args: list[str], capsys=None) -> tuple[int, dict[str, Any]]:
+        """Run CLI and return (rc, parsed_json_data)."""
+        rc = cli_main(args)
+        if capsys:
+            out = capsys.readouterr().out
+            data = json.loads(out)
+            return rc, data.get("data", {})
+        return rc, {}
+
+    def test_intent_create_via_cli(self, tmp_path: Path, capsys) -> None:
         repo = _bootstrap_repo(tmp_path)
-        rc = cli_main(
+        rc, data = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -531,11 +541,13 @@ class TestIntentCreate:
                 "login returns 200",
                 "--risk",
                 "high",
-            ]
+            ],
+            capsys,
         )
         assert rc == 0
-        # Verify the intent ticket was created
-        ticket = tickets_mod.load_ticket(repo, "INTENT-001")
+        intent_id = data["intent_id"]
+        assert intent_id.startswith("INT-")
+        ticket = tickets_mod.load_ticket(repo, intent_id)
         assert ticket["kind"] == "intent"
         assert ticket["brain_dump"] == "I want login and logout"
         assert ticket["boundary"] == "only touch src/auth/"
@@ -543,10 +555,23 @@ class TestIntentCreate:
         assert ticket["risk"] == "high"
         assert ticket["title"] == "Build auth system"
 
-    def test_intent_create_auto_increments_id(self, tmp_path: Path) -> None:
+    def test_intent_create_unique_ids(self, tmp_path: Path, capsys) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _seed_intent(repo, intent_id="INTENT-001")
-        rc = cli_main(
+        rc1, data1 = self._run_cli(
+            [
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "intent-create",
+                "First intent",
+                "--brain-dump",
+                "First brain dump",
+            ],
+            capsys,
+        )
+        assert rc1 == 0
+        rc2, data2 = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -556,15 +581,17 @@ class TestIntentCreate:
                 "Second intent",
                 "--brain-dump",
                 "Another brain dump",
-            ]
+            ],
+            capsys,
         )
-        assert rc == 0
-        ticket = tickets_mod.load_ticket(repo, "INTENT-002")
+        assert rc2 == 0
+        assert data1["intent_id"] != data2["intent_id"]
+        ticket = tickets_mod.load_ticket(repo, data2["intent_id"])
         assert ticket["kind"] == "intent"
 
-    def test_intent_create_with_scope(self, tmp_path: Path) -> None:
+    def test_intent_create_with_scope(self, tmp_path: Path, capsys) -> None:
         repo = _bootstrap_repo(tmp_path)
-        rc = cli_main(
+        rc, data = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -582,10 +609,12 @@ class TestIntentCreate:
                 "5",
                 "--max-loc",
                 "200",
-            ]
+            ],
+            capsys,
         )
         assert rc == 0
-        ticket = tickets_mod.load_ticket(repo, "INTENT-001")
+        intent_id = data["intent_id"]
+        ticket = tickets_mod.load_ticket(repo, intent_id)
         assert ticket["scope"]["allow"] == ["src/**"]
         assert ticket["scope"]["deny"] == ["src/vendor/**"]
         assert ticket["budgets"]["max_files_changed"] == 5
@@ -593,10 +622,17 @@ class TestIntentCreate:
 
 
 class TestTicketCreate:
-    def test_ticket_create_task_under_intent(self, tmp_path: Path) -> None:
+    def _run_cli(self, args: list[str], capsys) -> tuple[int, dict[str, Any]]:
+        """Run CLI and return (rc, parsed_json_data)."""
+        rc = cli_main(args)
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        return rc, data.get("data", {})
+
+    def test_ticket_create_task_under_intent(self, tmp_path: Path, capsys) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
-        rc = cli_main(
+        rc, data = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -608,20 +644,23 @@ class TestTicketCreate:
                 "task",
                 "--parent",
                 "INTENT-001",
-            ]
+            ],
+            capsys,
         )
         assert rc == 0
-        ticket = tickets_mod.load_ticket(repo, "TICKET-001")
+        ticket_id = data["ticket_id"]
+        assert ticket_id.startswith("TKT-")
+        ticket = tickets_mod.load_ticket(repo, ticket_id)
         assert ticket["kind"] == "task"
         assert ticket["parent_id"] == "INTENT-001"
         # Parent should have child wired
         parent = tickets_mod.load_ticket(repo, "INTENT-001")
-        assert "TICKET-001" in parent.get("children", [])
+        assert ticket_id in parent.get("children", [])
 
-    def test_ticket_create_epic_under_intent(self, tmp_path: Path) -> None:
+    def test_ticket_create_epic_under_intent(self, tmp_path: Path, capsys) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
-        rc = cli_main(
+        rc, data = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -633,18 +672,21 @@ class TestTicketCreate:
                 "epic",
                 "--parent",
                 "INTENT-001",
-            ]
+            ],
+            capsys,
         )
         assert rc == 0
-        ticket = tickets_mod.load_ticket(repo, "TICKET-001-EPIC")
+        ticket_id = data["ticket_id"]
+        assert ticket_id.endswith("-EPIC")
+        ticket = tickets_mod.load_ticket(repo, ticket_id)
         assert ticket["kind"] == "epic"
         assert ticket["parent_id"] == "INTENT-001"
 
-    def test_ticket_create_task_under_epic(self, tmp_path: Path) -> None:
+    def test_ticket_create_task_under_epic(self, tmp_path: Path, capsys) -> None:
         repo = _bootstrap_repo(tmp_path)
         _seed_intent(repo, intent_id="INTENT-001")
         _seed_epic(repo, epic_id="TICKET-001-EPIC", parent_id="INTENT-001")
-        rc = cli_main(
+        rc, data = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -656,10 +698,12 @@ class TestTicketCreate:
                 "task",
                 "--parent",
                 "TICKET-001-EPIC",
-            ]
+            ],
+            capsys,
         )
         assert rc == 0
-        ticket = tickets_mod.load_ticket(repo, "TICKET-002")
+        ticket_id = data["ticket_id"]
+        ticket = tickets_mod.load_ticket(repo, ticket_id)
         assert ticket["parent_id"] == "TICKET-001-EPIC"
 
     def test_ticket_create_rejects_epic_under_epic(self, tmp_path: Path) -> None:
@@ -720,12 +764,12 @@ class TestTicketCreate:
         )
         assert rc == 1  # Parent doesn't exist
 
-    def test_full_hierarchy_creation(self, tmp_path: Path) -> None:
+    def test_full_hierarchy_creation(self, tmp_path: Path, capsys) -> None:
         """Create intent → epic → task via CLI and validate the chain."""
         repo = _bootstrap_repo(tmp_path)
 
         # 1. Create intent
-        cli_main(
+        rc1, data1 = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -739,11 +783,14 @@ class TestTicketCreate:
                 "only src/payments/",
                 "--success-condition",
                 "Stripe checkout works",
-            ]
+            ],
+            capsys,
         )
+        assert rc1 == 0
+        intent_id = data1["intent_id"]
 
         # 2. Create epic under intent
-        cli_main(
+        rc2, data2 = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -754,12 +801,15 @@ class TestTicketCreate:
                 "--kind",
                 "epic",
                 "--parent",
-                "INTENT-001",
-            ]
+                intent_id,
+            ],
+            capsys,
         )
+        assert rc2 == 0
+        epic_id = data2["ticket_id"]
 
         # 3. Create task under epic
-        cli_main(
+        rc3, data3 = self._run_cli(
             [
                 "--repo",
                 str(repo),
@@ -770,30 +820,33 @@ class TestTicketCreate:
                 "--kind",
                 "task",
                 "--parent",
-                "TICKET-001-EPIC",
-            ]
+                epic_id,
+            ],
+            capsys,
         )
+        assert rc3 == 0
+        task_id = data3["ticket_id"]
 
         # Validate hierarchy
-        task = tickets_mod.load_ticket(repo, "TICKET-002")
+        task = tickets_mod.load_ticket(repo, task_id)
         reasons = tickets_mod.validate_intent_hierarchy(repo, task)
         assert reasons == []
 
         # Resolve intent root from task
         root = tickets_mod.resolve_intent_root(repo, task)
         assert root is not None
-        assert root["id"] == "INTENT-001"
+        assert root["id"] == intent_id
 
         # Timeline shows the intent with epic as direct descendant
         timeline = build_intent_timeline(repo)
         assert len(timeline["intents"]) == 1
-        assert timeline["intents"][0]["id"] == "INTENT-001"
+        assert timeline["intents"][0]["id"] == intent_id
         assert timeline["intents"][0]["descendant_count"] >= 1
         # Epic should have task nested in its children
         epic_desc = timeline["intents"][0]["descendants"][0]
-        assert epic_desc["id"] == "TICKET-001-EPIC"
+        assert epic_desc["id"] == epic_id
         assert len(epic_desc["children"]) == 1
-        assert epic_desc["children"][0]["id"] == "TICKET-002"
+        assert epic_desc["children"][0]["id"] == task_id
 
 
 # ──────────────────────────────────────────────
