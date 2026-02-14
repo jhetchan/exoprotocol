@@ -161,9 +161,13 @@ def seed_kernel_tickets(created_at: str) -> list[dict[str, Any]]:
     Users can delete them and create their own with `exo intent-create` and
     `exo ticket-create`.
     """
+    from exo.kernel.utils import gen_timestamp_id
+
+    intent_id = gen_timestamp_id("INT")
+    task_id = gen_timestamp_id("TKT")
     return [
         {
-            "id": "INTENT-001",
+            "id": intent_id,
             "kind": "intent",
             "type": "feature",
             "title": "Example: first governed feature",
@@ -184,14 +188,14 @@ def seed_kernel_tickets(created_at: str) -> list[dict[str, Any]]:
             "created_at": created_at,
         },
         {
-            "id": "TICKET-001",
+            "id": task_id,
             "kind": "task",
             "type": "feature",
             "title": "Example: first task",
             "intent": "Example task — replace with your first real task",
             "status": "todo",
             "priority": 3,
-            "parent_id": "INTENT-001",
+            "parent_id": intent_id,
             "scope": {"allow": ["**"], "deny": [".env*", "**/.ssh/**", "**/.aws/**", ".git/**"]},
             "budgets": {"max_files_changed": 12, "max_loc_changed": 400},
             "checks": [],

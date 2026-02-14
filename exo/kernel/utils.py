@@ -3,6 +3,8 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import random
+import string
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -75,6 +77,15 @@ def matches_pattern(path: Path, pattern: str, repo: Path) -> bool:
 
 def any_pattern_matches(path: Path, patterns: list[str], repo: Path) -> bool:
     return any(matches_pattern(path, pat, repo) for pat in patterns)
+
+
+def gen_timestamp_id(prefix: str) -> str:
+    """Generate a collision-resistant ID: PREFIX-YYYYMMDD-HHMMSS-XXXX."""
+    now = datetime.now()
+    ts = now.strftime("%Y%m%d-%H%M%S")
+    chars = string.ascii_uppercase + string.digits
+    suffix = "".join(random.choices(chars, k=4))
+    return f"{prefix}-{ts}-{suffix}"
 
 
 def default_topic_id(repo: Path) -> str:

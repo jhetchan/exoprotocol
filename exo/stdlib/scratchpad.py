@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-from exo.kernel.utils import ensure_dir, now_iso
+from exo.kernel.utils import ensure_dir, gen_timestamp_id, now_iso
 
 SCRATCHPAD_DIR = Path(".exo/scratchpad")
 THREADS_DIR = SCRATCHPAD_DIR / "threads"
 INBOX_PATH = SCRATCHPAD_DIR / "INBOX.md"
-THREAD_RE = re.compile(r"thread-(\d{4})\.md$")
 
 
 def append_jot(repo: Path, line: str) -> dict[str, str]:
@@ -23,15 +21,7 @@ def append_jot(repo: Path, line: str) -> dict[str, str]:
 
 
 def _next_thread_id(repo: Path) -> str:
-    threads_dir = repo / THREADS_DIR
-    ensure_dir(threads_dir)
-    seen: list[int] = []
-    for path in threads_dir.glob("thread-*.md"):
-        match = THREAD_RE.search(path.name)
-        if match:
-            seen.append(int(match.group(1)))
-    nxt = (max(seen) + 1) if seen else 1
-    return f"thread-{nxt:04d}"
+    return gen_timestamp_id("thread")
 
 
 def create_thread(repo: Path, topic: str) -> dict[str, str]:
