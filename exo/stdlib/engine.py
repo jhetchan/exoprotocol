@@ -1358,11 +1358,8 @@ class KernelEngine:
         if seed and not spec_path.exists():
             spec_body = (
                 "# SPEC-001\n\n"
-                "ExoProtocol Kernel build specification bootstrap.\n\n"
-                "## Scope\n\n"
-                "- Scaffold `.exo/`\n"
-                "- Compile constitution to lockfile\n"
-                "- Ticket + lock + audit baseline\n"
+                "Example specification created by `exo init`.\n\n"
+                "Replace this with your project's first spec.\n"
             )
             self._write_system_text(spec_path, spec_body)
             created.append(str(spec_path.relative_to(self.repo)))
