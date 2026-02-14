@@ -146,9 +146,12 @@ def _load_session_index(repo: Path) -> list[dict[str, Any]]:
 def _parse_ts(iso_str: str) -> datetime:
     """Parse ISO 8601 timestamp.
 
-    Normalises timezone-naive strings to UTC so that comparisons between
-    git author-dates and session timestamps never raise TypeError.
+    Handles the trailing ``Z`` that git ``%aI`` may emit on some platforms
+    (Python < 3.11 ``fromisoformat`` rejects ``Z``).  Also normalises
+    timezone-naive strings to UTC so comparisons never raise TypeError.
     """
+    if iso_str.endswith("Z"):
+        iso_str = iso_str[:-1] + "+00:00"
     dt = datetime.fromisoformat(iso_str)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
