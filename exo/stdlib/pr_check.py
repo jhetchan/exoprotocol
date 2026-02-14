@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -144,8 +144,15 @@ def _load_session_index(repo: Path) -> list[dict[str, Any]]:
 
 
 def _parse_ts(iso_str: str) -> datetime:
-    """Parse ISO 8601 timestamp."""
-    return datetime.fromisoformat(iso_str)
+    """Parse ISO 8601 timestamp.
+
+    Normalises timezone-naive strings to UTC so that comparisons between
+    git author-dates and session timestamps never raise TypeError.
+    """
+    dt = datetime.fromisoformat(iso_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _match_commits_to_sessions(

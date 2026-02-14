@@ -2,6 +2,8 @@
 # [ExoProtocol](https://exoprotocol.dev)
 
 [![PyPI](https://img.shields.io/pypi/v/exoprotocol)](https://pypi.org/project/exoprotocol/)
+[![Python](https://img.shields.io/badge/python-≥3.10-blue)](https://pypi.org/project/exoprotocol/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Governance kernel for multi-agent development. Treats AI-agent sessions the way an OS treats processes — with enforceable scope, lifecycle control, audit trails, and crash recovery. Everything lives in your git repo.
 

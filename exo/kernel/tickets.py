@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import random
 import re
+import string
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -25,7 +27,10 @@ ID_GUARD_FILE = Path(".exo/locks/.id.guard")
 
 TICKET_ID_RE = re.compile(r"^TICKET-(\d+)(?:-EPIC)?$")
 INTENT_ID_RE = re.compile(r"^INTENT-(\d+)$")
-PATH_RE = re.compile(r"^(TICKET-\d+(?:-EPIC)?|INTENT-\d+|GOV-\d+|PRACTICE-\d+)\.ya?ml$")
+# Match both legacy (TICKET-001, INTENT-001) and new (TKT-YYYYMMDD-..., INT-YYYYMMDD-...) formats
+PATH_RE = re.compile(
+    r"^(TICKET-\d+(?:-EPIC)?|INTENT-\d+|TKT-\d{8}-\d{6}-[A-Z0-9]{4}(?:-EPIC)?|INT-\d{8}-\d{6}-[A-Z0-9]{4}|GOV-\d+|PRACTICE-\d+)\.ya?ml$"
+)
 
 
 def normalize_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
@@ -125,36 +130,26 @@ def save_ticket(repo: Path, ticket: dict[str, Any]) -> Path:
     return path
 
 
-def _existing_ticket_numbers(repo: Path) -> list[int]:
-    numbers: list[int] = []
-    for path in list_ticket_paths(repo):
-        match = TICKET_ID_RE.match(path.stem)
-        if not match:
-            continue
-        numbers.append(int(match.group(1)))
-    return sorted(numbers)
+def _gen_suffix(length: int = 4) -> str:
+    """Generate a random alphanumeric suffix for collision-resistant IDs."""
+    chars = string.ascii_uppercase + string.digits
+    return "".join(random.choices(chars, k=length))
+
+
+def _gen_timestamp_id(prefix: str) -> str:
+    """Generate a collision-resistant ID: PREFIX-YYYYMMDD-HHMMSS-XXXX."""
+    now = datetime.now()
+    ts = now.strftime("%Y%m%d-%H%M%S")
+    suffix = _gen_suffix()
+    return f"{prefix}-{ts}-{suffix}"
 
 
 def next_ticket_id(repo: Path) -> str:
-    numbers = _existing_ticket_numbers(repo)
-    nxt = (numbers[-1] + 1) if numbers else 1
-    return f"TICKET-{nxt:03d}"
-
-
-def _existing_intent_numbers(repo: Path) -> list[int]:
-    numbers: list[int] = []
-    for path in list_ticket_paths(repo):
-        match = INTENT_ID_RE.match(path.stem)
-        if not match:
-            continue
-        numbers.append(int(match.group(1)))
-    return sorted(numbers)
+    return _gen_timestamp_id("TKT")
 
 
 def next_intent_id(repo: Path) -> str:
-    numbers = _existing_intent_numbers(repo)
-    nxt = (numbers[-1] + 1) if numbers else 1
-    return f"INTENT-{nxt:03d}"
+    return _gen_timestamp_id("INT")
 
 
 @contextmanager
