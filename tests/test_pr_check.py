@@ -111,6 +111,13 @@ def _get_author_date(repo: Path, ref: str = "HEAD") -> str:
     return proc.stdout.strip()
 
 
+def _parse_iso(iso_str: str) -> datetime:
+    """Parse ISO 8601 with ``Z`` support (Python <3.11 compat)."""
+    if iso_str.endswith("Z"):
+        iso_str = iso_str[:-1] + "+00:00"
+    return datetime.fromisoformat(iso_str)
+
+
 def _write_session_index(repo: Path, entries: list[dict[str, Any]]) -> None:
     """Write session index entries as JSONL."""
     index_dir = repo / ".exo" / "memory" / "sessions"
@@ -321,8 +328,8 @@ class TestPRCheckIntegration:
         sha2 = _make_commit(repo, "src/b.py", "print('b')", "add b")
 
         # Derive session window from actual commit timestamps (CI-safe)
-        dt1 = datetime.fromisoformat(_get_author_date(repo, sha1))
-        dt2 = datetime.fromisoformat(_get_author_date(repo, sha2))
+        dt1 = _parse_iso(_get_author_date(repo, sha1))
+        dt2 = _parse_iso(_get_author_date(repo, sha2))
         session_start = (min(dt1, dt2) - timedelta(minutes=5)).isoformat()
         session_finish = (max(dt1, dt2) + timedelta(minutes=5)).isoformat()
 
@@ -369,7 +376,7 @@ class TestPRCheckIntegration:
         sha1 = _make_commit(repo, "governed.py", "x", "governed commit")
 
         # Derive session window from actual commit timestamp (CI-safe)
-        dt1 = datetime.fromisoformat(_get_author_date(repo, sha1))
+        dt1 = _parse_iso(_get_author_date(repo, sha1))
         session_start = (dt1 - timedelta(minutes=5)).isoformat()
         session_finish = (dt1 + timedelta(minutes=5)).isoformat()
 
@@ -414,7 +421,7 @@ class TestPRCheckIntegration:
         sha = _make_commit(repo, "drift.py", "x", "drifty work")
 
         # Derive session window from actual commit timestamp (CI-safe)
-        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        dt = _parse_iso(_get_author_date(repo, sha))
         session_start = (dt - timedelta(minutes=5)).isoformat()
         session_finish = (dt + timedelta(minutes=5)).isoformat()
 
@@ -440,7 +447,7 @@ class TestPRCheckIntegration:
 
         sha = _make_commit(repo, "x.py", "x", "work")
 
-        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        dt = _parse_iso(_get_author_date(repo, sha))
         session_start = (dt - timedelta(minutes=5)).isoformat()
         session_finish = (dt + timedelta(minutes=5)).isoformat()
 
@@ -466,7 +473,7 @@ class TestPRCheckIntegration:
 
         sha = _make_commit(repo, "bg.py", "x", "break glass work")
 
-        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        dt = _parse_iso(_get_author_date(repo, sha))
         session_start = (dt - timedelta(minutes=5)).isoformat()
         session_finish = (dt + timedelta(minutes=5)).isoformat()
 
@@ -493,7 +500,7 @@ class TestPRCheckIntegration:
         # Commit touches file outside scope
         sha = _make_commit(repo, "docs/readme.md", "hello", "update docs")
 
-        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        dt = _parse_iso(_get_author_date(repo, sha))
         session_start = (dt - timedelta(minutes=5)).isoformat()
         session_finish = (dt + timedelta(minutes=5)).isoformat()
 
@@ -547,8 +554,8 @@ class TestPRCheckIntegration:
         sha3 = _make_commit(repo, "c.py", "c", "third")
 
         # Derive window from first/last commit (CI-safe)
-        dt1 = datetime.fromisoformat(_get_author_date(repo, sha1))
-        dt3 = datetime.fromisoformat(_get_author_date(repo, sha3))
+        dt1 = _parse_iso(_get_author_date(repo, sha1))
+        dt3 = _parse_iso(_get_author_date(repo, sha3))
         session_start = (min(dt1, dt3) - timedelta(minutes=5)).isoformat()
         session_finish = (max(dt1, dt3) + timedelta(minutes=5)).isoformat()
 
@@ -581,8 +588,8 @@ class TestPRCheckIntegration:
         c2_actual = _get_author_date(repo, "HEAD")
 
         # Session windows derived from actual commit timestamps (CI-safe)
-        dt1 = datetime.fromisoformat(c1_actual)
-        dt2 = datetime.fromisoformat(c2_actual)
+        dt1 = _parse_iso(c1_actual)
+        dt2 = _parse_iso(c2_actual)
 
         s1_start = (dt1 - timedelta(minutes=3)).isoformat()
         s1_finish = (dt1 + timedelta(minutes=2)).isoformat()
@@ -852,7 +859,7 @@ class TestEdgeCases:
 
         sha = _make_commit(repo, "x.py", "x", "work")
 
-        dt = datetime.fromisoformat(_get_author_date(repo, sha))
+        dt = _parse_iso(_get_author_date(repo, sha))
         session_start = (dt - timedelta(minutes=5)).isoformat()
         session_finish = (dt + timedelta(minutes=5)).isoformat()
 
