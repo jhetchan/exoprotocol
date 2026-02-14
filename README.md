@@ -1,4 +1,6 @@
-# [ExoProtocol](https://exoprotocol.dev)
+# (\/)(°,,°)(\/) [ExoProtocol](https://exoprotocol.dev)
+
+[![PyPI](https://img.shields.io/pypi/v/exoprotocol)](https://pypi.org/project/exoprotocol/)
 
 Governance kernel for multi-agent development. Treats AI-agent sessions the way an OS treats processes — with enforceable scope, lifecycle control, audit trails, and crash recovery. Everything lives in your git repo.
 
