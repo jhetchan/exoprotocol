@@ -175,6 +175,14 @@ def _generate_preamble(lock: dict[str, Any], config: dict[str, Any]) -> str:
             "**Private memory monitoring**: If `private_memory.watch_paths` in `.exo/config.yaml` is empty,",
             "add the absolute path to your memory file (e.g., `~/.claude/.../memory/MEMORY.md`) so that",
             "ExoProtocol can detect when you write to private memory without creating a shared reflection.",
+            "",
+            "### End-of-Work Reflection",
+            "",
+            "When you complete significant work or the user appears to be wrapping up:",
+            "- **Proactively** run `exo reflect --pattern '<what kept happening>' --insight '<what was learned>'`",
+            "  for each non-trivial insight discovered during the conversation",
+            "- Do NOT wait for `session-finish` — many users close the editor without explicit session end",
+            "- Good reflection triggers: bug fixes, CI failures, gotchas, architectural decisions, workflow improvements",
         ]
     )
 
