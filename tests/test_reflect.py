@@ -22,22 +22,22 @@ import yaml
 
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets
-from exo.orchestrator.session import AgentSessionManager, SESSION_CACHE_DIR
+from exo.orchestrator.session import AgentSessionManager
 from exo.stdlib.reflect import (
-    Reflection,
     REFLECTIONS_DIR,
     VALID_SEVERITIES,
     VALID_STATUSES,
+    Reflection,
     _next_reflection_id,
-    reflect,
-    load_reflections,
-    reflections_for_bootstrap,
-    increment_hit_count,
     dismiss_reflection,
-    reflect_to_dict,
-    reflections_to_list,
-    format_reflections_human,
     format_bootstrap_reflections,
+    format_reflections_human,
+    increment_hit_count,
+    load_reflections,
+    reflect,
+    reflect_to_dict,
+    reflections_for_bootstrap,
+    reflections_to_list,
 )
 
 
@@ -111,7 +111,7 @@ class TestReflectStore:
         repo = _bootstrap_repo(tmp_path)
         try:
             reflect(repo, pattern="X", insight="Y", severity="invalid")
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "severity" in str(e).lower()
 
@@ -119,7 +119,7 @@ class TestReflectStore:
         repo = _bootstrap_repo(tmp_path)
         try:
             reflect(repo, pattern="", insight="Y")
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "pattern" in str(e).lower()
 
@@ -127,7 +127,7 @@ class TestReflectStore:
         repo = _bootstrap_repo(tmp_path)
         try:
             reflect(repo, pattern="X", insight="")
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "insight" in str(e).lower()
 
@@ -264,7 +264,7 @@ class TestDismissReflection:
         repo = _bootstrap_repo(tmp_path)
         try:
             dismiss_reflection(repo, "REF-999")
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "not found" in str(e).lower()
 
@@ -601,7 +601,7 @@ class TestIDGeneration:
 
 class TestConstants:
     def test_valid_severities(self) -> None:
-        assert VALID_SEVERITIES == {"low", "medium", "high", "critical"}
+        assert {"low", "medium", "high", "critical"} == VALID_SEVERITIES
 
     def test_valid_statuses(self) -> None:
-        assert VALID_STATUSES == {"active", "superseded", "dismissed"}
+        assert {"active", "superseded", "dismissed"} == VALID_STATUSES

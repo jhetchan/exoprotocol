@@ -11,14 +11,12 @@ space and keep the governance data directory clean.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from exo.kernel.utils import now_iso
-
 
 SESSION_MEMORY_DIR = Path(".exo/memory/sessions")
 SESSION_INDEX_PATH = SESSION_MEMORY_DIR / "index.jsonl"

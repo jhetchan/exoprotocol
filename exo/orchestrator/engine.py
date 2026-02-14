@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from exo.control.syscalls import KernelSyscalls

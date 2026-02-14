@@ -12,9 +12,7 @@ Covers:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any
 
 from exo.kernel import governance as governance_mod
 from exo.kernel.utils import dump_yaml
@@ -160,7 +158,7 @@ class TestAdapterIntegration:
         repo = _bootstrap_repo(tmp_path)
         from exo.stdlib.adapters import generate_adapters
 
-        result = generate_adapters(repo, dry_run=True)
+        generate_adapters(repo, dry_run=True)
         assert not (repo / ".exo" / "LEARNINGS.md").exists()
 
     def test_claude_md_references_learnings(self, tmp_path: Path) -> None:

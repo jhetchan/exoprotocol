@@ -102,7 +102,7 @@ def build_intent_timeline(repo: Path) -> dict[str, Any]:
     intent_trees: list[dict[str, Any]] = []
 
     for intent in intents:
-        intent_id = str(intent.get("id", ""))
+        str(intent.get("id", ""))
         tree = _build_intent_tree(intent, ticket_index, sessions_by_ticket)
         intent_trees.append(tree)
 

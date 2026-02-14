@@ -17,20 +17,18 @@ Covers:
 
 from __future__ import annotations
 
-import copy
 import json
 from pathlib import Path
 from typing import Any
 
 from exo.kernel import governance as governance_mod
-from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION
+from exo.stdlib.defaults import DEFAULT_CONFIG
 from exo.stdlib.scan import (
+    LANGUAGE_BUDGETS,
+    LANGUAGE_CHECKS,
     BuildDir,
     CIDetection,
     ExistingGovernance,
-    LANGUAGE_BUDGETS,
-    LANGUAGE_CHECKS,
-    LANGUAGE_MARKERS,
     LanguageDetection,
     ScanReport,
     SensitiveFile,
@@ -48,7 +46,6 @@ from exo.stdlib.scan import (
     scan_repo,
     scan_to_dict,
 )
-
 
 # ── Language Detection ─────────────────────────────────────────────
 
@@ -106,7 +103,7 @@ class TestScanDetection:
         (tmp_path / "pyproject.toml").write_text("[build-system]", encoding="utf-8")
         (tmp_path / "package.json").write_text("{}", encoding="utf-8")
         langs = _detect_languages(tmp_path)
-        names = {l.language for l in langs}
+        names = {lang.language for lang in langs}
         assert "python" in names
         assert "node" in names
 

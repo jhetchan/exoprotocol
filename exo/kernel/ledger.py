@@ -10,7 +10,6 @@ from .types import LedgerRef
 from .utils import ensure_dir, now_iso, relative_posix, sha256_text
 from .version import KERNEL_NAME, KERNEL_VERSION
 
-
 LEDGER_LOG_PATH = Path(".exo/logs/ledger.log.jsonl")
 LEDGER_HEADS_PATH = Path(".exo/logs/heads.json")
 LEDGER_INTENT_LOCK_PATH = Path(".exo/logs/ledger.intent.lock")
@@ -341,10 +340,7 @@ def _record_exists_for_ref(records: list[tuple[int, dict[str, Any]]], ref_id: st
     line_ref = _parse_line_cursor(ref_id)
     if isinstance(line_ref, int):
         return any(line_no == line_ref for line_no, _ in records)
-    for _, item in records:
-        if _extract_ref_id(item) == ref_id:
-            return True
-    return False
+    return any(_extract_ref_id(item) == ref_id for _, item in records)
 
 
 def _filtered_records_with_meta(

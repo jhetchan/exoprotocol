@@ -9,7 +9,6 @@ from typing import Any
 
 from exo.kernel.errors import ExoError
 
-
 _GIT_AUTHOR_ENV = {
     "GIT_AUTHOR_NAME": "ExoProtocol",
     "GIT_AUTHOR_EMAIL": "exo@local.invalid",
@@ -120,10 +119,7 @@ def _ensure_gitignore_entry(repo: Path, sidecar_rel: str) -> bool:
     path = repo / ".gitignore"
     entry = f"{sidecar_rel.rstrip('/')}/"
 
-    if path.exists():
-        lines = path.read_text(encoding="utf-8").splitlines()
-    else:
-        lines = []
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
 
     if entry in lines:
         return False

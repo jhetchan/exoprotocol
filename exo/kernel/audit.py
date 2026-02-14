@@ -8,7 +8,6 @@ from .types import AuditRef
 from .utils import ensure_dir, now_iso, relative_posix, sha256_text
 from .version import KERNEL_NAME, KERNEL_VERSION
 
-
 AUDIT_LOG_PATH = Path(".exo/logs/audit.log.jsonl")
 
 

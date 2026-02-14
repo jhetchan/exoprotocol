@@ -17,10 +17,10 @@ from typing import Any
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets
 from exo.orchestrator.session import (
+    SESSION_CACHE_DIR,
     AgentSessionManager,
     _pid_alive,
     scan_sessions,
-    SESSION_CACHE_DIR,
 )
 
 
@@ -57,7 +57,7 @@ def _create_ticket(repo: Path, ticket_id: str) -> dict[str, Any]:
         "scope": {"allow": ["**"], "deny": []},
     }
     tickets.save_ticket(repo, ticket_data)
-    lock = tickets.acquire_lock(repo, ticket_id, owner="test-agent", role="developer")
+    tickets.acquire_lock(repo, ticket_id, owner="test-agent", role="developer")
     return ticket_data
 
 

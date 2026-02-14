@@ -7,27 +7,22 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from exo.cli import main as cli_main
 from exo.kernel import governance as governance_mod
 from exo.stdlib.adapters import (
-    generate_adapters,
-    generate_claude,
-    generate_cursor,
-    generate_agents,
-    generate_ci,
     ADAPTER_TARGETS,
     AGENT_ADAPTER_TARGETS,
-    TARGET_FILES,
     EXO_MARKER_BEGIN,
     EXO_MARKER_END,
-    _load_governance_lock,
-    _format_deny_rules,
-    _wrap_with_markers,
-    _extract_marker_sections,
-    _merge_with_existing,
+    TARGET_FILES,
     _count_user_lines,
+    _extract_marker_sections,
+    _format_deny_rules,
+    _load_governance_lock,
+    _wrap_with_markers,
+    generate_adapters,
 )
-from exo.stdlib.reconcile import reconcile_session, DriftReport
-from exo.cli import main as cli_main
+from exo.stdlib.reconcile import reconcile_session
 
 
 def _policy_block(rule: dict[str, Any]) -> str:
@@ -138,7 +133,7 @@ class TestAdapterGeneration:
         repo = _bootstrap_repo(tmp_path)
         try:
             generate_adapters(repo, targets=["invalid"])
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "ADAPTER_TARGET_INVALID" in str(e)
 
@@ -148,7 +143,7 @@ class TestAdapterGeneration:
         (repo / ".exo").mkdir(parents=True, exist_ok=True)
         try:
             generate_adapters(repo, targets=["claude"])
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "GOVERNANCE_LOCK_MISSING" in str(e)
 

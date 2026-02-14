@@ -14,14 +14,14 @@ that receives (repo, config) and returns the updated config dict.
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from exo.kernel.errors import ExoError
 from exo.kernel.utils import dump_yaml, ensure_dir, load_yaml, now_iso
 from exo.stdlib.config_schema import CURRENT_VERSION
 from exo.stdlib.defaults import DEFAULT_CONFIG
-
 
 # ── Migration Registry ─────────────────────────────────────────────
 

@@ -22,17 +22,16 @@ from typing import Any
 
 from exo.kernel import governance as governance_mod
 from exo.stdlib.gc import (
-    GCReport,
+    _cleanup_empty_dirs,
+    _compact_index,
+    _extract_session_ids_from_paths,
+    _file_age_days,
+    _gc_bootstraps,
+    _gc_cursors,
+    _gc_mementos,
+    format_gc_human,
     gc,
     gc_to_dict,
-    format_gc_human,
-    _file_age_days,
-    _gc_mementos,
-    _gc_cursors,
-    _gc_bootstraps,
-    _compact_index,
-    _cleanup_empty_dirs,
-    _extract_session_ids_from_paths,
 )
 
 

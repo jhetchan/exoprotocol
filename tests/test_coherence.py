@@ -12,19 +12,14 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import subprocess
 import textwrap
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
-
-import pytest
 
 from exo.kernel import governance as governance_mod
 from exo.kernel.utils import dump_yaml, load_yaml
 from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION
-
 
 # ── Helpers ──────────────────────────────────────────────────────
 

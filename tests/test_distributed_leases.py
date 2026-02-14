@@ -9,7 +9,6 @@ import pytest
 from exo.kernel.errors import ExoError
 from exo.stdlib.distributed_leases import GitDistributedLeaseManager
 
-
 _GIT_TEST_ENV = {
     "GIT_AUTHOR_NAME": "ExoProtocol",
     "GIT_AUTHOR_EMAIL": "exo@local.invalid",

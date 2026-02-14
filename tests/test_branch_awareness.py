@@ -12,23 +12,21 @@ Verifies:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets as tickets_mod
+from exo.kernel.utils import ensure_dir
 from exo.orchestrator import AgentSessionManager
 from exo.orchestrator.session import (
+    SESSION_CACHE_DIR,
+    SESSION_INDEX_PATH,
     _current_git_branch,
     _exo_banner,
     scan_sessions,
-    SESSION_CACHE_DIR,
-    SESSION_INDEX_PATH,
 )
-from exo.kernel.utils import ensure_dir
 
 
 def _policy_block(payload: dict) -> str:
@@ -246,7 +244,7 @@ class TestSiblingAwareness:
         (cache_dir / "agent-test.active.json").write_text(json.dumps(own_payload), encoding="utf-8")
 
         _acquire_lock(repo)
-        manager = AgentSessionManager(repo, actor="agent:test")
+        AgentSessionManager(repo, actor="agent:test")
         # Will reuse the existing session (same actor/ticket), so check bootstrap
         # on a fresh start with different ticket
         _seed_ticket(repo, "TICKET-333")

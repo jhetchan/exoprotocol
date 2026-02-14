@@ -5,7 +5,6 @@ from pathlib import Path
 
 from exo.kernel.utils import ensure_dir, now_iso
 
-
 SCRATCHPAD_DIR = Path(".exo/scratchpad")
 THREADS_DIR = SCRATCHPAD_DIR / "threads"
 INBOX_PATH = SCRATCHPAD_DIR / "INBOX.md"

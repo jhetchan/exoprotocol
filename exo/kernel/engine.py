@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import json
 import os
 import platform
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from . import governance as governance_mod, ledger, tickets as tickets_mod
+from . import governance as governance_mod
+from . import ledger
+from . import tickets as tickets_mod
 from .audit import append_audit_event, event_template
 from .errors import ExoError
 from .types import Action, Decision, Governance, Plan, Session, Ticket, to_dict
@@ -247,18 +249,21 @@ def check_action(
             )
 
     allow_patterns, deny_patterns = _scope_lists(ticket_data)
-    if policy_action in {"write", "delete"} and target_path:
-        if not any_pattern_matches(target_path, allow_patterns, repo):
-            return _finalize_decision(
-                gov,
-                Decision(
-                    status="DENY",
-                    reasons=[f"target outside ticket scope allowlist: {normalized_action.target}"],
-                    required_evidence=[],
-                    constraints={"allow": allow_patterns},
-                ),
-                intent_id=intent_id,
-            )
+    if (
+        policy_action in {"write", "delete"}
+        and target_path
+        and not any_pattern_matches(target_path, allow_patterns, repo)
+    ):
+        return _finalize_decision(
+            gov,
+            Decision(
+                status="DENY",
+                reasons=[f"target outside ticket scope allowlist: {normalized_action.target}"],
+                required_evidence=[],
+                constraints={"allow": allow_patterns},
+            ),
+            intent_id=intent_id,
+        )
 
     if target_path and deny_patterns and any_pattern_matches(target_path, deny_patterns, repo):
         return _finalize_decision(

@@ -58,10 +58,7 @@ def _normalize_scheduler(raw: Any) -> dict[str, Any]:
             global_limit = parsed
 
     enabled_raw = raw.get("enabled")
-    if isinstance(enabled_raw, bool):
-        enabled = enabled_raw
-    else:
-        enabled = bool(lanes or global_limit is not None)
+    enabled = enabled_raw if isinstance(enabled_raw, bool) else bool(lanes or global_limit is not None)
 
     return {
         "enabled": enabled,

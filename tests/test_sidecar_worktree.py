@@ -6,7 +6,6 @@ from pathlib import Path
 
 from exo.stdlib.sidecar import init_sidecar_worktree
 
-
 _GIT_TEST_ENV = {
     "GIT_AUTHOR_NAME": "ExoProtocol",
     "GIT_AUTHOR_EMAIL": "exo@local.invalid",

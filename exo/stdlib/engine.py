@@ -7,14 +7,16 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from exo.kernel import governance, ledger, open_session, seal_result, tickets
 from exo.kernel.audit import append_audit, event_template
 from exo.kernel.errors import ExoError
-from exo.kernel.types import AuditRef, to_dict as type_to_dict
+from exo.kernel.types import AuditRef
+from exo.kernel.types import to_dict as type_to_dict
 from exo.kernel.utils import (
     any_pattern_matches,
     dump_yaml,
@@ -25,14 +27,19 @@ from exo.kernel.utils import (
 )
 from exo.stdlib import (
     dispatch,
-    distributed_leases as distributed_leases_mod,
     evolution,
-    recall as recall_mod,
     scratchpad,
+)
+from exo.stdlib import (
+    distributed_leases as distributed_leases_mod,
+)
+from exo.stdlib import (
+    recall as recall_mod,
+)
+from exo.stdlib import (
     sidecar as sidecar_mod,
 )
 from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION, seed_kernel_tickets
-
 
 SCRIPT_FALLBACKS = {
     "plan": "exo.scripts.default_plan",
@@ -270,9 +277,12 @@ class KernelEngine:
 
         if value.startswith("line:"):
             line_no = value.split(":", 1)[1]
-            if line_no.isdigit() and int(line_no) > 0:
-                if ledger.read_records(self.repo, since_line=int(line_no), limit=1):
-                    return {"kind": "ledger", "value": value}
+            if (
+                line_no.isdigit()
+                and int(line_no) > 0
+                and ledger.read_records(self.repo, since_line=int(line_no), limit=1)
+            ):
+                return {"kind": "ledger", "value": value}
         elif ledger.read_records(self.repo, ref_id=value, limit=1):
             return {"kind": "ledger", "value": value}
 
@@ -1019,10 +1029,7 @@ class KernelEngine:
 
     def _resolve_repo_path(self, raw_path: str) -> Path:
         candidate = Path(raw_path)
-        if candidate.is_absolute():
-            resolved = candidate.resolve()
-        else:
-            resolved = (self.repo / candidate).resolve()
+        resolved = candidate.resolve() if candidate.is_absolute() else (self.repo / candidate).resolve()
         if not resolved.is_relative_to(self.repo):
             raise ExoError(
                 code="PATH_OUTSIDE_REPO",
@@ -1245,7 +1252,7 @@ class KernelEngine:
         scan_dict = None
         if scan:
             try:
-                from exo.stdlib.scan import scan_repo, scan_to_dict, generate_constitution, generate_config
+                from exo.stdlib.scan import generate_config, generate_constitution, scan_repo, scan_to_dict
 
                 scan_report = scan_repo(self.repo)
                 scan_dict = scan_to_dict(scan_report)
@@ -1836,10 +1843,7 @@ class KernelEngine:
         if not path.exists():
             raise ExoError(code="PATCH_NOT_FOUND", message=f"Patch file not found: {patch_file}")
 
-        if path.suffix.lower() == ".json":
-            data = json.loads(path.read_text(encoding="utf-8"))
-        else:
-            data = load_yaml(path)
+        data = json.loads(path.read_text(encoding="utf-8")) if path.suffix.lower() == ".json" else load_yaml(path)
 
         if not isinstance(data, dict):
             raise ExoError(code="PATCH_INVALID", message="Patch file must contain a mapping object")
@@ -1948,7 +1952,7 @@ class KernelEngine:
             base_loc = baseline_snapshot.get("loc_by_path", {})
             base_actions = baseline_snapshot.get("actions", {})
             baseline_loc = (
-                sum(int(base_loc.get(path, 0)) for path in base_actions.keys())
+                sum(int(base_loc.get(path, 0)) for path in base_actions)
                 if isinstance(base_loc, dict) and isinstance(base_actions, dict)
                 else 0
             )
@@ -2535,13 +2539,12 @@ class KernelEngine:
                     message="practice_change must patch .exo/practices/* or .exo/roles/*",
                     blocked=True,
                 )
-        elif kind == "tooling_change":
-            if not any(path.startswith(".exo/scripts/") for path in patch_paths):
-                raise ExoError(
-                    code="TOOLING_PATCH_INVALID",
-                    message="tooling_change must patch .exo/scripts/*",
-                    blocked=True,
-                )
+        elif kind == "tooling_change" and not any(path.startswith(".exo/scripts/") for path in patch_paths):
+            raise ExoError(
+                code="TOOLING_PATCH_INVALID",
+                message="tooling_change must patch .exo/scripts/*",
+                blocked=True,
+            )
 
         if kind == "governance_change":
             if int(gate.get("human_approved_count", 0)) < 1:

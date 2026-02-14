@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import exo.kernel as kernel_api
+from exo.control.syscalls import KernelSyscalls
 from exo.kernel import (
     append_audit,
     check_action,
@@ -23,7 +24,6 @@ from exo.kernel import tickets as tickets_mod
 from exo.kernel.errors import ExoError
 from exo.kernel.types import to_dict
 from exo.kernel.version import KERNEL_NAME, KERNEL_VERSION
-from exo.control.syscalls import KernelSyscalls
 from exo.stdlib.engine import KernelEngine
 
 

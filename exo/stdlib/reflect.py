@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import contextlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from exo.kernel.errors import ExoError
 from exo.kernel.utils import dump_yaml, ensure_dir, load_yaml, now_iso
-
 
 REFLECTIONS_DIR = Path(".exo/memory/reflections")
 VALID_SEVERITIES = frozenset({"low", "medium", "high", "critical"})
@@ -241,8 +240,8 @@ def _sync_to_memory_index(repo: Path, reflection: Reflection) -> str:
     """
     from exo.stdlib.evolution import (
         load_memory_index,
-        save_memory_index,
         next_memory_id,
+        save_memory_index,
     )
 
     index = load_memory_index(repo)

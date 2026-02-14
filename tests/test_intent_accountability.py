@@ -14,17 +14,20 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from exo.cli import main as cli_main
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets as tickets_mod
-from exo.kernel.types import TICKET_KINDS, INTENT_RISKS
+from exo.kernel.types import INTENT_RISKS, TICKET_KINDS
+from exo.orchestrator import AgentSessionManager
+from exo.orchestrator.session import EXO_PROTOCOL_VERSION, _exo_banner
 from exo.stdlib.reconcile import (
     BudgetUsage,
     DriftReport,
-    reconcile_session,
+    _check_boundary_violations,
+    _check_scope_compliance,
     drift_report_to_dict,
     format_drift_section,
-    _check_scope_compliance,
-    _check_boundary_violations,
+    reconcile_session,
 )
 from exo.stdlib.timeline import build_intent_timeline, format_timeline_human
 
@@ -145,8 +148,8 @@ class TestSchemaExtension:
         assert normalized["risk"] == "medium"
 
     def test_ticket_kinds_and_risks_constants(self) -> None:
-        assert TICKET_KINDS == {"intent", "epic", "task"}
-        assert INTENT_RISKS == {"low", "medium", "high"}
+        assert {"intent", "epic", "task"} == TICKET_KINDS
+        assert {"low", "medium", "high"} == INTENT_RISKS
 
     def test_intent_id_pattern_recognized(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -226,7 +229,7 @@ class TestIntentHierarchy:
 
     def test_intent_without_brain_dump_warns(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        intent = _seed_intent(repo, brain_dump="")
+        _seed_intent(repo, brain_dump="")
         loaded = tickets_mod.load_ticket(repo, "INTENT-001")
         reasons = tickets_mod.validate_intent_hierarchy(repo, loaded)
         assert any("brain_dump" in r for r in reasons)
@@ -506,8 +509,6 @@ class TestIntentTimeline:
 # ──────────────────────────────────────────────
 # Phase E: Intent/Ticket Creation CLI
 # ──────────────────────────────────────────────
-
-from exo.cli import main as cli_main
 
 
 class TestIntentCreate:
@@ -798,8 +799,6 @@ class TestTicketCreate:
 # Phase F: Audit Session (Lazy Auditor Defense)
 # ──────────────────────────────────────────────
 
-from exo.orchestrator import AgentSessionManager
-
 
 def _setup_session_repo(tmp_path: Path, ticket_id: str = "TICKET-001") -> Path:
     """Bootstrap repo with ticket + lock, ready for session lifecycle."""
@@ -1034,13 +1033,12 @@ class TestAuditSession:
                 model="test",
                 mode="invalid",
             )
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "SESSION_MODE_INVALID" in str(e)
 
 
 # ---------- Phase G: Exo Mode Banner ----------
-from exo.orchestrator.session import _exo_banner, EXO_PROTOCOL_VERSION
 
 
 class TestExoBanner:

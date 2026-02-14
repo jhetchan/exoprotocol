@@ -17,9 +17,9 @@ from exo.kernel.utils import dump_yaml, load_yaml
 from exo.stdlib.config_schema import (
     ConfigIssue,
     ConfigValidation,
+    format_validation_human,
     validate_config,
     validation_to_dict,
-    format_validation_human,
 )
 from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION
 from exo.stdlib.doctor import (
@@ -31,8 +31,8 @@ from exo.stdlib.doctor import (
 )
 from exo.stdlib.upgrade import (
     _backfill_config,
-    upgrade,
     format_upgrade_human,
+    upgrade,
 )
 
 
@@ -349,13 +349,12 @@ class TestUpgrade:
     def test_upgrade_creates_missing_dirs(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         # Remove some dirs
-        import shutil
 
         reflections = repo / ".exo" / "memory" / "reflections"
         if not reflections.exists():
             pass  # Already doesn't exist
         result = upgrade(repo)
-        dirs_created = result["dirs_created"]
+        result["dirs_created"]
         # All dirs from _REQUIRED_DIRS should now exist
         from exo.stdlib.upgrade import _REQUIRED_DIRS
 
@@ -397,7 +396,7 @@ class TestUpgrade:
 
     def test_upgrade_idempotent(self, tmp_path: Path) -> None:
         repo = _full_init_repo(tmp_path)
-        result1 = upgrade(repo)
+        upgrade(repo)
         result2 = upgrade(repo)
         # Second run should have fewer actions (nothing to backfill)
         assert result2["upgraded"] is True

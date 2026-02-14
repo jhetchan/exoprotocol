@@ -17,39 +17,35 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets as tickets_mod
+from exo.kernel.utils import ensure_dir
 from exo.orchestrator import AgentSessionManager
 from exo.orchestrator.session import (
     SESSION_CACHE_DIR,
     SESSION_INDEX_PATH,
 )
-from exo.kernel.utils import ensure_dir
 from exo.stdlib.conflicts import (
     RESOURCE_PROFILES,
     StartAdvisory,
+    _base_divergence,
+    _merged_branches,
+    _read_session_index,
     _scopes_overlap,
     _share_directory_prefix,
-    _common_prefix,
-    _merged_branches,
     _upstream_status,
-    _base_divergence,
-    _read_session_index,
-    detect_scope_conflicts,
-    detect_unmerged_work,
-    detect_ticket_issues,
-    detect_stale_branch,
-    detect_base_divergence,
-    machine_snapshot,
-    format_machine_context,
-    format_git_workflow,
-    detect_machine_load,
-    format_advisories,
     advisories_to_dicts,
+    detect_base_divergence,
+    detect_machine_load,
+    detect_scope_conflicts,
+    detect_stale_branch,
+    detect_ticket_issues,
+    detect_unmerged_work,
+    format_advisories,
+    format_git_workflow,
+    format_machine_context,
+    machine_snapshot,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -526,8 +522,8 @@ class TestFormatAdvisories:
         result = format_advisories([info, warnings])
         lines = result.strip().split("\n")
         # Warnings should come before info
-        warn_idx = next(i for i, l in enumerate(lines) if "WARNING" in l)
-        info_idx = next(i for i, l in enumerate(lines) if "INFO" in l)
+        warn_idx = next(i for i, line in enumerate(lines) if "WARNING" in line)
+        info_idx = next(i for i, line in enumerate(lines) if "INFO" in line)
         assert warn_idx < info_idx
 
 
@@ -890,7 +886,7 @@ class TestDetectMachineLoad:
 
 class TestResourceProfiles:
     def test_valid_profiles(self) -> None:
-        assert RESOURCE_PROFILES == {"default", "light", "heavy"}
+        assert {"default", "light", "heavy"} == RESOURCE_PROFILES
 
     def test_ticket_resource_profile_default(self, tmp_path: Path) -> None:
         """Tickets default to resource_profile='default'."""

@@ -19,7 +19,6 @@ from typing import Any
 
 from exo.kernel.utils import load_yaml, now_iso
 
-
 # ── Dataclasses ──────────────────────────────────────────────────
 
 
@@ -204,10 +203,7 @@ def _find_python_functions(content: str) -> list[FunctionRegion]:
 
 def _ranges_overlap(ranges: list[tuple[int, int]], start: int, end: int) -> bool:
     """Check if any range overlaps with [start, end] (1-based inclusive)."""
-    for r_start, r_end in ranges:
-        if r_start <= end and r_end >= start:
-            return True
-    return False
+    return any(r_start <= end and r_end >= start for r_start, r_end in ranges)
 
 
 # ── Co-update check ──────────────────────────────────────────────
