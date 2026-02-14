@@ -23,17 +23,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -161,7 +158,9 @@ def test_worker_require_session_gate(tmp_path: Path) -> None:
     polled = worker.poll_once(persist_cursor=False)
     assert polled["processed_count"] == 1
 
-    execution_result_rows = ledger_mod.read_records(repo, record_type="ExecutionResult", intent_id="INT-SESSION-001", limit=10)
+    execution_result_rows = ledger_mod.read_records(
+        repo, record_type="ExecutionResult", intent_id="INT-SESSION-001", limit=10
+    )
     assert len(execution_result_rows) == 1
 
 

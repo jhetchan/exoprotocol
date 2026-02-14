@@ -32,17 +32,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -68,7 +65,6 @@ def _create_ticket(repo: Path, ticket_id: str) -> dict[str, Any]:
 
 
 class TestPidAlive:
-
     def test_current_process_alive(self) -> None:
         pid = os.getpid()
         assert _pid_alive(pid) is True
@@ -91,7 +87,6 @@ class TestPidAlive:
 
 
 class TestSessionPID:
-
     def test_start_includes_pid(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _create_ticket(repo, "TICKET-001")
@@ -116,7 +111,6 @@ class TestSessionPID:
 
 
 class TestScanSessionsPID:
-
     def test_scan_includes_pid_fields(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _create_ticket(repo, "TICKET-001")
@@ -136,13 +130,18 @@ class TestScanSessionsPID:
         cache_dir = repo / SESSION_CACHE_DIR
         cache_dir.mkdir(parents=True, exist_ok=True)
         active_path = cache_dir / "legacy-agent.active.json"
-        active_path.write_text(json.dumps({
-            "session_id": "SES-LEGACY",
-            "status": "active",
-            "actor": "legacy-agent",
-            "ticket_id": "TICKET-LEGACY",
-            "started_at": "2025-01-01T00:00:00+00:00",
-        }), encoding="utf-8")
+        active_path.write_text(
+            json.dumps(
+                {
+                    "session_id": "SES-LEGACY",
+                    "status": "active",
+                    "actor": "legacy-agent",
+                    "ticket_id": "TICKET-LEGACY",
+                    "started_at": "2025-01-01T00:00:00+00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
         scan = scan_sessions(repo)
         assert len(scan["active_sessions"]) == 1
         entry = scan["active_sessions"][0]
@@ -155,14 +154,19 @@ class TestScanSessionsPID:
         cache_dir = repo / SESSION_CACHE_DIR
         cache_dir.mkdir(parents=True, exist_ok=True)
         active_path = cache_dir / "dead-agent.active.json"
-        active_path.write_text(json.dumps({
-            "session_id": "SES-DEAD",
-            "status": "active",
-            "actor": "dead-agent",
-            "ticket_id": "TICKET-DEAD",
-            "started_at": "2025-01-01T00:00:00+00:00",
-            "pid": 999999999,  # dead PID
-        }), encoding="utf-8")
+        active_path.write_text(
+            json.dumps(
+                {
+                    "session_id": "SES-DEAD",
+                    "status": "active",
+                    "actor": "dead-agent",
+                    "ticket_id": "TICKET-DEAD",
+                    "started_at": "2025-01-01T00:00:00+00:00",
+                    "pid": 999999999,  # dead PID
+                }
+            ),
+            encoding="utf-8",
+        )
         scan = scan_sessions(repo)
         assert len(scan["active_sessions"]) == 1
         entry = scan["active_sessions"][0]
@@ -189,14 +193,19 @@ class TestScanSessionsPID:
         cache_dir.mkdir(parents=True, exist_ok=True)
         active_path = cache_dir / "str-pid.active.json"
         current_pid = os.getpid()
-        active_path.write_text(json.dumps({
-            "session_id": "SES-STRPID",
-            "status": "active",
-            "actor": "str-pid",
-            "ticket_id": "TICKET-STRPID",
-            "started_at": "2025-01-01T00:00:00+00:00",
-            "pid": str(current_pid),
-        }), encoding="utf-8")
+        active_path.write_text(
+            json.dumps(
+                {
+                    "session_id": "SES-STRPID",
+                    "status": "active",
+                    "actor": "str-pid",
+                    "ticket_id": "TICKET-STRPID",
+                    "started_at": "2025-01-01T00:00:00+00:00",
+                    "pid": str(current_pid),
+                }
+            ),
+            encoding="utf-8",
+        )
         scan = scan_sessions(repo)
         entry = scan["active_sessions"][0]
         assert entry["pid"] == current_pid

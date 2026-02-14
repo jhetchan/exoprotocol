@@ -10,6 +10,7 @@ Upgrades an existing ``.exo/`` directory to the latest schema version:
 Migrations are sequential: v1→v2→v3→...  Each migration is a function
 that receives (repo, config) and returns the updated config dict.
 """
+
 from __future__ import annotations
 
 import copy
@@ -31,9 +32,11 @@ _MIGRATIONS: dict[int, Callable[[Path, dict[str, Any]], dict[str, Any]]] = {}
 
 def _register_migration(from_version: int) -> Callable:
     """Decorator to register a migration function."""
+
     def decorator(fn: Callable[[Path, dict[str, Any]], dict[str, Any]]) -> Callable:
         _MIGRATIONS[from_version] = fn
         return fn
+
     return decorator
 
 
@@ -159,6 +162,7 @@ def upgrade(
     if constitution_path.exists() and not dry_run:
         try:
             from exo.kernel import governance
+
             governance.compile_constitution(repo)
             recompiled = True
             actions.append("governance: recompiled constitution → lock")
@@ -170,6 +174,7 @@ def upgrade(
     if not dry_run:
         try:
             from exo.stdlib.adapters import generate_adapters
+
             adapter_result = generate_adapters(repo)
             adapters_written = adapter_result.get("written", [])
             if adapters_written:

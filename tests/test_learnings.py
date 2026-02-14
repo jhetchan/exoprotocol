@@ -9,6 +9,7 @@ Covers:
 - Empty repo produces minimal learnings file
 - Vendor-neutral: no vendor-specific content in LEARNINGS.md
 """
+
 from __future__ import annotations
 
 import json
@@ -33,8 +34,7 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     constitution = DEFAULT_CONSTITUTION
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     dump_yaml(exo_dir / "config.yaml", DEFAULT_CONFIG)
-    for d in ["tickets", "locks", "logs", "memory", "memory/reflections",
-              "memory/sessions", "cache", "cache/sessions"]:
+    for d in ["tickets", "locks", "logs", "memory", "memory/reflections", "memory/sessions", "cache", "cache/sessions"]:
         (exo_dir / d).mkdir(parents=True, exist_ok=True)
     governance_mod.compile_constitution(repo)
     return repo
@@ -44,7 +44,6 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
 
 
 class TestGenerateLearnings:
-
     def test_empty_repo_produces_header(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         content = generate_learnings(repo)
@@ -80,10 +79,15 @@ class TestGenerateLearnings:
     def test_dismissed_not_in_reflections_section(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         from exo.stdlib.reflect import dismiss_reflection
+
         ref = reflect(repo, pattern="Old issue", insight="Fixed")
         dismiss_reflection(repo, ref.id)
         content = generate_learnings(repo)
-        assert "Old issue" not in content.split("## Known Failure Modes")[0] if "## Known Failure Modes" in content else "Old issue" not in content.split("---")[0]
+        assert (
+            "Old issue" not in content.split("## Known Failure Modes")[0]
+            if "## Known Failure Modes" in content
+            else "Old issue" not in content.split("---")[0]
+        )
 
     def test_failure_modes_section(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -117,7 +121,6 @@ class TestGenerateLearnings:
 
 
 class TestWriteLearnings:
-
     def test_creates_file(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         path = write_learnings(repo)
@@ -145,10 +148,10 @@ class TestWriteLearnings:
 
 
 class TestAdapterIntegration:
-
     def test_adapter_generate_writes_learnings(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         from exo.stdlib.adapters import generate_adapters
+
         result = generate_adapters(repo)
         assert ".exo/LEARNINGS.md" in result["written"]
         assert (repo / ".exo" / "LEARNINGS.md").exists()
@@ -156,12 +159,14 @@ class TestAdapterIntegration:
     def test_adapter_generate_dry_run_skips_learnings(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         from exo.stdlib.adapters import generate_adapters
+
         result = generate_adapters(repo, dry_run=True)
         assert not (repo / ".exo" / "LEARNINGS.md").exists()
 
     def test_claude_md_references_learnings(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         from exo.stdlib.adapters import generate_adapters
+
         generate_adapters(repo)
         claude_md = (repo / "CLAUDE.md").read_text(encoding="utf-8")
         assert ".exo/LEARNINGS.md" in claude_md
@@ -169,6 +174,7 @@ class TestAdapterIntegration:
     def test_cursorrules_references_learnings(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         from exo.stdlib.adapters import generate_adapters
+
         generate_adapters(repo)
         cursorrules = (repo / ".cursorrules").read_text(encoding="utf-8")
         assert ".exo/LEARNINGS.md" in cursorrules
@@ -176,6 +182,7 @@ class TestAdapterIntegration:
     def test_agents_md_references_learnings(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         from exo.stdlib.adapters import generate_adapters
+
         generate_adapters(repo)
         agents_md = (repo / "AGENTS.md").read_text(encoding="utf-8")
         assert ".exo/LEARNINGS.md" in agents_md
@@ -185,15 +192,16 @@ class TestAdapterIntegration:
 
 
 class TestUpgradeIntegration:
-
     def test_upgrade_regenerates_learnings(self, tmp_path: Path) -> None:
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         # Add a reflection
         reflect(tmp_path, pattern="Upgrade test", insight="Should appear")
         # Run upgrade (which regenerates adapters → LEARNINGS.md)
         from exo.stdlib.upgrade import upgrade
+
         upgrade(tmp_path)
         learnings = (tmp_path / ".exo" / "LEARNINGS.md").read_text(encoding="utf-8")
         assert "Upgrade test" in learnings

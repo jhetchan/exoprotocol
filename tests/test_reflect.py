@@ -49,17 +49,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -85,7 +82,6 @@ def _create_ticket(repo: Path, ticket_id: str) -> dict[str, Any]:
 
 
 class TestReflectStore:
-
     def test_creates_yaml_file(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         ref = reflect(repo, pattern="Error X happens", insight="Do Y instead")
@@ -145,7 +141,6 @@ class TestReflectStore:
 
 
 class TestReflectLoad:
-
     def test_empty_dir(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         assert load_reflections(repo) == []
@@ -193,7 +188,6 @@ class TestReflectLoad:
 
 
 class TestReflectionsForBootstrap:
-
     def test_global_included(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         reflect(repo, pattern="Global pattern", insight="I1", scope="global")
@@ -239,7 +233,6 @@ class TestReflectionsForBootstrap:
 
 
 class TestHitCount:
-
     def test_increment(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         ref = reflect(repo, pattern="P", insight="I")
@@ -261,7 +254,6 @@ class TestHitCount:
 
 
 class TestDismissReflection:
-
     def test_sets_status(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         ref = reflect(repo, pattern="P", insight="I")
@@ -281,7 +273,6 @@ class TestDismissReflection:
 
 
 class TestMemoryIndexSync:
-
     def test_syncs_to_failure_modes(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         reflect(repo, pattern="Test pattern", insight="Test insight")
@@ -310,7 +301,6 @@ class TestMemoryIndexSync:
 
 
 class TestBootstrapInjection:
-
     def test_start_injects_operational_learnings(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _create_ticket(repo, "TICKET-001")
@@ -378,7 +368,6 @@ class TestBootstrapInjection:
 
 
 class TestSessionFinishErrors:
-
     def test_finish_with_errors_in_memento(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _create_ticket(repo, "TICKET-001")
@@ -435,13 +424,26 @@ class TestSessionFinishErrors:
 
 
 class TestCLIReflect:
-
     def test_cli_reflect_creates(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo),
-             "reflect", "--pattern", "Test pattern", "--insight", "Test insight"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "reflect",
+                "--pattern",
+                "Test pattern",
+                "--insight",
+                "Test insight",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -455,7 +457,9 @@ class TestCLIReflect:
         reflect(repo, pattern="P2", insight="I2")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "reflections"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -467,9 +471,10 @@ class TestCLIReflect:
         ref2 = reflect(repo, pattern="Dismissed", insight="I2")
         dismiss_reflection(repo, ref2.id)
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo),
-             "reflections", "--status", "active"],
-            capture_output=True, text=True, timeout=30,
+            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "reflections", "--status", "active"],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -479,9 +484,10 @@ class TestCLIReflect:
         repo = _bootstrap_repo(tmp_path)
         reflect(repo, pattern="To dismiss", insight="I1")
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo),
-             "reflect-dismiss", "REF-001"],
-            capture_output=True, text=True, timeout=30,
+            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "reflect-dismiss", "REF-001"],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -492,7 +498,9 @@ class TestCLIReflect:
         reflect(repo, pattern="Human pattern", insight="Human insight")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "human", "--repo", str(repo), "reflections"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         assert "Reflections: 1 total" in result.stdout
@@ -505,11 +513,25 @@ class TestCLIReflect:
         manager = AgentSessionManager(repo, actor="test-agent")
         manager.start(ticket_id="TICKET-001")
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo),
-             "session-finish", "--summary", "Done",
-             "--error", "bash:exit code 1",
-             "--error", "write:Permission denied"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "session-finish",
+                "--summary",
+                "Done",
+                "--error",
+                "bash:exit code 1",
+                "--error",
+                "write:Permission denied",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
             env={**__import__("os").environ, "EXO_ACTOR": "test-agent"},
         )
         assert result.returncode == 0
@@ -522,7 +544,6 @@ class TestCLIReflect:
 
 
 class TestSerialization:
-
     def test_to_dict_roundtrip(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         ref = reflect(repo, pattern="P", insight="I", tags=["test", "debug"])
@@ -565,7 +586,6 @@ class TestSerialization:
 
 
 class TestIDGeneration:
-
     def test_first_id(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         assert _next_reflection_id(repo) == "REF-001"
@@ -580,7 +600,6 @@ class TestIDGeneration:
 
 
 class TestConstants:
-
     def test_valid_severities(self) -> None:
         assert VALID_SEVERITIES == {"low", "medium", "high", "critical"}
 

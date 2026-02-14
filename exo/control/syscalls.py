@@ -117,7 +117,11 @@ class KernelSyscalls:
         intent_id = str(envelope.get("intent_id") or f"INT-{uuid.uuid4().hex[:12].upper()}")
         topic_id = str(envelope.get("topic") or default_topic_id(self.root))
         parents_raw = envelope.get("parents")
-        parents = [str(item) for item in parents_raw if isinstance(item, str) and item.strip()] if isinstance(parents_raw, list) else None
+        parents = (
+            [str(item) for item in parents_raw if isinstance(item, str) and item.strip()]
+            if isinstance(parents_raw, list)
+            else None
+        )
 
         payload_hash_value = envelope.get("payload_hash")
         if not isinstance(payload_hash_value, str) or not payload_hash_value.strip():
@@ -197,7 +201,8 @@ class KernelSyscalls:
 
             created_at = str(metadata.get("created_at") or _now_iso())
             expires_at = str(
-                metadata.get("expires_at") or (datetime.now().astimezone() + timedelta(hours=1)).isoformat(timespec="seconds")
+                metadata.get("expires_at")
+                or (datetime.now().astimezone() + timedelta(hours=1)).isoformat(timespec="seconds")
             )
             nonce = str(metadata.get("nonce") or intent_id)
 
@@ -427,6 +432,8 @@ class KernelSyscalls:
             (self.root / ".exo" / "CONSTITUTION.md").write_text(content, encoding="utf-8")
 
         current_lock = governance.load_governance_lock(self.root)
-        target_version = version.strip() if isinstance(version, str) and version.strip() else str(current_lock.get("version", "0.1"))
+        target_version = (
+            version.strip() if isinstance(version, str) and version.strip() else str(current_lock.get("version", "0.1"))
+        )
         compiled = governance.compile_constitution(self.root, version=target_version)
         return str(compiled.get("version", "0.1"))

@@ -5,6 +5,7 @@ Covers:
 - Doctor unified health check (scaffold, config, drift, scan freshness)
 - Upgrade schema migration (backfill, directories, recompile, adapters)
 """
+
 from __future__ import annotations
 
 import json
@@ -43,10 +44,27 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     (exo_dir / "CONSTITUTION.md").write_text(DEFAULT_CONSTITUTION, encoding="utf-8")
     dump_yaml(exo_dir / "config.yaml", DEFAULT_CONFIG)
     # Create required dirs
-    for d in ["tickets", "locks", "logs", "memory", "cache", "scratchpad",
-              "scripts", "specs", "observations", "patches", "proposals",
-              "reviews", "practices", "roles", "templates", "schemas",
-              "tickets/ARCHIVE", "scratchpad/threads", "cache/distill"]:
+    for d in [
+        "tickets",
+        "locks",
+        "logs",
+        "memory",
+        "cache",
+        "scratchpad",
+        "scripts",
+        "specs",
+        "observations",
+        "patches",
+        "proposals",
+        "reviews",
+        "practices",
+        "roles",
+        "templates",
+        "schemas",
+        "tickets/ARCHIVE",
+        "scratchpad/threads",
+        "cache/distill",
+    ]:
         (exo_dir / d).mkdir(parents=True, exist_ok=True)
     governance_mod.compile_constitution(repo)
     return repo
@@ -55,6 +73,7 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
 def _full_init_repo(tmp_path: Path) -> Path:
     """Use KernelEngine.init() for a fully initialized repo."""
     from exo.stdlib.engine import KernelEngine
+
     engine = KernelEngine(repo=tmp_path, actor="test-agent")
     engine.init(scan=False)
     return tmp_path
@@ -66,7 +85,6 @@ def _full_init_repo(tmp_path: Path) -> Path:
 
 
 class TestConfigValidation:
-
     def test_valid_config_passes(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         result = validate_config(repo)
@@ -123,6 +141,7 @@ class TestConfigValidation:
         exo = tmp_path / ".exo"
         exo.mkdir()
         import copy
+
         config = copy.deepcopy(DEFAULT_CONFIG)
         config["defaults"]["ticket_budgets"]["max_files_changed"] = -1
         dump_yaml(exo / "config.yaml", config)
@@ -134,6 +153,7 @@ class TestConfigValidation:
         exo = tmp_path / ".exo"
         exo.mkdir()
         import copy
+
         config = copy.deepcopy(DEFAULT_CONFIG)
         config["defaults"]["ticket_budgets"]["max_loc_changed"] = 0
         dump_yaml(exo / "config.yaml", config)
@@ -144,6 +164,7 @@ class TestConfigValidation:
         exo = tmp_path / ".exo"
         exo.mkdir()
         import copy
+
         config = copy.deepcopy(DEFAULT_CONFIG)
         config["version"] = 999
         dump_yaml(exo / "config.yaml", config)
@@ -155,6 +176,7 @@ class TestConfigValidation:
         exo = tmp_path / ".exo"
         exo.mkdir()
         import copy
+
         config = copy.deepcopy(DEFAULT_CONFIG)
         config["checks_allowlist"] = ["valid", 42, True]
         dump_yaml(exo / "config.yaml", config)
@@ -163,7 +185,6 @@ class TestConfigValidation:
 
 
 class TestConfigValidationSerialization:
-
     def test_validation_to_dict(self) -> None:
         result = ConfigValidation(
             issues=[ConfigIssue(severity="error", path="version", message="bad")],
@@ -199,7 +220,6 @@ class TestConfigValidationSerialization:
 
 
 class TestDoctor:
-
     def test_healthy_repo_passes(self, tmp_path: Path) -> None:
         repo = _full_init_repo(tmp_path)
         report = doctor(repo)
@@ -241,6 +261,7 @@ class TestDoctor:
         repo = _full_init_repo(tmp_path)
         # Corrupt config
         import copy
+
         config = copy.deepcopy(DEFAULT_CONFIG)
         config["defaults"]["ticket_budgets"]["max_files_changed"] = -1
         dump_yaml(repo / ".exo" / "config.yaml", config)
@@ -257,7 +278,6 @@ class TestDoctor:
 
 
 class TestDoctorSerialization:
-
     def test_doctor_to_dict(self, tmp_path: Path) -> None:
         repo = _full_init_repo(tmp_path)
         report = doctor(repo)
@@ -283,7 +303,6 @@ class TestDoctorSerialization:
 
 
 class TestDoctorProperties:
-
     def test_passed_true(self) -> None:
         report = DoctorReport(
             sections=[DoctorSection(name="test", status="pass", summary="ok")],
@@ -305,7 +324,6 @@ class TestDoctorProperties:
 
 
 class TestUpgrade:
-
     def test_upgrade_healthy_repo(self, tmp_path: Path) -> None:
         repo = _full_init_repo(tmp_path)
         result = upgrade(repo)
@@ -315,12 +333,14 @@ class TestUpgrade:
 
     def test_upgrade_no_exo_raises(self, tmp_path: Path) -> None:
         import pytest
+
         with pytest.raises(Exception) as exc_info:
             upgrade(tmp_path)
         assert "No .exo directory" in str(exc_info.value)
 
     def test_upgrade_no_config_raises(self, tmp_path: Path) -> None:
         import pytest
+
         (tmp_path / ".exo").mkdir()
         with pytest.raises(Exception) as exc_info:
             upgrade(tmp_path)
@@ -330,6 +350,7 @@ class TestUpgrade:
         repo = _bootstrap_repo(tmp_path)
         # Remove some dirs
         import shutil
+
         reflections = repo / ".exo" / "memory" / "reflections"
         if not reflections.exists():
             pass  # Already doesn't exist
@@ -337,6 +358,7 @@ class TestUpgrade:
         dirs_created = result["dirs_created"]
         # All dirs from _REQUIRED_DIRS should now exist
         from exo.stdlib.upgrade import _REQUIRED_DIRS
+
         for d in _REQUIRED_DIRS:
             assert (repo / d).is_dir(), f"Missing dir: {d}"
 
@@ -382,7 +404,6 @@ class TestUpgrade:
 
 
 class TestBackfillConfig:
-
     def test_adds_missing_top_level(self) -> None:
         config: dict[str, Any] = {"version": 1}
         defaults = {"version": 1, "scheduler": {"enabled": False}}
@@ -408,6 +429,7 @@ class TestBackfillConfig:
     def test_empty_config(self) -> None:
         config: dict[str, Any] = {}
         import copy
+
         defaults = copy.deepcopy(DEFAULT_CONFIG)
         added = _backfill_config(config, defaults)
         assert len(added) > 0
@@ -415,7 +437,6 @@ class TestBackfillConfig:
 
 
 class TestUpgradeSerialization:
-
     def test_format_upgrade_human(self, tmp_path: Path) -> None:
         repo = _full_init_repo(tmp_path)
         result = upgrade(repo)
@@ -444,33 +465,37 @@ class TestUpgradeSerialization:
 
 
 class TestCLI:
-
     def test_cli_doctor(self, tmp_path: Path) -> None:
         from exo.cli import main
+
         _full_init_repo(tmp_path)
         exit_code = main(["--repo", str(tmp_path), "--format", "human", "doctor"])
         assert exit_code == 0
 
     def test_cli_doctor_json(self, tmp_path: Path) -> None:
         from exo.cli import main
+
         _full_init_repo(tmp_path)
         exit_code = main(["--repo", str(tmp_path), "--format", "json", "doctor"])
         assert exit_code == 0
 
     def test_cli_config_validate(self, tmp_path: Path) -> None:
         from exo.cli import main
+
         _full_init_repo(tmp_path)
         exit_code = main(["--repo", str(tmp_path), "--format", "human", "config-validate"])
         assert exit_code == 0
 
     def test_cli_upgrade(self, tmp_path: Path) -> None:
         from exo.cli import main
+
         _full_init_repo(tmp_path)
         exit_code = main(["--repo", str(tmp_path), "--format", "human", "upgrade"])
         assert exit_code == 0
 
     def test_cli_upgrade_dry_run(self, tmp_path: Path) -> None:
         from exo.cli import main
+
         _full_init_repo(tmp_path)
         exit_code = main(["--repo", str(tmp_path), "--format", "human", "upgrade", "--dry-run"])
         assert exit_code == 0

@@ -3,6 +3,7 @@
 Generates CLAUDE.md, .cursorrules, and AGENTS.md that agent runtimes auto-read,
 bridging ExoProtocol governance into the agent's native config format.
 """
+
 from __future__ import annotations
 
 import json
@@ -100,63 +101,71 @@ def _generate_preamble(lock: dict[str, Any], config: dict[str, Any]) -> str:
         "",
     ]
     sections.extend(deny_lines or ["- (none)"])
-    sections.extend([
-        "",
-        "### Structural Rules",
-        "",
-    ])
+    sections.extend(
+        [
+            "",
+            "### Structural Rules",
+            "",
+        ]
+    )
     sections.extend(structural_lines or ["- (none)"])
 
     if budgets:
-        sections.extend([
-            "",
-            "### Default Budgets",
-            "",
-            f"- max files changed: {budgets.get('max_files_changed', 12)}",
-            f"- max LOC changed: {budgets.get('max_loc_changed', 400)}",
-        ])
+        sections.extend(
+            [
+                "",
+                "### Default Budgets",
+                "",
+                f"- max files changed: {budgets.get('max_files_changed', 12)}",
+                f"- max LOC changed: {budgets.get('max_loc_changed', 400)}",
+            ]
+        )
 
     if checks_allowlist:
-        sections.extend([
-            "",
-            "### Approved Checks",
-            "",
-        ])
+        sections.extend(
+            [
+                "",
+                "### Approved Checks",
+                "",
+            ]
+        )
         for cmd in checks_allowlist:
             sections.append(f"- `{cmd}`")
 
     # Manifest-driven workflow directive
-    sections.extend([
-        "",
-        "### Source of Truth",
-        "",
-        "The values above are a **snapshot** generated from the governance manifest.",
-        "",
-        "Manifest paths:",
-        "- `.exo/config.yaml` — budgets, checks allowlist, scheduler config",
-        "- `.exo/governance.lock.json` — compiled rules, deny patterns, source hash",
-        "",
-        "### Test-Driven, Manifest-First Workflow",
-        "",
-        "This principle applies to **all code you write** — governance and application logic alike.",
-        "",
-        "1. **Config/contract is the source of truth.** When a value is defined in a config file,",
-        "   schema, manifest, or contract — code must load it from that source at runtime.",
-        "   Never copy a value from a config file and paste it as a literal in source code.",
-        "2. **Tests verify the wiring, not the value.** Tests must assert that code reads from",
-        "   the config/contract, not that it produces a specific hardcoded result.",
-        "   A test that passes when you swap the config value *and* swap the assertion is useless —",
-        "   it only proves both sides were copy-pasted from the same place.",
-        "3. **If you can change a config value and no test breaks, the test is missing.**",
-        "   Every configurable value should have at least one test that will vary the input",
-        "   and verify the output follows.",
-        "",
-        "Examples:",
-        "- **BAD**: `assert budget == 10` (hardcoded, passes even if config is ignored)",
-        "- **GOOD**: set config to 42, assert output contains 42 and not the old default",
-        "- **BAD**: `MAX_RETRIES = 3` (literal in source when retries is in config)",
-        "- **GOOD**: `max_retries = load_config()['max_retries']`",
-    ])
+    sections.extend(
+        [
+            "",
+            "### Source of Truth",
+            "",
+            "The values above are a **snapshot** generated from the governance manifest.",
+            "",
+            "Manifest paths:",
+            "- `.exo/config.yaml` — budgets, checks allowlist, scheduler config",
+            "- `.exo/governance.lock.json` — compiled rules, deny patterns, source hash",
+            "",
+            "### Test-Driven, Manifest-First Workflow",
+            "",
+            "This principle applies to **all code you write** — governance and application logic alike.",
+            "",
+            "1. **Config/contract is the source of truth.** When a value is defined in a config file,",
+            "   schema, manifest, or contract — code must load it from that source at runtime.",
+            "   Never copy a value from a config file and paste it as a literal in source code.",
+            "2. **Tests verify the wiring, not the value.** Tests must assert that code reads from",
+            "   the config/contract, not that it produces a specific hardcoded result.",
+            "   A test that passes when you swap the config value *and* swap the assertion is useless —",
+            "   it only proves both sides were copy-pasted from the same place.",
+            "3. **If you can change a config value and no test breaks, the test is missing.**",
+            "   Every configurable value should have at least one test that will vary the input",
+            "   and verify the output follows.",
+            "",
+            "Examples:",
+            "- **BAD**: `assert budget == 10` (hardcoded, passes even if config is ignored)",
+            "- **GOOD**: set config to 42, assert output contains 42 and not the old default",
+            "- **BAD**: `MAX_RETRIES = 3` (literal in source when retries is in config)",
+            "- **GOOD**: `max_retries = load_config()['max_retries']`",
+        ]
+    )
 
     return "\n".join(sections)
 
@@ -377,9 +386,7 @@ def _extract_marker_sections(existing: str) -> tuple[str, str, str] | None:
     return (before, governed, after)
 
 
-def _merge_with_existing(
-    existing: str, new_governed: str, governance_hash: str
-) -> tuple[str, bool]:
+def _merge_with_existing(existing: str, new_governed: str, governance_hash: str) -> tuple[str, bool]:
     """Merge new governance content into an existing file.
 
     Returns (merged_content, had_markers).
@@ -466,9 +473,7 @@ def generate_adapters(
                 existing = output_path.read_text(encoding="utf-8")
 
             if file_exists and existing:
-                merged, had_markers = _merge_with_existing(
-                    existing, content, governance_hash
-                )
+                merged, had_markers = _merge_with_existing(existing, content, governance_hash)
                 backed_up = False
                 if not had_markers and not dry_run:
                     # First brownfield merge — backup original
@@ -520,6 +525,7 @@ def generate_adapters(
     if not dry_run:
         try:
             from exo.stdlib.reflect import write_learnings
+
             write_learnings(repo)
             written.append(".exo/LEARNINGS.md")
             learnings_written = True

@@ -43,17 +43,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -63,6 +60,7 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
 def _write_requirements_yaml(repo: Path, requirements: list[dict[str, Any]]) -> Path:
     """Write requirements.yaml with the given requirement list."""
     import yaml
+
     req_path = repo / ".exo" / "requirements.yaml"
     req_path.write_text(
         yaml.dump({"requirements": requirements}, default_flow_style=False),
@@ -83,13 +81,15 @@ def _write_source_file(repo: Path, rel_path: str, content: str) -> Path:
 
 
 class TestLoadRequirements:
-
     def test_load_basic(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "User auth", "status": "active", "priority": "high"},
-            {"id": "REQ-002", "title": "Logging", "status": "active"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "User auth", "status": "active", "priority": "high"},
+                {"id": "REQ-002", "title": "Logging", "status": "active"},
+            ],
+        )
         reqs = load_requirements(repo)
         assert len(reqs) == 2
         assert reqs[0].id == "REQ-001"
@@ -101,9 +101,12 @@ class TestLoadRequirements:
 
     def test_load_defaults(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Basic req"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Basic req"},
+            ],
+        )
         reqs = load_requirements(repo)
         assert reqs[0].status == "active"
         assert reqs[0].priority == "medium"
@@ -112,9 +115,12 @@ class TestLoadRequirements:
 
     def test_load_with_tags(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth", "tags": ["security", "auth"]},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "tags": ["security", "auth"]},
+            ],
+        )
         reqs = load_requirements(repo)
         assert reqs[0].tags == ("security", "auth")
 
@@ -146,10 +152,13 @@ class TestLoadRequirements:
 
     def test_duplicate_id_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "First"},
-            {"id": "REQ-001", "title": "Dupe"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "First"},
+                {"id": "REQ-001", "title": "Dupe"},
+            ],
+        )
         try:
             load_requirements(repo)
             assert False, "Should have raised"
@@ -158,9 +167,12 @@ class TestLoadRequirements:
 
     def test_invalid_status_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Bad status", "status": "wontfix"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Bad status", "status": "wontfix"},
+            ],
+        )
         try:
             load_requirements(repo)
             assert False, "Should have raised"
@@ -169,9 +181,12 @@ class TestLoadRequirements:
 
     def test_invalid_priority_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Bad priority", "priority": "critical"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Bad priority", "priority": "critical"},
+            ],
+        )
         try:
             load_requirements(repo)
             assert False, "Should have raised"
@@ -192,7 +207,6 @@ class TestLoadRequirements:
 
 
 class TestScanReqRefs:
-
     def test_scan_req_tag(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\ndef login(): pass\n")
@@ -259,12 +273,14 @@ class TestScanReqRefs:
 
 
 class TestTraceRequirements:
-
     def test_clean_trace(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\ndef login(): pass\n")
         report = trace_requirements(repo)
         assert report.passed
@@ -276,9 +292,12 @@ class TestTraceRequirements:
 
     def test_orphan_ref(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-999\ndef login(): pass\n")
         report = trace_requirements(repo)
         assert not report.passed
@@ -289,9 +308,12 @@ class TestTraceRequirements:
 
     def test_deleted_ref(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth", "status": "deleted"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "status": "deleted"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         report = trace_requirements(repo)
         assert not report.passed
@@ -301,9 +323,12 @@ class TestTraceRequirements:
 
     def test_deprecated_ref(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth", "status": "deprecated"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "status": "deprecated"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         report = trace_requirements(repo)
         assert report.passed  # deprecated is a warning, not error
@@ -314,9 +339,12 @@ class TestTraceRequirements:
 
     def test_uncovered_req(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         # No source file references REQ-001
         report = trace_requirements(repo)
         assert report.passed  # uncovered is a warning
@@ -327,9 +355,12 @@ class TestTraceRequirements:
 
     def test_uncovered_skip_deleted(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth", "status": "deleted"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "status": "deleted"},
+            ],
+        )
         report = trace_requirements(repo)
         # Deleted reqs shouldn't be flagged as uncovered
         uncovered_violations = [v for v in report.violations if v.kind == "uncovered_req"]
@@ -337,25 +368,26 @@ class TestTraceRequirements:
 
     def test_no_check_uncovered(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         report = trace_requirements(repo, check_uncovered=False)
         assert len(report.violations) == 0
 
     def test_mixed_violations(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-            {"id": "REQ-002", "title": "Logging", "status": "deleted"},
-            {"id": "REQ-003", "title": "Caching", "status": "deprecated"},
-        ])
-        _write_source_file(repo, "src/app.py", (
-            "# @req: REQ-001\n"
-            "# @req: REQ-002\n"
-            "# @req: REQ-003\n"
-            "# @req: REQ-999\n"
-        ))
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+                {"id": "REQ-002", "title": "Logging", "status": "deleted"},
+                {"id": "REQ-003", "title": "Caching", "status": "deprecated"},
+            ],
+        )
+        _write_source_file(repo, "src/app.py", ("# @req: REQ-001\n# @req: REQ-002\n# @req: REQ-003\n# @req: REQ-999\n"))
         report = trace_requirements(repo)
         assert not report.passed  # orphan_ref + deleted_ref
         kinds = {v.kind for v in report.violations}
@@ -367,14 +399,14 @@ class TestTraceRequirements:
 
     def test_implements_and_req_both_work(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-            {"id": "REQ-002", "title": "Logging"},
-        ])
-        _write_source_file(repo, "src/app.py", (
-            "# @req: REQ-001\n"
-            "# @implements: REQ-002\n"
-        ))
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+                {"id": "REQ-002", "title": "Logging"},
+            ],
+        )
+        _write_source_file(repo, "src/app.py", ("# @req: REQ-001\n# @implements: REQ-002\n"))
         report = trace_requirements(repo)
         assert report.passed
         assert "REQ-001" in report.covered_reqs
@@ -382,9 +414,12 @@ class TestTraceRequirements:
 
     def test_custom_globs(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         _write_source_file(repo, "src/auth.js", "// @req: REQ-999\n")
         report = trace_requirements(repo, globs=["**/*.py"])
@@ -398,12 +433,14 @@ class TestTraceRequirements:
 
 
 class TestReportOutput:
-
     def test_to_dict_structure(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         report = trace_requirements(repo)
         d = req_trace_to_dict(report)
@@ -418,9 +455,12 @@ class TestReportOutput:
 
     def test_to_dict_with_violations(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-999\n")
         report = trace_requirements(repo)
         d = req_trace_to_dict(report)
@@ -430,9 +470,12 @@ class TestReportOutput:
 
     def test_human_format_pass(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         report = trace_requirements(repo)
         text = format_req_trace_human(report)
@@ -441,9 +484,12 @@ class TestReportOutput:
 
     def test_human_format_fail(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-999\n")
         report = trace_requirements(repo)
         text = format_req_trace_human(report)
@@ -452,9 +498,12 @@ class TestReportOutput:
 
     def test_human_format_deprecated_with_refs(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth", "status": "deprecated"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "status": "deprecated"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         report = trace_requirements(repo)
         text = format_req_trace_human(report)
@@ -465,12 +514,14 @@ class TestReportOutput:
 
 
 class TestRequirementsToList:
-
     def test_round_trip(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth", "priority": "high", "tags": ["security"]},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "priority": "high", "tags": ["security"]},
+            ],
+        )
         reqs = load_requirements(repo)
         lst = requirements_to_list(reqs)
         assert len(lst) == 1
@@ -484,7 +535,6 @@ class TestRequirementsToList:
 
 
 class TestReqTagPatterns:
-
     def test_python_req(self) -> None:
         assert REQ_TAG_PATTERN.search("# @req: REQ-001")
 
@@ -511,7 +561,6 @@ class TestReqTagPatterns:
 
 
 class TestValidConstants:
-
     def test_valid_statuses(self) -> None:
         assert VALID_STATUSES == frozenset({"active", "deprecated", "deleted"})
 
@@ -523,16 +572,19 @@ class TestValidConstants:
 
 
 class TestCLIRequirements:
-
     def test_json_output(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth", "priority": "high"},
-            {"id": "REQ-002", "title": "Logging"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "priority": "high"},
+                {"id": "REQ-002", "title": "Logging"},
+            ],
+        )
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "requirements"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -542,13 +594,17 @@ class TestCLIRequirements:
 
     def test_status_filter(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth", "status": "active"},
-            {"id": "REQ-002", "title": "Old logging", "status": "deprecated"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "status": "active"},
+                {"id": "REQ-002", "title": "Old logging", "status": "deprecated"},
+            ],
+        )
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "requirements", "--status", "active"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -559,7 +615,8 @@ class TestCLIRequirements:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "requirements"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 1
         data = json.loads(result.stdout)
@@ -568,16 +625,19 @@ class TestCLIRequirements:
 
 
 class TestCLITraceReqs:
-
     def test_pass(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\ndef login(): pass\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "trace-reqs"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -586,13 +646,17 @@ class TestCLITraceReqs:
 
     def test_fail(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-999\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "trace-reqs"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -601,25 +665,33 @@ class TestCLITraceReqs:
 
     def test_human_output(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "human", "--repo", str(repo), "trace-reqs"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert "Requirement Traceability: PASS" in result.stdout
 
     def test_no_check_uncovered(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "trace-reqs", "--no-check-uncovered"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -627,14 +699,18 @@ class TestCLITraceReqs:
 
     def test_custom_glob(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         _write_source_file(repo, "src/bad.js", "// @req: REQ-999\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "trace-reqs", "--glob", "**/*.py"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -645,30 +721,38 @@ class TestCLITraceReqs:
 
 
 class TestEdgeCases:
-
     def test_empty_file(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/empty.py", "")
         report = trace_requirements(repo)
         assert len(report.covered_reqs) == 0
 
     def test_no_source_files(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         report = trace_requirements(repo)
         assert report.refs_total == 0
 
     def test_dedup_coverage(self, tmp_path: Path) -> None:
         """Same requirement referenced in multiple files only counts once in covered."""
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Auth"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
         _write_source_file(repo, "src/login.py", "# @req: REQ-001\n")
         report = trace_requirements(repo)
@@ -677,11 +761,14 @@ class TestEdgeCases:
 
     def test_all_statuses(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "Active", "status": "active"},
-            {"id": "REQ-002", "title": "Deprecated", "status": "deprecated"},
-            {"id": "REQ-003", "title": "Deleted", "status": "deleted"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Active", "status": "active"},
+                {"id": "REQ-002", "title": "Deprecated", "status": "deprecated"},
+                {"id": "REQ-003", "title": "Deleted", "status": "deleted"},
+            ],
+        )
         reqs = load_requirements(repo)
         assert len(reqs) == 3
         report = trace_requirements(repo)
@@ -691,11 +778,14 @@ class TestEdgeCases:
 
     def test_all_priorities(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_requirements_yaml(repo, [
-            {"id": "REQ-001", "title": "High", "priority": "high"},
-            {"id": "REQ-002", "title": "Medium", "priority": "medium"},
-            {"id": "REQ-003", "title": "Low", "priority": "low"},
-        ])
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "High", "priority": "high"},
+                {"id": "REQ-002", "title": "Medium", "priority": "medium"},
+                {"id": "REQ-003", "title": "Low", "priority": "low"},
+            ],
+        )
         reqs = load_requirements(repo)
         assert reqs[0].priority == "high"
         assert reqs[1].priority == "medium"
@@ -704,6 +794,7 @@ class TestEdgeCases:
     def test_requirements_list_not_a_list(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         import yaml
+
         req_path = repo / ".exo" / "requirements.yaml"
         req_path.write_text(
             yaml.dump({"requirements": "not a list"}, default_flow_style=False),

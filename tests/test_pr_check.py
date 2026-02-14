@@ -42,6 +42,7 @@ from exo.stdlib.pr_check import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _policy_block(rule: dict[str, Any]) -> str:
     return f"\n```yaml exo-policy\n{json.dumps(rule)}\n```\n"
 
@@ -52,15 +53,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
 
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block({
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
             "id": "RULE-SEC-001",
             "type": "filesystem_deny",
             "patterns": ["**/.env*"],
             "actions": ["read", "write"],
             "message": "Secret deny",
-        })
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
 
@@ -76,7 +76,9 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True, text=True)
     subprocess.run(
         ["git", "commit", "-m", "initial commit", "--allow-empty"],
-        cwd=str(repo), capture_output=True, text=True,
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
     )
     subprocess.run(["git", "branch", "-M", "main"], cwd=str(repo), capture_output=True, text=True)
 
@@ -268,10 +270,13 @@ class TestMatchCommitsToSessions:
 class TestLoadSessionIndex:
     def test_loads_valid_jsonl(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_session_index(repo, [
-            {"session_id": "s1", "ticket_id": "T-1"},
-            {"session_id": "s2", "ticket_id": "T-2"},
-        ])
+        _write_session_index(
+            repo,
+            [
+                {"session_id": "s1", "ticket_id": "T-1"},
+                {"session_id": "s2", "ticket_id": "T-2"},
+            ],
+        )
         entries = _load_session_index(repo)
         assert len(entries) == 2
         assert entries[0]["session_id"] == "s1"
@@ -314,14 +319,17 @@ class TestPRCheckIntegration:
 
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                session_id="sess-001",
-                ticket_id="TICKET-001",
-                started_at=session_start,
-                finished_at=session_finish,
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    session_id="sess-001",
+                    ticket_id="TICKET-001",
+                    started_at=session_start,
+                    finished_at=session_finish,
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert report.verdict == "pass"
@@ -357,15 +365,25 @@ class TestPRCheckIntegration:
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
         # Second commit outside any session (far future)
-        _git(repo, "commit", "--allow-empty", "-m", "ungoverned commit",
-             "--date", (now + timedelta(hours=10)).isoformat())
+        _git(
+            repo,
+            "commit",
+            "--allow-empty",
+            "-m",
+            "ungoverned commit",
+            "--date",
+            (now + timedelta(hours=10)).isoformat(),
+        )
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                started_at=session_start,
-                finished_at=session_finish,
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    started_at=session_start,
+                    finished_at=session_finish,
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert report.verdict == "fail"
@@ -389,13 +407,16 @@ class TestPRCheckIntegration:
         _make_commit(repo, "drift.py", "x", "drifty work")
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                drift_score=0.85,
-                started_at=session_start,
-                finished_at=session_finish,
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    drift_score=0.85,
+                    started_at=session_start,
+                    finished_at=session_finish,
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD", drift_threshold=0.7)
         assert report.verdict == "warn"
@@ -411,13 +432,16 @@ class TestPRCheckIntegration:
         _make_commit(repo, "x.py", "x", "work")
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                verify="failed",
-                started_at=session_start,
-                finished_at=session_finish,
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    verify="failed",
+                    started_at=session_start,
+                    finished_at=session_finish,
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert report.verdict == "fail"
@@ -433,13 +457,16 @@ class TestPRCheckIntegration:
         _make_commit(repo, "bg.py", "x", "break glass work")
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                verify="bypassed",
-                started_at=session_start,
-                finished_at=session_finish,
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    verify="bypassed",
+                    started_at=session_start,
+                    finished_at=session_finish,
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert any("bypassed" in r for r in report.reasons)
@@ -456,12 +483,15 @@ class TestPRCheckIntegration:
         _make_commit(repo, "docs/readme.md", "hello", "update docs")
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                started_at=session_start,
-                finished_at=session_finish,
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    started_at=session_start,
+                    finished_at=session_finish,
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert report.verdict == "warn"
@@ -505,9 +535,12 @@ class TestPRCheckIntegration:
         _make_commit(repo, "c.py", "c", "third")
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
-        _write_session_index(repo, [
-            _make_session_entry(started_at=session_start, finished_at=session_finish),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(started_at=session_start, finished_at=session_finish),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert report.sessions[0].commit_count == 3
@@ -524,26 +557,31 @@ class TestPRCheckIntegration:
         s1_start = (now - timedelta(minutes=10)).isoformat()
         s1_finish = (now - timedelta(minutes=5)).isoformat()
         # Commit in session 1 window
-        _git(repo, "commit", "--allow-empty", "-m", "sess1-commit",
-             "--date", (now - timedelta(minutes=7)).isoformat())
+        _git(repo, "commit", "--allow-empty", "-m", "sess1-commit", "--date", (now - timedelta(minutes=7)).isoformat())
 
         # Session 2 window
         s2_start = (now - timedelta(minutes=4)).isoformat()
         s2_finish = now.isoformat()
         # Commit in session 2 window
-        _git(repo, "commit", "--allow-empty", "-m", "sess2-commit",
-             "--date", (now - timedelta(minutes=2)).isoformat())
+        _git(repo, "commit", "--allow-empty", "-m", "sess2-commit", "--date", (now - timedelta(minutes=2)).isoformat())
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                session_id="sess-001", ticket_id="TICKET-001",
-                started_at=s1_start, finished_at=s1_finish,
-            ),
-            _make_session_entry(
-                session_id="sess-002", ticket_id="TICKET-002",
-                started_at=s2_start, finished_at=s2_finish,
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    session_id="sess-001",
+                    ticket_id="TICKET-001",
+                    started_at=s1_start,
+                    finished_at=s1_finish,
+                ),
+                _make_session_entry(
+                    session_id="sess-002",
+                    ticket_id="TICKET-002",
+                    started_at=s2_start,
+                    finished_at=s2_finish,
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert report.total_commits == 2
@@ -633,9 +671,17 @@ class TestFormatting:
 
     def test_dict_roundtrip_sessions(self) -> None:
         sv = SessionVerdict(
-            session_id="s1", ticket_id="T-1", actor="a", vendor="v",
-            model="m", mode="work", verify="passed", drift_score=0.5,
-            started_at="", finished_at="", commit_count=1,
+            session_id="s1",
+            ticket_id="T-1",
+            actor="a",
+            vendor="v",
+            model="m",
+            mode="work",
+            verify="passed",
+            drift_score=0.5,
+            started_at="",
+            finished_at="",
+            commit_count=1,
         )
         report = self._make_report(sessions=[sv])
         d = pr_check_to_dict(report)
@@ -656,9 +702,23 @@ class TestCLI:
         _make_commit(repo, "f.py", "x", "add file")
 
         proc = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo),
-             "pr-check", "--base", base, "--head", "HEAD"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "pr-check",
+                "--base",
+                base,
+                "--head",
+                "HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert proc.returncode in (0, 1)  # may fail due to ungoverned commits
         data = json.loads(proc.stdout)
@@ -674,9 +734,23 @@ class TestCLI:
         _make_commit(repo, "f.py", "x", "add file")
 
         proc = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "human", "--repo", str(repo),
-             "pr-check", "--base", base, "--head", "HEAD"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "human",
+                "--repo",
+                str(repo),
+                "pr-check",
+                "--base",
+                base,
+                "--head",
+                "HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         # Should contain human-readable output
         assert "PR Governance Check" in proc.stdout
@@ -684,9 +758,25 @@ class TestCLI:
     def test_pr_check_custom_threshold(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         proc = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo),
-             "pr-check", "--base", "HEAD", "--head", "HEAD", "--drift-threshold", "0.5"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "pr-check",
+                "--base",
+                "HEAD",
+                "--head",
+                "HEAD",
+                "--drift-threshold",
+                "0.5",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert proc.returncode == 0
         data = json.loads(proc.stdout)
@@ -741,13 +831,16 @@ class TestEdgeCases:
         _make_commit(repo, "x.py", "x", "work")
         session_finish = (now + timedelta(minutes=5)).isoformat()
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                drift_score=0.7,  # exactly at threshold
-                started_at=session_start,
-                finished_at=session_finish,
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    drift_score=0.7,  # exactly at threshold
+                    started_at=session_start,
+                    finished_at=session_finish,
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD", drift_threshold=0.7)
         # drift_score (0.7) is NOT > threshold (0.7), so no warning

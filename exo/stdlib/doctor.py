@@ -7,6 +7,7 @@ Runs all diagnostic subsystems in one pass and produces a single report:
 
 Each section is independent — a failure in one doesn't block the others.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from exo.kernel.utils import now_iso
 @dataclass
 class DoctorSection:
     """Result of one diagnostic check."""
+
     name: str
     status: str  # pass | fail | skip | error
     summary: str
@@ -30,6 +32,7 @@ class DoctorSection:
 @dataclass
 class DoctorReport:
     """Composite result of all doctor checks."""
+
     sections: list[DoctorSection] = field(default_factory=list)
     overall: str = ""  # pass | fail
     checked_at: str = ""
@@ -54,6 +57,7 @@ def _check_drift(repo: Path, stale_hours: float) -> DoctorSection:
     """Run composite governance drift check."""
     try:
         from exo.stdlib.drift import drift, drift_to_dict
+
         report = drift(repo, stale_hours=stale_hours)
         return DoctorSection(
             name="governance_drift",
@@ -76,6 +80,7 @@ def _check_config(repo: Path) -> DoctorSection:
     """Run config schema validation."""
     try:
         from exo.stdlib.config_schema import validate_config, validation_to_dict
+
         result = validate_config(repo)
         return DoctorSection(
             name="config_validation",
@@ -98,6 +103,7 @@ def _check_scan_freshness(repo: Path) -> DoctorSection:
     """Check if scan findings match what's actually in the repo now."""
     try:
         from exo.stdlib.scan import scan_repo
+
         report = scan_repo(repo)
 
         issues: list[str] = []
@@ -108,6 +114,7 @@ def _check_scan_freshness(repo: Path) -> DoctorSection:
             lock_path = repo / ".exo" / "governance.lock.json"
             if lock_path.exists():
                 import json
+
                 lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
                 rules = lock_data.get("rules", [])
                 deny_patterns: set[str] = set()
@@ -125,17 +132,17 @@ def _check_scan_freshness(repo: Path) -> DoctorSection:
             config_path = repo / ".exo" / "config.yaml"
             if config_path.exists():
                 from exo.kernel.utils import load_yaml
+
                 config = load_yaml(config_path)
                 if isinstance(config, dict):
                     checks = config.get("checks_allowlist", [])
                     from exo.stdlib.scan import LANGUAGE_CHECKS
+
                     for lang in report.languages:
                         lang_checks = LANGUAGE_CHECKS.get(lang.language, [])
                         missing = [c for c in lang_checks if c not in checks]
                         if missing:
-                            issues.append(
-                                f"Language {lang.language} detected but checks missing: {', '.join(missing)}"
-                            )
+                            issues.append(f"Language {lang.language} detected but checks missing: {', '.join(missing)}")
                             warnings += 1
 
         if issues:
@@ -165,11 +172,17 @@ def _check_scan_freshness(repo: Path) -> DoctorSection:
 def _check_scaffold(repo: Path) -> DoctorSection:
     """Check that required .exo directories and files exist."""
     required_dirs = [
-        ".exo", ".exo/tickets", ".exo/locks", ".exo/logs",
-        ".exo/memory", ".exo/cache",
+        ".exo",
+        ".exo/tickets",
+        ".exo/locks",
+        ".exo/logs",
+        ".exo/memory",
+        ".exo/cache",
     ]
     required_files = [
-        ".exo/CONSTITUTION.md", ".exo/governance.lock.json", ".exo/config.yaml",
+        ".exo/CONSTITUTION.md",
+        ".exo/governance.lock.json",
+        ".exo/config.yaml",
     ]
 
     missing_dirs = [d for d in required_dirs if not (repo / d).is_dir()]

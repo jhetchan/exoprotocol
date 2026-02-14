@@ -8,6 +8,7 @@ Covers:
 - exo init manages .gitignore based on privacy.commit_logs
 - Upgrade backfills privacy section
 """
+
 from __future__ import annotations
 
 import json
@@ -26,8 +27,7 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     constitution = DEFAULT_CONSTITUTION
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     dump_yaml(exo_dir / "config.yaml", DEFAULT_CONFIG)
-    for d in ["tickets", "locks", "logs", "memory", "memory/reflections",
-              "memory/sessions", "cache", "cache/sessions"]:
+    for d in ["tickets", "locks", "logs", "memory", "memory/reflections", "memory/sessions", "cache", "cache/sessions"]:
         (exo_dir / d).mkdir(parents=True, exist_ok=True)
     governance_mod.compile_constitution(repo)
     return repo
@@ -37,7 +37,6 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
 
 
 class TestPrivacyDefaults:
-
     def test_default_config_has_privacy_section(self) -> None:
         assert "privacy" in DEFAULT_CONFIG
 
@@ -52,10 +51,10 @@ class TestPrivacyDefaults:
 
 
 class TestPrivacyConfigValidation:
-
     def test_valid_privacy_section_passes(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         from exo.stdlib.config_schema import validate_config
+
         result = validate_config(repo)
         privacy_issues = [i for i in result.issues if "privacy" in i.path]
         assert not privacy_issues
@@ -66,6 +65,7 @@ class TestPrivacyConfigValidation:
         del config["privacy"]
         dump_yaml(repo / ".exo" / "config.yaml", config)
         from exo.stdlib.config_schema import validate_config
+
         result = validate_config(repo)
         privacy_issues = [i for i in result.issues if i.path == "privacy"]
         assert len(privacy_issues) == 1
@@ -77,6 +77,7 @@ class TestPrivacyConfigValidation:
         config["privacy"]["commit_logs"] = "yes"  # should be bool
         dump_yaml(repo / ".exo" / "config.yaml", config)
         from exo.stdlib.config_schema import validate_config
+
         result = validate_config(repo)
         privacy_issues = [i for i in result.issues if "commit_logs" in i.path]
         assert len(privacy_issues) == 1
@@ -87,7 +88,6 @@ class TestPrivacyConfigValidation:
 
 
 class TestDefaultTopicId:
-
     def test_returns_portable_string(self, tmp_path: Path) -> None:
         tid = default_topic_id(tmp_path)
         assert tid == "repo:default"
@@ -110,7 +110,6 @@ class TestDefaultTopicId:
 
 
 class TestLedgerTopicIdsPortable:
-
     def test_mint_ticket_uses_portable_topic(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         from exo.kernel import ledger
@@ -126,8 +125,7 @@ class TestLedgerTopicIdsPortable:
         for line in lines:
             record = json.loads(line)
             if "topic_id" in record:
-                assert record["topic_id"] == "repo:default", \
-                    f"Expected portable topic, got: {record['topic_id']}"
+                assert record["topic_id"] == "repo:default", f"Expected portable topic, got: {record['topic_id']}"
                 assert str(tmp_path) not in record["topic_id"]
 
     def test_audit_log_no_absolute_paths(self, tmp_path: Path) -> None:
@@ -143,10 +141,10 @@ class TestLedgerTopicIdsPortable:
 
 
 class TestGitignoreManagement:
-
     def test_init_creates_gitignore_entry(self, tmp_path: Path) -> None:
         """exo init should add .exo/logs/ to .gitignore when commit_logs=false."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
@@ -155,6 +153,7 @@ class TestGitignoreManagement:
     def test_init_with_commit_logs_true_no_gitignore_entry(self, tmp_path: Path) -> None:
         """When commit_logs=true, .exo/logs/ should NOT be in .gitignore."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         # Modify config to enable commit_logs
@@ -163,6 +162,7 @@ class TestGitignoreManagement:
         dump_yaml(tmp_path / ".exo" / "config.yaml", config)
         # Re-run init (idempotent)
         from exo.stdlib.engine import _manage_gitignore
+
         _manage_gitignore(tmp_path, tmp_path / ".exo" / "config.yaml")
         gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
         assert ".exo/logs/" not in gitignore
@@ -170,10 +170,12 @@ class TestGitignoreManagement:
     def test_idempotent_gitignore(self, tmp_path: Path) -> None:
         """Running init twice should not duplicate the .gitignore entry."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         # Run gitignore management again
         from exo.stdlib.engine import _manage_gitignore
+
         _manage_gitignore(tmp_path, tmp_path / ".exo" / "config.yaml")
         gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
         assert gitignore.count(".exo/logs/") == 1
@@ -182,6 +184,7 @@ class TestGitignoreManagement:
         """Existing .gitignore entries should be preserved."""
         (tmp_path / ".gitignore").write_text("node_modules/\n*.pyc\n", encoding="utf-8")
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
@@ -192,6 +195,7 @@ class TestGitignoreManagement:
     def test_gitignore_has_comment(self, tmp_path: Path) -> None:
         """The gitignore entry should include an explanatory comment."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
@@ -200,6 +204,7 @@ class TestGitignoreManagement:
     def test_no_gitignore_when_no_config(self, tmp_path: Path) -> None:
         """If config doesn't exist, still default to excluding logs."""
         from exo.stdlib.engine import _manage_gitignore
+
         result = _manage_gitignore(tmp_path, tmp_path / ".exo" / "config.yaml")
         assert result is True
         gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
@@ -210,10 +215,10 @@ class TestGitignoreManagement:
 
 
 class TestUpgradeBackfillsPrivacy:
-
     def test_upgrade_adds_privacy_section(self, tmp_path: Path) -> None:
         """Upgrade should backfill privacy section if missing."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         # Remove privacy from config
@@ -222,6 +227,7 @@ class TestUpgradeBackfillsPrivacy:
         dump_yaml(tmp_path / ".exo" / "config.yaml", config)
 
         from exo.stdlib.upgrade import upgrade
+
         result = upgrade(tmp_path)
         config_after = load_yaml(tmp_path / ".exo" / "config.yaml")
         assert "privacy" in config_after
@@ -231,6 +237,7 @@ class TestUpgradeBackfillsPrivacy:
     def test_upgrade_preserves_custom_privacy(self, tmp_path: Path) -> None:
         """Upgrade should not overwrite existing privacy values."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         config = load_yaml(tmp_path / ".exo" / "config.yaml")
@@ -238,6 +245,7 @@ class TestUpgradeBackfillsPrivacy:
         dump_yaml(tmp_path / ".exo" / "config.yaml", config)
 
         from exo.stdlib.upgrade import upgrade
+
         upgrade(tmp_path)
         config_after = load_yaml(tmp_path / ".exo" / "config.yaml")
         assert config_after["privacy"]["commit_logs"] is True
@@ -247,9 +255,9 @@ class TestUpgradeBackfillsPrivacy:
 
 
 class TestInitPrivacyReturn:
-
     def test_init_returns_gitignore_updated(self, tmp_path: Path) -> None:
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         result = engine.init(scan=False)
         data = result.get("data", result)
@@ -258,9 +266,11 @@ class TestInitPrivacyReturn:
     def test_second_init_no_gitignore_update(self, tmp_path: Path) -> None:
         """Re-init should not report gitignore as updated."""
         from exo.stdlib.engine import KernelEngine
+
         engine = KernelEngine(repo=tmp_path, actor="test-agent")
         engine.init(scan=False)
         # Init again
         from exo.stdlib.engine import _manage_gitignore
+
         result = _manage_gitignore(tmp_path, tmp_path / ".exo" / "config.yaml")
         assert result is False  # already present

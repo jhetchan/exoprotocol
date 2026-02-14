@@ -7,26 +7,39 @@ from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
 from exo.kernel.utils import default_topic_id
 from exo.kernel.tickets import (
-    allocate_intent_id, allocate_ticket_id, load_ticket, normalize_ticket, save_ticket,
+    allocate_intent_id,
+    allocate_ticket_id,
+    load_ticket,
+    normalize_ticket,
+    save_ticket,
     validate_intent_hierarchy,
 )
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
 from exo.stdlib.adapters import generate_adapters
 from exo.stdlib.engine import KernelEngine
 from exo.stdlib.features import (
-    load_features, features_to_list, generate_scope_deny,
-    trace as run_trace, trace_to_dict,
-    prune as run_prune, prune_to_dict,
+    load_features,
+    features_to_list,
+    generate_scope_deny,
+    trace as run_trace,
+    trace_to_dict,
+    prune as run_prune,
+    prune_to_dict,
 )
 from exo.stdlib.drift import drift as run_drift, drift_to_dict
 from exo.stdlib.gc import gc as run_gc, gc_to_dict
 from exo.stdlib.reflect import (
-    reflect as do_reflect, load_reflections, dismiss_reflection,
-    reflect_to_dict, reflections_to_list,
+    reflect as do_reflect,
+    load_reflections,
+    dismiss_reflection,
+    reflect_to_dict,
+    reflections_to_list,
 )
 from exo.stdlib.requirements import (
-    load_requirements, requirements_to_list,
-    trace_requirements as run_trace_reqs, req_trace_to_dict,
+    load_requirements,
+    requirements_to_list,
+    trace_requirements as run_trace_reqs,
+    req_trace_to_dict,
 )
 from exo.stdlib.pr_check import pr_check, pr_check_to_dict
 from exo.stdlib.timeline import build_intent_timeline
@@ -277,7 +290,9 @@ if FastMCP:
 
     @mcp.tool()
     def exo_check_intent(intent_id: str, repo: str = ".", context_refs: list[str] | None = None) -> dict[str, Any]:
-        response = _run_syscall(repo, "check", intent_id=intent_id, context_refs=context_refs or [], data_key="decision_id")
+        response = _run_syscall(
+            repo, "check", intent_id=intent_id, context_refs=context_refs or [], data_key="decision_id"
+        )
         if response.get("ok"):
             data = response.get("data", {})
             if isinstance(data, dict):
@@ -510,7 +525,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_session_suspend(
@@ -768,7 +788,9 @@ if FastMCP:
         return _run(repo, "apply_proposal", proposal_id=proposal_id)
 
     @mcp.tool()
-    def exo_distill(proposal_id: str, repo: str = ".", statement: str | None = None, confidence: float = 0.7) -> dict[str, Any]:
+    def exo_distill(
+        proposal_id: str, repo: str = ".", statement: str | None = None, confidence: float = 0.7
+    ) -> dict[str, Any]:
         return _run(repo, "distill", proposal_id=proposal_id, statement=statement, confidence=confidence)
 
     @mcp.tool()
@@ -782,20 +804,21 @@ if FastMCP:
             timeline = build_intent_timeline(repo_path)
             if status:
                 target = status.strip().lower()
-                timeline["intents"] = [
-                    i for i in timeline["intents"]
-                    if i.get("status", "").strip().lower() == target
-                ]
+                timeline["intents"] = [i for i in timeline["intents"] if i.get("status", "").strip().lower() == target]
             if drift_above is not None:
                 timeline["intents"] = [
-                    i for i in timeline["intents"]
-                    if i.get("drift_avg") is not None and i["drift_avg"] > drift_above
+                    i for i in timeline["intents"] if i.get("drift_avg") is not None and i["drift_avg"] > drift_above
                 ]
             return {"ok": True, "data": timeline, "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_validate_hierarchy(ticket_id: str, repo: str = ".") -> dict[str, Any]:
@@ -818,7 +841,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_intent_create(
@@ -856,14 +884,23 @@ if FastMCP:
             saved_ticket = normalize_ticket(ticket_data)
             return {
                 "ok": True,
-                "data": {"intent_id": intent_id, "path": str(saved_path.relative_to(repo_path)), "ticket": saved_ticket},
+                "data": {
+                    "intent_id": intent_id,
+                    "path": str(saved_path.relative_to(repo_path)),
+                    "ticket": saved_ticket,
+                },
                 "events": [],
                 "blocked": False,
             }
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_ticket_create(
@@ -933,15 +970,24 @@ if FastMCP:
                 save_ticket(repo_path, parent)
             return {
                 "ok": True,
-                "data": {"ticket_id": ticket_id, "parent_id": parent_id, "path": str(saved_path.relative_to(repo_path)), "ticket": saved_ticket},
+                "data": {
+                    "ticket_id": ticket_id,
+                    "parent_id": parent_id,
+                    "path": str(saved_path.relative_to(repo_path)),
+                    "ticket": saved_ticket,
+                },
                 "events": [],
                 "blocked": False,
             }
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
-
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_pr_check(
@@ -967,7 +1013,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_adapter_generate(
@@ -982,8 +1033,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
-
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_features(
@@ -1010,7 +1065,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_trace(
@@ -1033,8 +1093,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
-
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_prune(
@@ -1060,8 +1124,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
-
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_requirements(
@@ -1087,7 +1155,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_trace_reqs(
@@ -1110,7 +1183,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_drift(
@@ -1142,8 +1220,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
-
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_coherence(
@@ -1160,6 +1242,7 @@ if FastMCP:
         """
         try:
             from exo.stdlib.coherence import check_coherence, coherence_to_dict
+
             report = check_coherence(
                 Path(repo).resolve(),
                 base=base,
@@ -1170,8 +1253,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
-
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_gc(
@@ -1195,7 +1282,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_gc_locks(
@@ -1211,17 +1303,28 @@ if FastMCP:
         without cleaning, or dry_run=True to preview cleanup.
         """
         from exo.stdlib.distributed_leases import GitDistributedLeaseManager
+
         try:
             manager = GitDistributedLeaseManager(Path(repo).resolve())
             if list_only:
                 locks = manager.list_locks(remote=remote)
-                return {"ok": True, "data": {"remote": remote, "locks": locks, "count": len(locks)}, "events": [], "blocked": False}
+                return {
+                    "ok": True,
+                    "data": {"remote": remote, "locks": locks, "count": len(locks)},
+                    "events": [],
+                    "blocked": False,
+                }
             data = manager.cleanup_locks(remote=remote, dry_run=dry_run)
             return {"ok": True, "data": data, "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_reflect(
@@ -1261,7 +1364,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_reflections(
@@ -1286,7 +1394,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @mcp.tool()
     def exo_reflect_dismiss(
@@ -1300,7 +1413,12 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @server.tool(
         name="exo_scan",
@@ -1309,13 +1427,19 @@ if FastMCP:
     def exo_scan(repo: str = ".") -> dict[str, Any]:
         try:
             from exo.stdlib.scan import scan_repo, scan_to_dict
+
             repo_path = Path(repo).resolve()
             report = scan_repo(repo_path)
             return {"ok": True, "data": scan_to_dict(report), "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @server.tool(
         name="exo_doctor",
@@ -1324,13 +1448,19 @@ if FastMCP:
     def exo_doctor(repo: str = ".", stale_hours: float = 48.0) -> dict[str, Any]:
         try:
             from exo.stdlib.doctor import doctor as run_doctor, doctor_to_dict
+
             repo_path = Path(repo).resolve()
             report = run_doctor(repo_path, stale_hours=stale_hours)
             return {"ok": True, "data": doctor_to_dict(report), "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @server.tool(
         name="exo_config_validate",
@@ -1339,13 +1469,19 @@ if FastMCP:
     def exo_config_validate(repo: str = ".") -> dict[str, Any]:
         try:
             from exo.stdlib.config_schema import validate_config, validation_to_dict
+
             repo_path = Path(repo).resolve()
             result = validate_config(repo_path)
             return {"ok": True, "data": validation_to_dict(result), "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
     @server.tool(
         name="exo_upgrade",
@@ -1354,13 +1490,19 @@ if FastMCP:
     def exo_upgrade(repo: str = ".", dry_run: bool = False) -> dict[str, Any]:
         try:
             from exo.stdlib.upgrade import upgrade as run_upgrade
+
             repo_path = Path(repo).resolve()
             data = run_upgrade(repo_path, dry_run=dry_run)
             return {"ok": True, "data": data, "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)}, "events": [], "blocked": False}
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
 
 
 def main() -> int:

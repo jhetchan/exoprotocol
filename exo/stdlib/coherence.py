@@ -8,6 +8,7 @@ Two check types:
 1. Co-update rules — config-driven file pairs that must change together.
 2. Docstring freshness — flags functions whose body changed but docstring didn't.
 """
+
 from __future__ import annotations
 
 import re
@@ -21,12 +22,14 @@ from exo.kernel.utils import load_yaml, now_iso
 
 # ── Dataclasses ──────────────────────────────────────────────────
 
+
 @dataclass
 class CoherenceViolation:
     """A single coherence violation."""
-    kind: str       # "co_update" | "stale_docstring"
-    severity: str   # "warning"
-    file: str       # relative path
+
+    kind: str  # "co_update" | "stale_docstring"
+    severity: str  # "warning"
+    file: str  # relative path
     message: str
     detail: dict[str, Any] = field(default_factory=dict)
 
@@ -34,6 +37,7 @@ class CoherenceViolation:
 @dataclass
 class CoherenceReport:
     """Result of coherence checks."""
+
     violations: list[CoherenceViolation]
     files_checked: int
     functions_checked: int
@@ -51,15 +55,17 @@ class CoherenceReport:
 @dataclass
 class FunctionRegion:
     """Describes a Python function's layout in a file."""
+
     name: str
-    def_line: int           # 1-based line of `def`
-    docstring_start: int    # 1-based, 0 if no docstring
-    docstring_end: int      # 1-based, 0 if no docstring
-    body_start: int         # 1-based first line after docstring (or after def)
-    body_end: int           # 1-based last line of function body
+    def_line: int  # 1-based line of `def`
+    docstring_start: int  # 1-based, 0 if no docstring
+    docstring_end: int  # 1-based, 0 if no docstring
+    body_start: int  # 1-based first line after docstring (or after def)
+    body_end: int  # 1-based last line of function body
 
 
 # ── Git helpers ──────────────────────────────────────────────────
+
 
 def _run_git(repo: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -127,7 +133,7 @@ def _find_python_functions(content: str) -> list[FunctionRegion]:
     # Find all def positions
     defs: list[tuple[int, str, int]] = []  # (line_1based, name, indent_len)
     for m in _DEF_RE.finditer(content):
-        line_0 = content[:m.start()].count("\n")
+        line_0 = content[: m.start()].count("\n")
         indent = len(m.group(1))
         name = m.group(2)
         defs.append((line_0 + 1, name, indent))
@@ -182,14 +188,16 @@ def _find_python_functions(content: str) -> list[FunctionRegion]:
 
         body_start = (doc_end + 1) if doc_end else first_body_line
 
-        regions.append(FunctionRegion(
-            name=name,
-            def_line=def_line,
-            docstring_start=doc_start,
-            docstring_end=doc_end,
-            body_start=body_start,
-            body_end=body_end,
-        ))
+        regions.append(
+            FunctionRegion(
+                name=name,
+                def_line=def_line,
+                docstring_start=doc_start,
+                docstring_end=doc_end,
+                body_start=body_start,
+                body_end=body_end,
+            )
+        )
 
     return regions
 
@@ -203,6 +211,7 @@ def _ranges_overlap(ranges: list[tuple[int, int]], start: int, end: int) -> bool
 
 
 # ── Co-update check ──────────────────────────────────────────────
+
 
 def check_co_updates(
     changed_files: list[str],
@@ -227,22 +236,25 @@ def check_co_updates(
 
         if changed_in_group and missing_in_group:
             for missing in missing_in_group:
-                violations.append(CoherenceViolation(
-                    kind="co_update",
-                    severity="warning",
-                    file=missing,
-                    message=f"{label}: {', '.join(changed_in_group)} changed but {missing} was not updated",
-                    detail={
-                        "label": label,
-                        "changed": changed_in_group,
-                        "missing": missing_in_group,
-                    },
-                ))
+                violations.append(
+                    CoherenceViolation(
+                        kind="co_update",
+                        severity="warning",
+                        file=missing,
+                        message=f"{label}: {', '.join(changed_in_group)} changed but {missing} was not updated",
+                        detail={
+                            "label": label,
+                            "changed": changed_in_group,
+                            "missing": missing_in_group,
+                        },
+                    )
+                )
 
     return violations
 
 
 # ── Docstring freshness check ────────────────────────────────────
+
 
 def check_docstring_freshness(
     repo: Path,
@@ -267,6 +279,7 @@ def check_docstring_freshness(
 
         if skip_patterns:
             from exo.kernel.utils import any_pattern_matches
+
             if any_pattern_matches(repo / filepath, skip_patterns, repo):
                 continue
 
@@ -298,22 +311,22 @@ def check_docstring_freshness(
             if not fn.docstring_start:
                 continue
 
-            docstring_changed = _ranges_overlap(
-                changed_ranges, fn.docstring_start, fn.docstring_end
-            )
+            docstring_changed = _ranges_overlap(changed_ranges, fn.docstring_start, fn.docstring_end)
             if not docstring_changed:
-                violations.append(CoherenceViolation(
-                    kind="stale_docstring",
-                    severity="warning",
-                    file=filepath,
-                    message=f"function `{fn.name}` body changed but docstring was not updated",
-                    detail={
-                        "function": fn.name,
-                        "def_line": fn.def_line,
-                        "docstring_lines": [fn.docstring_start, fn.docstring_end],
-                        "body_lines": [fn.body_start, fn.body_end],
-                    },
-                ))
+                violations.append(
+                    CoherenceViolation(
+                        kind="stale_docstring",
+                        severity="warning",
+                        file=filepath,
+                        message=f"function `{fn.name}` body changed but docstring was not updated",
+                        detail={
+                            "function": fn.name,
+                            "def_line": fn.def_line,
+                            "docstring_lines": [fn.docstring_start, fn.docstring_end],
+                            "body_lines": [fn.body_start, fn.body_end],
+                        },
+                    )
+                )
 
     return violations, total_functions
 
@@ -377,7 +390,11 @@ def check_coherence(
         languages = config.get("docstring_languages", ["py"])
         skip_patterns = config.get("skip_patterns", [])
         doc_violations, fn_count = check_docstring_freshness(
-            repo, changed_files, base, languages, skip_patterns or None,
+            repo,
+            changed_files,
+            base,
+            languages,
+            skip_patterns or None,
         )
         violations.extend(doc_violations)
         functions_checked = fn_count
@@ -391,6 +408,7 @@ def check_coherence(
 
 
 # ── Serialization ────────────────────────────────────────────────
+
 
 def coherence_to_dict(report: CoherenceReport) -> dict[str, Any]:
     """Convert CoherenceReport to a plain dict."""

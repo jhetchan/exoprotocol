@@ -47,17 +47,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -67,6 +64,7 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
 def _write_features_yaml(repo: Path, features: list[dict[str, Any]]) -> Path:
     """Write features.yaml with the given feature list."""
     import yaml
+
     features_path = repo / ".exo" / "features.yaml"
     features_path.write_text(
         yaml.dump({"features": features}, default_flow_style=False),
@@ -91,11 +89,14 @@ def _write_source_file(repo: Path, rel_path: str, content: str) -> Path:
 class TestLoadFeatures:
     def test_load_basic_manifest(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "auth", "status": "active", "description": "Authentication system", "owner": "team-a"},
-            {"id": "billing", "status": "deprecated"},
-            {"id": "legacy-api", "status": "deleted"},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "auth", "status": "active", "description": "Authentication system", "owner": "team-a"},
+                {"id": "billing", "status": "deprecated"},
+                {"id": "legacy-api", "status": "deleted"},
+            ],
+        )
         features = load_features(repo)
         assert len(features) == 3
         assert features[0].id == "auth"
@@ -107,14 +108,17 @@ class TestLoadFeatures:
 
     def test_load_with_files_and_lock(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {
-                "id": "core-engine",
-                "status": "active",
-                "files": ["exo/kernel/*.py", "exo/kernel/**/*.py"],
-                "allow_agent_edit": False,
-            },
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {
+                    "id": "core-engine",
+                    "status": "active",
+                    "files": ["exo/kernel/*.py", "exo/kernel/**/*.py"],
+                    "allow_agent_edit": False,
+                },
+            ],
+        )
         features = load_features(repo)
         assert len(features) == 1
         f = features[0]
@@ -142,6 +146,7 @@ class TestLoadFeatures:
     def test_missing_manifest_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         import pytest
+
         with pytest.raises(Exception) as exc_info:
             load_features(repo)
         assert "FEATURES_MANIFEST_MISSING" in str(exc_info.value)
@@ -150,17 +155,22 @@ class TestLoadFeatures:
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"status": "active"}])
         import pytest
+
         with pytest.raises(Exception) as exc_info:
             load_features(repo)
         assert "FEATURES_ENTRY_MISSING_ID" in str(exc_info.value)
 
     def test_duplicate_id_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "auth", "status": "active"},
-            {"id": "auth", "status": "deprecated"},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "auth", "status": "active"},
+                {"id": "auth", "status": "deprecated"},
+            ],
+        )
         import pytest
+
         with pytest.raises(Exception) as exc_info:
             load_features(repo)
         assert "FEATURES_DUPLICATE_ID" in str(exc_info.value)
@@ -169,6 +179,7 @@ class TestLoadFeatures:
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"id": "bad", "status": "invalid_status"}])
         import pytest
+
         with pytest.raises(Exception) as exc_info:
             load_features(repo)
         assert "FEATURES_INVALID_STATUS" in str(exc_info.value)
@@ -176,11 +187,13 @@ class TestLoadFeatures:
     def test_non_list_features_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         import yaml
+
         (repo / ".exo" / "features.yaml").write_text(
             yaml.dump({"features": "not_a_list"}, default_flow_style=False),
             encoding="utf-8",
         )
         import pytest
+
         with pytest.raises(Exception) as exc_info:
             load_features(repo)
         assert "FEATURES_MANIFEST_INVALID" in str(exc_info.value)
@@ -188,11 +201,13 @@ class TestLoadFeatures:
     def test_non_dict_entry_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         import yaml
+
         (repo / ".exo" / "features.yaml").write_text(
             yaml.dump({"features": ["not_a_dict"]}, default_flow_style=False),
             encoding="utf-8",
         )
         import pytest
+
         with pytest.raises(Exception) as exc_info:
             load_features(repo)
         assert "FEATURES_ENTRY_INVALID" in str(exc_info.value)
@@ -207,12 +222,7 @@ class TestScanTags:
     def test_scan_python_tags(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"id": "auth"}])
-        _write_source_file(repo, "src/auth.py", (
-            "# @feature: auth\n"
-            "def login():\n"
-            "    pass\n"
-            "# @endfeature\n"
-        ))
+        _write_source_file(repo, "src/auth.py", ("# @feature: auth\ndef login():\n    pass\n# @endfeature\n"))
         tags = scan_tags(repo)
         assert len(tags) == 1
         assert tags[0].feature_id == "auth"
@@ -222,11 +232,7 @@ class TestScanTags:
 
     def test_scan_js_tags(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_source_file(repo, "src/billing.js", (
-            "// @feature: billing\n"
-            "function charge() {}\n"
-            "// @endfeature\n"
-        ))
+        _write_source_file(repo, "src/billing.js", ("// @feature: billing\nfunction charge() {}\n// @endfeature\n"))
         tags = scan_tags(repo)
         assert len(tags) == 1
         assert tags[0].feature_id == "billing"
@@ -234,26 +240,26 @@ class TestScanTags:
 
     def test_scan_single_point_binding(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_source_file(repo, "src/utils.py", (
-            "# @feature: utils\n"
-            "def helper():\n"
-            "    pass\n"
-        ))
+        _write_source_file(repo, "src/utils.py", ("# @feature: utils\ndef helper():\n    pass\n"))
         tags = scan_tags(repo)
         assert len(tags) == 1
         assert tags[0].end_line is None
 
     def test_scan_multiple_features_same_file(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_source_file(repo, "src/app.py", (
-            "# @feature: auth\n"
-            "def login(): pass\n"
-            "# @endfeature\n"
-            "\n"
-            "# @feature: billing\n"
-            "def charge(): pass\n"
-            "# @endfeature\n"
-        ))
+        _write_source_file(
+            repo,
+            "src/app.py",
+            (
+                "# @feature: auth\n"
+                "def login(): pass\n"
+                "# @endfeature\n"
+                "\n"
+                "# @feature: billing\n"
+                "def charge(): pass\n"
+                "# @endfeature\n"
+            ),
+        )
         tags = scan_tags(repo)
         assert len(tags) == 2
         ids = {t.feature_id for t in tags}
@@ -261,11 +267,7 @@ class TestScanTags:
 
     def test_scan_case_insensitive(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_source_file(repo, "src/test.py", (
-            "# @Feature: CamelCase\n"
-            "def foo(): pass\n"
-            "# @EndFeature\n"
-        ))
+        _write_source_file(repo, "src/test.py", ("# @Feature: CamelCase\ndef foo(): pass\n# @EndFeature\n"))
         tags = scan_tags(repo)
         assert len(tags) == 1
         assert tags[0].feature_id == "CamelCase"
@@ -304,10 +306,13 @@ class TestScanTags:
 class TestTrace:
     def test_clean_trace_passes(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "auth", "status": "active"},
-            {"id": "billing", "status": "active"},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "auth", "status": "active"},
+                {"id": "billing", "status": "active"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @feature: auth\ndef login(): pass\n# @endfeature\n")
         _write_source_file(repo, "src/billing.py", "# @feature: billing\ndef charge(): pass\n")
         report = trace(repo)
@@ -352,9 +357,12 @@ class TestTrace:
 
     def test_locked_edit_warning(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "core", "status": "active", "allow_agent_edit": False},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "core", "status": "active", "allow_agent_edit": False},
+            ],
+        )
         _write_source_file(repo, "src/core.py", "# @feature: core\ndef kernel(): pass\n")
         report = trace(repo)
         assert report.passed is True
@@ -364,10 +372,13 @@ class TestTrace:
 
     def test_unbound_active_feature_warning(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "auth", "status": "active"},
-            {"id": "billing", "status": "active"},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "auth", "status": "active"},
+                {"id": "billing", "status": "active"},
+            ],
+        )
         _write_source_file(repo, "src/auth.py", "# @feature: auth\ndef login(): pass\n")
         # billing has no code tags
         report = trace(repo)
@@ -393,13 +404,16 @@ class TestTrace:
 
     def test_feature_counts(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "a", "status": "active"},
-            {"id": "b", "status": "active"},
-            {"id": "c", "status": "deprecated"},
-            {"id": "d", "status": "deleted"},
-            {"id": "e", "status": "experimental"},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "a", "status": "active"},
+                {"id": "b", "status": "active"},
+                {"id": "c", "status": "deprecated"},
+                {"id": "d", "status": "deleted"},
+                {"id": "e", "status": "experimental"},
+            ],
+        )
         report = trace(repo, check_unbound=False)
         assert report.features_total == 5
         assert report.features_active == 2
@@ -408,16 +422,16 @@ class TestTrace:
 
     def test_multiple_violations_same_file(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "deleted-a", "status": "deleted"},
-            {"id": "deleted-b", "status": "deleted"},
-        ])
-        _write_source_file(repo, "src/mess.py", (
-            "# @feature: deleted-a\n"
-            "def a(): pass\n"
-            "# @feature: deleted-b\n"
-            "def b(): pass\n"
-        ))
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "deleted-a", "status": "deleted"},
+                {"id": "deleted-b", "status": "deleted"},
+            ],
+        )
+        _write_source_file(
+            repo, "src/mess.py", ("# @feature: deleted-a\ndef a(): pass\n# @feature: deleted-b\ndef b(): pass\n")
+        )
         report = trace(repo)
         assert report.passed is False
         errors = [v for v in report.violations if v.kind == "deleted_usage"]
@@ -493,11 +507,19 @@ class TestReportOutput:
 class TestScopeDeny:
     def test_generate_scope_deny_from_locked_features(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "core", "status": "active", "allow_agent_edit": False, "files": ["exo/kernel/*.py"]},
-            {"id": "auth", "status": "active", "allow_agent_edit": True, "files": ["src/auth.py"]},
-            {"id": "config", "status": "active", "allow_agent_edit": False, "files": ["config/*.yaml", "config/*.json"]},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "core", "status": "active", "allow_agent_edit": False, "files": ["exo/kernel/*.py"]},
+                {"id": "auth", "status": "active", "allow_agent_edit": True, "files": ["src/auth.py"]},
+                {
+                    "id": "config",
+                    "status": "active",
+                    "allow_agent_edit": False,
+                    "files": ["config/*.yaml", "config/*.json"],
+                },
+            ],
+        )
         features = load_features(repo)
         deny = generate_scope_deny(features)
         assert "exo/kernel/*.py" in deny
@@ -507,18 +529,24 @@ class TestScopeDeny:
 
     def test_generate_scope_deny_empty_when_all_editable(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "a", "status": "active", "files": ["src/*.py"]},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "a", "status": "active", "files": ["src/*.py"]},
+            ],
+        )
         features = load_features(repo)
         deny = generate_scope_deny(features)
         assert deny == []
 
     def test_generate_scope_deny_no_files_on_locked(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "a", "status": "active", "allow_agent_edit": False},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "a", "status": "active", "allow_agent_edit": False},
+            ],
+        )
         features = load_features(repo)
         deny = generate_scope_deny(features)
         assert deny == []
@@ -532,10 +560,19 @@ class TestScopeDeny:
 class TestFeaturesToList:
     def test_round_trip(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "auth", "status": "active", "description": "Auth system", "owner": "team-a",
-             "files": ["src/auth.py"], "allow_agent_edit": False},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {
+                    "id": "auth",
+                    "status": "active",
+                    "description": "Auth system",
+                    "owner": "team-a",
+                    "files": ["src/auth.py"],
+                    "allow_agent_edit": False,
+                },
+            ],
+        )
         features = load_features(repo)
         result = features_to_list(features)
         assert len(result) == 1
@@ -600,13 +637,18 @@ class TestValidStatuses:
 class TestCLIFeatures:
     def test_features_json(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "auth", "status": "active", "description": "Auth"},
-            {"id": "billing", "status": "deprecated"},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "auth", "status": "active", "description": "Auth"},
+                {"id": "billing", "status": "deprecated"},
+            ],
+        )
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "features"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -616,14 +658,19 @@ class TestCLIFeatures:
 
     def test_features_status_filter(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "auth", "status": "active"},
-            {"id": "old", "status": "deprecated"},
-            {"id": "gone", "status": "deleted"},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "auth", "status": "active"},
+                {"id": "old", "status": "deprecated"},
+                {"id": "gone", "status": "deleted"},
+            ],
+        )
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "features", "--status", "active"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -634,7 +681,9 @@ class TestCLIFeatures:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "features"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 1
         data = json.loads(result.stdout)
@@ -643,12 +692,17 @@ class TestCLIFeatures:
 
     def test_features_scope_deny(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "core", "allow_agent_edit": False, "files": ["exo/kernel/*.py"]},
-        ])
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "core", "allow_agent_edit": False, "files": ["exo/kernel/*.py"]},
+            ],
+        )
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "features"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -662,7 +716,9 @@ class TestCLITrace:
         _write_source_file(repo, "src/auth.py", "# @feature: auth\ndef login(): pass\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "trace"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -675,7 +731,9 @@ class TestCLITrace:
         _write_source_file(repo, "src/bad.py", "# @feature: nonexistent\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "trace"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0  # CLI returns 0 even with violations (report is data)
         data = json.loads(result.stdout)
@@ -688,7 +746,9 @@ class TestCLITrace:
         _write_source_file(repo, "src/auth.py", "# @feature: auth\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "trace"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         assert "Feature Traceability: PASS" in result.stdout
@@ -699,7 +759,9 @@ class TestCLITrace:
         # No source files — would normally produce unbound warning
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "trace", "--no-check-unbound"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -711,9 +773,22 @@ class TestCLITrace:
         _write_source_file(repo, "src/a.py", "# @feature: alpha\n")
         _write_source_file(repo, "src/b.txt", "# @feature: beta\n")
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "trace",
-             "--glob", "**/*.txt", "--no-check-unbound"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "trace",
+                "--glob",
+                "**/*.txt",
+                "--no-check-unbound",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -748,14 +823,18 @@ class TestEdgeCases:
         """@endfeature closes the most recently opened tag (stack behavior)."""
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"id": "outer"}, {"id": "inner"}])
-        _write_source_file(repo, "src/nested.py", (
-            "# @feature: outer\n"
-            "# @feature: inner\n"
-            "def nested(): pass\n"
-            "# @endfeature\n"
-            "def outer_only(): pass\n"
-            "# @endfeature\n"
-        ))
+        _write_source_file(
+            repo,
+            "src/nested.py",
+            (
+                "# @feature: outer\n"
+                "# @feature: inner\n"
+                "def nested(): pass\n"
+                "# @endfeature\n"
+                "def outer_only(): pass\n"
+                "# @endfeature\n"
+            ),
+        )
         tags = scan_tags(repo)
         assert len(tags) == 2
         inner = [t for t in tags if t.feature_id == "inner"][0]
@@ -947,21 +1026,28 @@ class TestBannerTrace:
 class TestPrune:
     def test_prune_deleted_block(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "alive", "status": "active"},
-            {"id": "dead", "status": "deleted"},
-        ])
-        _write_source_file(repo, "src/app.py", (
-            "# @feature: alive\n"
-            "def keep_this(): pass\n"
-            "# @endfeature\n"
-            "\n"
-            "# @feature: dead\n"
-            "def remove_this(): pass\n"
-            "# @endfeature\n"
-            "\n"
-            "def standalone(): pass\n"
-        ))
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "alive", "status": "active"},
+                {"id": "dead", "status": "deleted"},
+            ],
+        )
+        _write_source_file(
+            repo,
+            "src/app.py",
+            (
+                "# @feature: alive\n"
+                "def keep_this(): pass\n"
+                "# @endfeature\n"
+                "\n"
+                "# @feature: dead\n"
+                "def remove_this(): pass\n"
+                "# @endfeature\n"
+                "\n"
+                "def standalone(): pass\n"
+            ),
+        )
         report = prune(repo)
         assert len(report.pruned) == 1
         assert report.pruned[0].feature_id == "dead"
@@ -979,11 +1065,7 @@ class TestPrune:
     def test_prune_dry_run(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"id": "dead", "status": "deleted"}])
-        _write_source_file(repo, "src/app.py", (
-            "# @feature: dead\n"
-            "def zombie(): pass\n"
-            "# @endfeature\n"
-        ))
+        _write_source_file(repo, "src/app.py", ("# @feature: dead\ndef zombie(): pass\n# @endfeature\n"))
         report = prune(repo, dry_run=True)
         assert len(report.pruned) == 1
         assert report.dry_run is True
@@ -996,11 +1078,7 @@ class TestPrune:
         """Single-point tags (no @endfeature) remove just the tag line."""
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"id": "dead", "status": "deleted"}])
-        _write_source_file(repo, "src/app.py", (
-            "def before(): pass\n"
-            "# @feature: dead\n"
-            "def after(): pass\n"
-        ))
+        _write_source_file(repo, "src/app.py", ("def before(): pass\n# @feature: dead\ndef after(): pass\n"))
         report = prune(repo)
         assert len(report.pruned) == 1
         assert report.pruned[0].lines_removed == 1
@@ -1012,11 +1090,7 @@ class TestPrune:
     def test_prune_does_not_touch_active_features(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"id": "alive", "status": "active"}])
-        _write_source_file(repo, "src/app.py", (
-            "# @feature: alive\n"
-            "def keep(): pass\n"
-            "# @endfeature\n"
-        ))
+        _write_source_file(repo, "src/app.py", ("# @feature: alive\ndef keep(): pass\n# @endfeature\n"))
         report = prune(repo)
         assert len(report.pruned) == 0
         assert report.total_lines_removed == 0
@@ -1024,11 +1098,7 @@ class TestPrune:
     def test_prune_deprecated_only_with_flag(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"id": "old", "status": "deprecated"}])
-        _write_source_file(repo, "src/app.py", (
-            "# @feature: old\n"
-            "def legacy(): pass\n"
-            "# @endfeature\n"
-        ))
+        _write_source_file(repo, "src/app.py", ("# @feature: old\ndef legacy(): pass\n# @endfeature\n"))
         # Without flag — deprecated NOT pruned
         report = prune(repo)
         assert len(report.pruned) == 0
@@ -1040,22 +1110,29 @@ class TestPrune:
 
     def test_prune_multiple_blocks_same_file(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "dead-a", "status": "deleted"},
-            {"id": "dead-b", "status": "deleted"},
-            {"id": "alive", "status": "active"},
-        ])
-        _write_source_file(repo, "src/app.py", (
-            "# @feature: dead-a\n"
-            "def a(): pass\n"
-            "# @endfeature\n"
-            "# @feature: alive\n"
-            "def keep(): pass\n"
-            "# @endfeature\n"
-            "# @feature: dead-b\n"
-            "def b(): pass\n"
-            "# @endfeature\n"
-        ))
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "dead-a", "status": "deleted"},
+                {"id": "dead-b", "status": "deleted"},
+                {"id": "alive", "status": "active"},
+            ],
+        )
+        _write_source_file(
+            repo,
+            "src/app.py",
+            (
+                "# @feature: dead-a\n"
+                "def a(): pass\n"
+                "# @endfeature\n"
+                "# @feature: alive\n"
+                "def keep(): pass\n"
+                "# @endfeature\n"
+                "# @feature: dead-b\n"
+                "def b(): pass\n"
+                "# @endfeature\n"
+            ),
+        )
         report = prune(repo)
         assert len(report.pruned) == 2
         assert report.total_lines_removed == 6
@@ -1098,19 +1175,26 @@ class TestPrune:
     def test_prune_nested_blocks(self, tmp_path: Path) -> None:
         """When a deleted feature is nested inside an active one, only the inner block is removed."""
         repo = _bootstrap_repo(tmp_path)
-        _write_features_yaml(repo, [
-            {"id": "outer", "status": "active"},
-            {"id": "inner-dead", "status": "deleted"},
-        ])
-        _write_source_file(repo, "src/app.py", (
-            "# @feature: outer\n"
-            "def outer_start(): pass\n"
-            "# @feature: inner-dead\n"
-            "def dead_code(): pass\n"
-            "# @endfeature\n"
-            "def outer_end(): pass\n"
-            "# @endfeature\n"
-        ))
+        _write_features_yaml(
+            repo,
+            [
+                {"id": "outer", "status": "active"},
+                {"id": "inner-dead", "status": "deleted"},
+            ],
+        )
+        _write_source_file(
+            repo,
+            "src/app.py",
+            (
+                "# @feature: outer\n"
+                "def outer_start(): pass\n"
+                "# @feature: inner-dead\n"
+                "def dead_code(): pass\n"
+                "# @endfeature\n"
+                "def outer_end(): pass\n"
+                "# @endfeature\n"
+            ),
+        )
         report = prune(repo)
         assert len(report.pruned) == 1
         assert report.pruned[0].feature_id == "inner-dead"
@@ -1159,7 +1243,9 @@ class TestCLIPrune:
         _write_source_file(repo, "src/app.py", "# @feature: dead\ndef x(): pass\n# @endfeature\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "prune", "--dry-run"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -1173,7 +1259,9 @@ class TestCLIPrune:
         _write_source_file(repo, "src/app.py", "# @feature: dead\ndef x(): pass\n# @endfeature\n")
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "prune", "--dry-run"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         assert "DRY RUN" in result.stdout
@@ -1183,9 +1271,21 @@ class TestCLIPrune:
         _write_features_yaml(repo, [{"id": "old", "status": "deprecated"}])
         _write_source_file(repo, "src/app.py", "# @feature: old\ndef x(): pass\n# @endfeature\n")
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "prune",
-             "--include-deprecated", "--dry-run"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--repo",
+                str(repo),
+                "--format",
+                "json",
+                "prune",
+                "--include-deprecated",
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -1194,16 +1294,16 @@ class TestCLIPrune:
     def test_prune_actually_modifies_file(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _write_features_yaml(repo, [{"id": "dead", "status": "deleted"}])
-        _write_source_file(repo, "src/app.py", (
-            "def before(): pass\n"
-            "# @feature: dead\n"
-            "def remove_me(): pass\n"
-            "# @endfeature\n"
-            "def after(): pass\n"
-        ))
+        _write_source_file(
+            repo,
+            "src/app.py",
+            ("def before(): pass\n# @feature: dead\ndef remove_me(): pass\n# @endfeature\ndef after(): pass\n"),
+        )
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--repo", str(repo), "--format", "json", "prune"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         content = (repo / "src/app.py").read_text(encoding="utf-8")

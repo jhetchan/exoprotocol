@@ -586,7 +586,7 @@ class GitDistributedLeaseManager:
             sha = parts[0]
             ref = parts[1]
             # Extract ticket_id from ref path
-            ticket_segment = ref[len(prefix):] if ref.startswith(prefix) else ref
+            ticket_segment = ref[len(prefix) :] if ref.startswith(prefix) else ref
             try:
                 fetched_sha = self._fetch_ref(remote_name, ref)
                 payload = self._parse_lease_payload(self._read_commit_message(fetched_sha))
@@ -598,14 +598,16 @@ class GitDistributedLeaseManager:
                 locks.append(payload)
             except (ExoError, Exception):
                 # If we can't parse a lock, include minimal info
-                locks.append({
-                    "ticket_id": ticket_segment,
-                    "ref": ref,
-                    "commit_sha": sha,
-                    "remote": remote_name,
-                    "expired": None,
-                    "parse_error": True,
-                })
+                locks.append(
+                    {
+                        "ticket_id": ticket_segment,
+                        "ref": ref,
+                        "commit_sha": sha,
+                        "remote": remote_name,
+                        "expired": None,
+                        "parse_error": True,
+                    }
+                )
         return locks
 
     def cleanup_locks(
@@ -664,21 +666,25 @@ class GitDistributedLeaseManager:
             "cleaned_count": len(cleaned) if not dry_run else 0,
             "error_count": len(errors),
             "expired": [
-                {"ticket_id": l.get("ticket_id", ""), "owner": l.get("owner", ""), "ref": l.get("ref", ""), "expires_at": l.get("expires_at", "")}
+                {
+                    "ticket_id": l.get("ticket_id", ""),
+                    "owner": l.get("owner", ""),
+                    "ref": l.get("ref", ""),
+                    "expires_at": l.get("expires_at", ""),
+                }
                 for l in expired
             ],
             "active": [
-                {"ticket_id": l.get("ticket_id", ""), "owner": l.get("owner", ""), "ref": l.get("ref", ""), "expires_at": l.get("expires_at", "")}
+                {
+                    "ticket_id": l.get("ticket_id", ""),
+                    "owner": l.get("owner", ""),
+                    "ref": l.get("ref", ""),
+                    "expires_at": l.get("expires_at", ""),
+                }
                 for l in active
             ],
-            "cleaned": [
-                {"ticket_id": l.get("ticket_id", ""), "ref": l.get("ref", "")}
-                for l in cleaned
-            ],
-            "errors": [
-                {"ticket_id": l.get("ticket_id", ""), "ref": l.get("ref", "")}
-                for l in errors
-            ],
+            "cleaned": [{"ticket_id": l.get("ticket_id", ""), "ref": l.get("ref", "")} for l in cleaned],
+            "errors": [{"ticket_id": l.get("ticket_id", ""), "ref": l.get("ref", "")} for l in errors],
             "dry_run": dry_run,
         }
 

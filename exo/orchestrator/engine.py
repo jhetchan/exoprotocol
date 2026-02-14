@@ -56,7 +56,9 @@ class Orchestrator:
             )
 
         refs = raw.get("artifact_refs")
-        artifact_refs = [str(item) for item in refs if isinstance(item, str) and item.strip()] if isinstance(refs, list) else []
+        artifact_refs = (
+            [str(item) for item in refs if isinstance(item, str) and item.strip()] if isinstance(refs, list) else []
+        )
         details = raw.get("details") if isinstance(raw.get("details"), dict) else {}
         return {
             "status": status,
@@ -97,7 +99,12 @@ class Orchestrator:
             raise ExoError(
                 code="ORCHESTRATOR_EXECUTOR_FAILED",
                 message=f"Executor failed for task {task.task_id}: {exc}",
-                details={"task_id": task.task_id, "intent_id": intent_id, "decision_id": decision_id, "effect_id": effect_id},
+                details={
+                    "task_id": task.task_id,
+                    "intent_id": intent_id,
+                    "decision_id": decision_id,
+                    "effect_id": effect_id,
+                },
                 blocked=True,
             ) from exc
 

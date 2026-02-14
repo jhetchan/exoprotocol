@@ -99,7 +99,9 @@ class DistributedWorker:
                 blocked=True,
             )
         refs = raw.get("artifact_refs")
-        artifact_refs = [str(item) for item in refs if isinstance(item, str) and item.strip()] if isinstance(refs, list) else []
+        artifact_refs = (
+            [str(item) for item in refs if isinstance(item, str) and item.strip()] if isinstance(refs, list) else []
+        )
         details = raw.get("details") if isinstance(raw.get("details"), dict) else {}
         return {
             "status": status,
@@ -186,7 +188,9 @@ class DistributedWorker:
         stream = self._syscalls.subscribe(topic_id=self.topic_id, since_cursor=start_cursor, limit=max(int(limit), 1))
         events = stream.get("events") if isinstance(stream.get("events"), list) else []
         next_cursor_raw = stream.get("next_cursor")
-        next_cursor = str(next_cursor_raw) if isinstance(next_cursor_raw, str) and next_cursor_raw.strip() else start_cursor
+        next_cursor = (
+            str(next_cursor_raw) if isinstance(next_cursor_raw, str) and next_cursor_raw.strip() else start_cursor
+        )
 
         processed: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []

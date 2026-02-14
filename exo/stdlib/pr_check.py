@@ -3,6 +3,7 @@
 Designed to run in CI or be consumed by a review agent. Returns structured
 data about governance coverage, session compliance, and drift scores.
 """
+
 from __future__ import annotations
 
 import json
@@ -83,10 +84,14 @@ def _run_git(repo: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
 
 def _list_commits(repo: Path, base_ref: str, head_ref: str) -> list[CommitInfo]:
     """List commits in base_ref..head_ref range."""
-    proc = _run_git(repo, [
-        "log", "--format=%H|%aI|%an|%s",
-        f"{base_ref}..{head_ref}",
-    ])
+    proc = _run_git(
+        repo,
+        [
+            "log",
+            "--format=%H|%aI|%an|%s",
+            f"{base_ref}..{head_ref}",
+        ],
+    )
     if proc.returncode != 0:
         return []
 
@@ -98,12 +103,14 @@ def _list_commits(repo: Path, base_ref: str, head_ref: str) -> list[CommitInfo]:
         parts = line.split("|", 3)
         if len(parts) < 4:
             continue
-        commits.append(CommitInfo(
-            sha=parts[0],
-            timestamp=parts[1],
-            author=parts[2],
-            message=parts[3],
-        ))
+        commits.append(
+            CommitInfo(
+                sha=parts[0],
+                timestamp=parts[1],
+                author=parts[2],
+                message=parts[3],
+            )
+        )
     return commits
 
 
@@ -292,21 +299,25 @@ def pr_check(
         session = commit_map.get(commit.sha)
         if session:
             sid = session.get("session_id", "")
-            commit_verdicts.append(CommitVerdict(
-                sha=commit.sha,
-                governed=True,
-                session_id=sid,
-                ticket_id=session.get("ticket_id"),
-                actor=session.get("actor"),
-            ))
+            commit_verdicts.append(
+                CommitVerdict(
+                    sha=commit.sha,
+                    governed=True,
+                    session_id=sid,
+                    ticket_id=session.get("ticket_id"),
+                    actor=session.get("actor"),
+                )
+            )
             if sid not in matched_session_ids:
                 matched_session_ids.add(sid)
                 matched_sessions.append(session)
         else:
-            commit_verdicts.append(CommitVerdict(
-                sha=commit.sha,
-                governed=False,
-            ))
+            commit_verdicts.append(
+                CommitVerdict(
+                    sha=commit.sha,
+                    governed=False,
+                )
+            )
             ungoverned_shas.append(commit.sha)
 
     # 5. Build session verdicts
@@ -321,19 +332,21 @@ def pr_check(
         drift = entry.get("drift_score")
         verify = entry.get("verify", "")
 
-        session_verdicts.append(SessionVerdict(
-            session_id=sid,
-            ticket_id=entry.get("ticket_id", ""),
-            actor=entry.get("actor", ""),
-            vendor=entry.get("vendor", ""),
-            model=entry.get("model", ""),
-            mode=entry.get("mode", "work"),
-            verify=verify,
-            drift_score=drift,
-            started_at=entry.get("started_at", ""),
-            finished_at=entry.get("finished_at", ""),
-            commit_count=session_commit_counts.get(sid, 0),
-        ))
+        session_verdicts.append(
+            SessionVerdict(
+                session_id=sid,
+                ticket_id=entry.get("ticket_id", ""),
+                actor=entry.get("actor", ""),
+                vendor=entry.get("vendor", ""),
+                model=entry.get("model", ""),
+                mode=entry.get("mode", "work"),
+                verify=verify,
+                drift_score=drift,
+                started_at=entry.get("started_at", ""),
+                finished_at=entry.get("finished_at", ""),
+                commit_count=session_commit_counts.get(sid, 0),
+            )
+        )
 
         # Flag sessions with issues
         if verify == "failed":
@@ -360,10 +373,7 @@ def pr_check(
     governed = len(commits) - len(ungoverned_shas)
     has_ungoverned = len(ungoverned_shas) > 0
     has_failed_verify = any(sv.verify == "failed" for sv in session_verdicts)
-    has_high_drift = any(
-        sv.drift_score is not None and sv.drift_score > drift_threshold
-        for sv in session_verdicts
-    )
+    has_high_drift = any(sv.drift_score is not None and sv.drift_score > drift_threshold for sv in session_verdicts)
 
     if not governance_intact or has_failed_verify or has_ungoverned:
         verdict = "fail"

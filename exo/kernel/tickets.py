@@ -95,7 +95,9 @@ def load_ticket(repo: Path, ticket_id: str) -> dict[str, Any]:
             message=f"Ticket not found: {ticket_id}",
             details={
                 "ticket_id": ticket_id,
-                "expected_path": str(path.relative_to(repo)) if repo in path.parents or path.parent == repo else str(path),
+                "expected_path": str(path.relative_to(repo))
+                if repo in path.parents or path.parent == repo
+                else str(path),
                 "hint": f"No ticket file exists for '{ticket_id}'. Create it first with `exo intent-create` or `exo ticket-create`.",
             },
         )
@@ -614,8 +616,10 @@ def validate_ticket(gov: Governance, ticket: Ticket | dict[str, Any]) -> TicketS
     if not isinstance(ticket_id, str) or not ticket_id.strip():
         reasons.append("ticket.id must be a non-empty string")
     is_persistent = isinstance(ticket_id, str) and (
-        ticket_id.startswith("TICKET-") or ticket_id.startswith("INTENT-")
-        or ticket_id.startswith("GOV-") or ticket_id.startswith("PRACTICE-")
+        ticket_id.startswith("TICKET-")
+        or ticket_id.startswith("INTENT-")
+        or ticket_id.startswith("GOV-")
+        or ticket_id.startswith("PRACTICE-")
     )
 
     # Validate kind and risk enums

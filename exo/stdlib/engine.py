@@ -610,12 +610,10 @@ class KernelEngine:
 
     def _enforce_lock_branch(self, lock: dict[str, Any], git_controls: dict[str, Any]) -> dict[str, Any]:
         expected_branch = str(
-            ((lock.get("workspace") or {}).get("branch"))
-            or f"codex/{lock.get('ticket_id', 'unknown')}"
+            ((lock.get("workspace") or {}).get("branch")) or f"codex/{lock.get('ticket_id', 'unknown')}"
         )
         base_branch = str(
-            ((lock.get("workspace") or {}).get("base"))
-            or git_controls.get("base_branch_fallback", "main")
+            ((lock.get("workspace") or {}).get("base")) or git_controls.get("base_branch_fallback", "main")
         )
         current_branch = self._git_current_branch()
         actions: list[str] = []
@@ -793,12 +791,10 @@ class KernelEngine:
         }
         current_branch = self._git_current_branch()
         expected_branch = str(
-            ((lock.get("workspace") or {}).get("branch"))
-            or f"codex/{lock.get('ticket_id', 'unknown')}"
+            ((lock.get("workspace") or {}).get("branch")) or f"codex/{lock.get('ticket_id', 'unknown')}"
         )
         base_branch = str(
-            ((lock.get("workspace") or {}).get("base"))
-            or git_controls.get("base_branch_fallback", "main")
+            ((lock.get("workspace") or {}).get("base")) or git_controls.get("base_branch_fallback", "main")
         )
         report["current_branch"] = current_branch
         report["expected_branch"] = expected_branch
@@ -884,8 +880,7 @@ class KernelEngine:
                         )
                     if denied:
                         issues.append(
-                            "LOCK_BRANCH_RULE_DRIFT: changed paths denied by governance: "
-                            + ", ".join(denied[:10])
+                            "LOCK_BRANCH_RULE_DRIFT: changed paths denied by governance: " + ", ".join(denied[:10])
                         )
 
                     delta = {
@@ -953,10 +948,7 @@ class KernelEngine:
             remaining = int(max(delta.total_seconds() // 3600, 0))
             raise ExoError(
                 code="GOVERNANCE_COOLDOWN",
-                message=(
-                    "Governance proposal cooldown active. "
-                    f"Try again in about {remaining}h."
-                ),
+                message=(f"Governance proposal cooldown active. Try again in about {remaining}h."),
                 blocked=True,
             )
 
@@ -1183,7 +1175,11 @@ class KernelEngine:
             "stderr": (proc.stderr or "")[-4000:],
             "ok": proc.returncode == 0,
         }
-        self._audit(action, "ok" if proc.returncode == 0 else "failed", details={"command": command, "returncode": proc.returncode})
+        self._audit(
+            action,
+            "ok" if proc.returncode == 0 else "failed",
+            details={"command": command, "returncode": proc.returncode},
+        )
         return result
 
     def _current_ticket(self, ticket_id: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -1250,6 +1246,7 @@ class KernelEngine:
         if scan:
             try:
                 from exo.stdlib.scan import scan_repo, scan_to_dict, generate_constitution, generate_config
+
                 scan_report = scan_repo(self.repo)
                 scan_dict = scan_to_dict(scan_report)
             except Exception:  # noqa: BLE001
@@ -1288,6 +1285,7 @@ class KernelEngine:
             if scan_report is not None:
                 try:
                     from exo.stdlib.scan import generate_constitution
+
                     constitution_text = generate_constitution(scan_report)
                 except Exception:  # noqa: BLE001
                     pass
@@ -1301,6 +1299,7 @@ class KernelEngine:
             if scan_report is not None:
                 try:
                     from exo.stdlib.scan import generate_config
+
                     config_data = generate_config(scan_report)
                 except Exception:  # noqa: BLE001
                     pass
@@ -1382,6 +1381,7 @@ class KernelEngine:
         if scan:
             try:
                 from exo.stdlib.adapters import generate_adapters
+
                 adapter_result = generate_adapters(self.repo)
                 adapters_generated = adapter_result.get("written", [])
             except Exception:  # noqa: BLE001
@@ -1631,7 +1631,9 @@ class KernelEngine:
             )
             lock = dict(distributed_result.get("lock", {}))
         else:
-            lock = tickets.acquire_lock(self.repo, str(chosen["id"]), owner=owner, role=role, duration_hours=duration_hours)
+            lock = tickets.acquire_lock(
+                self.repo, str(chosen["id"]), owner=owner, role=role, duration_hours=duration_hours
+            )
         if chosen.get("status") == "todo":
             chosen["status"] = "active"
             tickets.save_ticket(self.repo, chosen)
@@ -1669,7 +1671,9 @@ class KernelEngine:
         if not target_ticket_id:
             raise ExoError(code="LOCK_TICKET_INVALID", message="Active lock missing ticket_id", blocked=True)
 
-        effective_owner = owner.strip() if isinstance(owner, str) and owner.strip() else str(lock.get("owner", "")).strip()
+        effective_owner = (
+            owner.strip() if isinstance(owner, str) and owner.strip() else str(lock.get("owner", "")).strip()
+        )
         if not effective_owner:
             effective_owner = self.actor
         effective_role = role.strip() if isinstance(role, str) and role.strip() else str(lock.get("role", "developer"))
@@ -1742,7 +1746,9 @@ class KernelEngine:
             )
             refreshed = dict(distributed_result.get("lock", {}))
         else:
-            refreshed = tickets.heartbeat_lock(self.repo, ticket_id=ticket_id, owner=owner, duration_hours=duration_hours)
+            refreshed = tickets.heartbeat_lock(
+                self.repo, ticket_id=ticket_id, owner=owner, duration_hours=duration_hours
+            )
         target_ticket_id = str(refreshed.get("ticket_id", "")).strip() or ticket_id
         self._audit(
             "heartbeat_lock",
@@ -1896,7 +1902,9 @@ class KernelEngine:
             changed_files.append(relative_posix(target, self.repo))
         return changed_files
 
-    def do(self, ticket_id: str | None = None, *, patch_file: str | None = None, mark_done: bool = True) -> dict[str, Any]:
+    def do(
+        self, ticket_id: str | None = None, *, patch_file: str | None = None, mark_done: bool = True
+    ) -> dict[str, Any]:
         self._begin()
         self._verify_integrity()
 
@@ -2045,8 +2053,7 @@ class KernelEngine:
             "## Changed Files\n\n"
             + ("\n".join(f"- {item}" for item in changed_files) if changed_files else "- (none)")
             + "\n\n"
-            "## Checks\n\n"
-            + ("- passed\n" if check_out.get("passed") else "- failed\n")
+            "## Checks\n\n" + ("- passed\n" if check_out.get("passed") else "- failed\n")
         )
         self._write_system_text(distill_path, distill_body)
 
@@ -2310,9 +2317,17 @@ class KernelEngine:
         if risk_norm not in evolution.RISK_VALUES:
             risk_norm = "medium"
 
-        requires_human = bool(human_required) if human_required is not None else (normalized_kind == "governance_change")
-        change_path = proposed_change_path.strip() if isinstance(proposed_change_path, str) and proposed_change_path.strip() else patch_ref
-        rollback_path_value = rollback_path.strip() if isinstance(rollback_path, str) and rollback_path.strip() else change_path
+        requires_human = (
+            bool(human_required) if human_required is not None else (normalized_kind == "governance_change")
+        )
+        change_path = (
+            proposed_change_path.strip()
+            if isinstance(proposed_change_path, str) and proposed_change_path.strip()
+            else patch_ref
+        )
+        rollback_path_value = (
+            rollback_path.strip() if isinstance(rollback_path, str) and rollback_path.strip() else change_path
+        )
 
         proposal = {
             "id": proposal_id,
@@ -2615,9 +2630,7 @@ class KernelEngine:
             f"- proposal: {proposal_id_norm}\n"
             f"- kind: {kind}\n"
             f"- distilled_at: {now_iso()}\n\n"
-            "## Symptom\n\n"
-            + "\\n".join(f"- {item}" for item in (proposal.get("symptom") or []))
-            + "\n\n"
+            "## Symptom\n\n" + "\\n".join(f"- {item}" for item in (proposal.get("symptom") or [])) + "\n\n"
             "## Root Cause\n\n"
             f"{proposal.get('root_cause', '')}\n\n"
             "## Expected Effect\n\n"
@@ -2631,7 +2644,9 @@ class KernelEngine:
         fm_id = evolution.next_memory_id(index, "FM")
         effect_list = proposal.get("expected_effect") if isinstance(proposal.get("expected_effect"), list) else []
         symptom_list = proposal.get("symptom") if isinstance(proposal.get("symptom"), list) else []
-        default_statement = str(effect_list[0]).strip() if effect_list else (str(symptom_list[0]).strip() if symptom_list else "")
+        default_statement = (
+            str(effect_list[0]).strip() if effect_list else (str(symptom_list[0]).strip() if symptom_list else "")
+        )
         statement_value = (statement or default_statement).strip()
         if not statement_value:
             statement_value = f"Apply lesson from {proposal_id_norm}"
@@ -2738,7 +2753,9 @@ class KernelEngine:
         try:
             limit_value = max(int(limit), 1)
         except (TypeError, ValueError):
-            raise ExoError(code="SUBSCRIBE_LIMIT_INVALID", message="limit must be a positive integer", blocked=True) from None
+            raise ExoError(
+                code="SUBSCRIBE_LIMIT_INVALID", message="limit must be a positive integer", blocked=True
+            ) from None
         data = ledger.subscribe(
             self.repo,
             topic_id=topic,
@@ -2824,7 +2841,9 @@ class KernelEngine:
         try:
             attempts = max(int(max_attempts), 1)
         except (TypeError, ValueError):
-            raise ExoError(code="CAS_ATTEMPTS_INVALID", message="max_attempts must be a positive integer", blocked=True) from None
+            raise ExoError(
+                code="CAS_ATTEMPTS_INVALID", message="max_attempts must be a positive integer", blocked=True
+            ) from None
         result = ledger.cas_head_retry(
             self.repo,
             topic,
@@ -3038,7 +3057,9 @@ class KernelEngine:
             bundle_ref = relative_posix(bundle_path, self.repo)
 
         current_lock = governance.load_governance_lock(self.repo)
-        target_version = version.strip() if isinstance(version, str) and version.strip() else str(current_lock.get("version", "0.1"))
+        target_version = (
+            version.strip() if isinstance(version, str) and version.strip() else str(current_lock.get("version", "0.1"))
+        )
         lock_data = governance.compile_constitution(self.repo, version=target_version)
 
         audit_ref = self._audit(

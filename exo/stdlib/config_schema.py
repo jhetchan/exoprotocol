@@ -3,6 +3,7 @@
 Validates ``.exo/config.yaml`` structure, types, and value ranges.
 Returns a list of issues (errors and warnings) rather than raising.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -63,14 +64,16 @@ _REQUIRED_COHERENCE_KEYS: dict[str, type | tuple[type, ...]] = {
 @dataclass
 class ConfigIssue:
     """A single config validation issue."""
+
     severity: str  # error | warning
-    path: str      # dotted key path (e.g., "defaults.ticket_budgets.max_files_changed")
+    path: str  # dotted key path (e.g., "defaults.ticket_budgets.max_files_changed")
     message: str
 
 
 @dataclass
 class ConfigValidation:
     """Result of config validation."""
+
     issues: list[ConfigIssue] = field(default_factory=list)
     config_exists: bool = False
     config_version: int | None = None
@@ -96,11 +99,13 @@ def validate_config(repo: Path) -> ConfigValidation:
     config_path = repo / CONFIG_PATH
     if not config_path.exists():
         result.config_exists = False
-        result.issues.append(ConfigIssue(
-            severity="error",
-            path="config.yaml",
-            message="Config file not found",
-        ))
+        result.issues.append(
+            ConfigIssue(
+                severity="error",
+                path="config.yaml",
+                message="Config file not found",
+            )
+        )
         return result
 
     result.config_exists = True
@@ -108,19 +113,23 @@ def validate_config(repo: Path) -> ConfigValidation:
     try:
         data = load_yaml(config_path)
     except Exception as exc:  # noqa: BLE001
-        result.issues.append(ConfigIssue(
-            severity="error",
-            path="config.yaml",
-            message=f"Failed to parse YAML: {exc}",
-        ))
+        result.issues.append(
+            ConfigIssue(
+                severity="error",
+                path="config.yaml",
+                message=f"Failed to parse YAML: {exc}",
+            )
+        )
         return result
 
     if not isinstance(data, dict):
-        result.issues.append(ConfigIssue(
-            severity="error",
-            path="config.yaml",
-            message="Config must be a YAML mapping",
-        ))
+        result.issues.append(
+            ConfigIssue(
+                severity="error",
+                path="config.yaml",
+                message="Config must be a YAML mapping",
+            )
+        )
         return result
 
     # Version check
@@ -129,17 +138,21 @@ def validate_config(repo: Path) -> ConfigValidation:
         if isinstance(version, int):
             result.config_version = version
             if version > CURRENT_VERSION:
-                result.issues.append(ConfigIssue(
-                    severity="warning",
-                    path="version",
-                    message=f"Config version {version} is newer than supported {CURRENT_VERSION}",
-                ))
+                result.issues.append(
+                    ConfigIssue(
+                        severity="warning",
+                        path="version",
+                        message=f"Config version {version} is newer than supported {CURRENT_VERSION}",
+                    )
+                )
         else:
-            result.issues.append(ConfigIssue(
-                severity="error",
-                path="version",
-                message=f"version must be an integer, got {type(version).__name__}",
-            ))
+            result.issues.append(
+                ConfigIssue(
+                    severity="error",
+                    path="version",
+                    message=f"version must be an integer, got {type(version).__name__}",
+                )
+            )
 
     # Check required top-level keys
     _check_keys(data, _REQUIRED_KEYS, "", result.issues)
@@ -155,11 +168,13 @@ def validate_config(repo: Path) -> ConfigValidation:
             for key in ("max_files_changed", "max_loc_changed"):
                 val = budgets.get(key)
                 if isinstance(val, int) and val <= 0:
-                    result.issues.append(ConfigIssue(
-                        severity="error",
-                        path=f"defaults.ticket_budgets.{key}",
-                        message=f"{key} must be positive, got {val}",
-                    ))
+                    result.issues.append(
+                        ConfigIssue(
+                            severity="error",
+                            path=f"defaults.ticket_budgets.{key}",
+                            message=f"{key} must be positive, got {val}",
+                        )
+                    )
 
     # Check git_controls
     git_controls = data.get("git_controls")
@@ -182,11 +197,13 @@ def validate_config(repo: Path) -> ConfigValidation:
         if isinstance(val, list):
             for i, item in enumerate(val):
                 if not isinstance(item, str):
-                    result.issues.append(ConfigIssue(
-                        severity="warning",
-                        path=f"{list_key}[{i}]",
-                        message=f"Expected string, got {type(item).__name__}",
-                    ))
+                    result.issues.append(
+                        ConfigIssue(
+                            severity="warning",
+                            path=f"{list_key}[{i}]",
+                            message=f"Expected string, got {type(item).__name__}",
+                        )
+                    )
 
     return result
 
@@ -201,11 +218,13 @@ def _check_keys(
     for key, expected_type in schema.items():
         path = f"{prefix}.{key}" if prefix else key
         if key not in data:
-            issues.append(ConfigIssue(
-                severity="warning",
-                path=path,
-                message=f"Missing key '{key}'",
-            ))
+            issues.append(
+                ConfigIssue(
+                    severity="warning",
+                    path=path,
+                    message=f"Missing key '{key}'",
+                )
+            )
         else:
             val = data[key]
             if not isinstance(val, expected_type):
@@ -214,11 +233,13 @@ def _check_keys(
                     if isinstance(expected_type, type)
                     else " | ".join(t.__name__ for t in expected_type)
                 )
-                issues.append(ConfigIssue(
-                    severity="error",
-                    path=path,
-                    message=f"Expected {expected_name}, got {type(val).__name__}",
-                ))
+                issues.append(
+                    ConfigIssue(
+                        severity="error",
+                        path=path,
+                        message=f"Expected {expected_name}, got {type(val).__name__}",
+                    )
+                )
 
 
 # ── Serialization ──────────────────────────────────────────────────
@@ -232,10 +253,7 @@ def validation_to_dict(result: ConfigValidation) -> dict[str, Any]:
         "config_version": result.config_version,
         "error_count": result.error_count,
         "warning_count": result.warning_count,
-        "issues": [
-            {"severity": i.severity, "path": i.path, "message": i.message}
-            for i in result.issues
-        ],
+        "issues": [{"severity": i.severity, "path": i.path, "message": i.message} for i in result.issues],
     }
 
 

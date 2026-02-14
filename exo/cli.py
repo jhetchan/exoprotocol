@@ -11,27 +11,44 @@ from exo.control.syscalls import KernelSyscalls
 from exo.kernel.errors import ExoError
 from exo.kernel.utils import default_topic_id
 from exo.kernel.tickets import (
-    allocate_intent_id, allocate_ticket_id, load_ticket, normalize_ticket, save_ticket,
+    allocate_intent_id,
+    allocate_ticket_id,
+    load_ticket,
+    normalize_ticket,
+    save_ticket,
     validate_intent_hierarchy,
 )
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
 from exo.stdlib.adapters import generate_adapters, ADAPTER_TARGETS
 from exo.stdlib.engine import KernelEngine
 from exo.stdlib.features import (
-    load_features, features_to_list, generate_scope_deny,
-    trace, trace_to_dict, format_trace_human,
-    prune, prune_to_dict, format_prune_human,
+    load_features,
+    features_to_list,
+    generate_scope_deny,
+    trace,
+    trace_to_dict,
+    format_trace_human,
+    prune,
+    prune_to_dict,
+    format_prune_human,
 )
 from exo.stdlib.requirements import (
-    load_requirements, requirements_to_list,
-    trace_requirements, req_trace_to_dict, format_req_trace_human,
+    load_requirements,
+    requirements_to_list,
+    trace_requirements,
+    req_trace_to_dict,
+    format_req_trace_human,
 )
 from exo.stdlib.drift import drift as run_drift, drift_to_dict, format_drift_human
 from exo.stdlib.gc import gc as run_gc, gc_to_dict, format_gc_human
 from exo.stdlib.pr_check import pr_check, pr_check_to_dict, format_pr_check_human
 from exo.stdlib.reflect import (
-    reflect as do_reflect, load_reflections, dismiss_reflection,
-    reflect_to_dict, reflections_to_list, format_reflections_human,
+    reflect as do_reflect,
+    load_reflections,
+    dismiss_reflection,
+    reflect_to_dict,
+    reflections_to_list,
+    format_reflections_human,
 )
 from exo.stdlib.timeline import build_intent_timeline, format_timeline_human
 
@@ -81,7 +98,9 @@ def _build_parser() -> argparse.ArgumentParser:
     renew_cmd.add_argument("--distributed", action="store_true")
     renew_cmd.add_argument("--remote", default="origin")
 
-    heartbeat_cmd = sub.add_parser("lease-heartbeat", help="Heartbeat active ticket lease without changing fencing token")
+    heartbeat_cmd = sub.add_parser(
+        "lease-heartbeat", help="Heartbeat active ticket lease without changing fencing token"
+    )
     heartbeat_cmd.add_argument("--ticket-id")
     heartbeat_cmd.add_argument("--owner")
     heartbeat_cmd.add_argument("--hours", type=int, default=2)
@@ -200,7 +219,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     propose_cmd = sub.add_parser("propose", help="Create proposal + patch artifact")
     propose_cmd.add_argument("--ticket", required=True)
-    propose_cmd.add_argument("--kind", required=True, choices=["practice_change", "governance_change", "tooling_change"])
+    propose_cmd.add_argument(
+        "--kind", required=True, choices=["practice_change", "governance_change", "tooling_change"]
+    )
     propose_cmd.add_argument("--summary")
     propose_cmd.add_argument("--symptom", action="append", required=True)
     propose_cmd.add_argument("--root-cause", required=True, dest="root_cause")
@@ -244,7 +265,9 @@ def _build_parser() -> argparse.ArgumentParser:
     session_start_cmd.add_argument("--remote", default="origin")
     session_start_cmd.add_argument("--hours", type=int, default=2)
 
-    suspend_cmd = sub.add_parser("session-suspend", help="Suspend active agent session, release lock, and snapshot context")
+    suspend_cmd = sub.add_parser(
+        "session-suspend", help="Suspend active agent session, release lock, and snapshot context"
+    )
     suspend_cmd.add_argument("--ticket-id")
     suspend_cmd.add_argument("--reason", required=True)
     suspend_cmd.add_argument("--no-release-lock", action="store_true")
@@ -279,10 +302,17 @@ def _build_parser() -> argparse.ArgumentParser:
     session_finish_cmd.add_argument("--release-lock", action="store_true")
     session_finish_cmd.add_argument("--no-release-lock", action="store_true")
     session_finish_cmd.add_argument("--drift-threshold", type=float)
-    session_finish_cmd.add_argument("--error", action="append", default=[], dest="errors",
-                                    help="Error encountered during session (format: 'tool:message' or just 'message')")
+    session_finish_cmd.add_argument(
+        "--error",
+        action="append",
+        default=[],
+        dest="errors",
+        help="Error encountered during session (format: 'tool:message' or just 'message')",
+    )
 
-    audit_session_cmd = sub.add_parser("session-audit", help="Start an isolated audit session with context isolation and adversarial persona")
+    audit_session_cmd = sub.add_parser(
+        "session-audit", help="Start an isolated audit session with context isolation and adversarial persona"
+    )
     audit_session_cmd.add_argument("--ticket-id", required=True)
     audit_session_cmd.add_argument("--vendor", default="unknown")
     audit_session_cmd.add_argument("--model", default="unknown")
@@ -306,9 +336,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     intent_create_cmd = sub.add_parser("intent-create", help="Create an intent ticket from a brain dump")
     intent_create_cmd.add_argument("title", help="Short intent title")
-    intent_create_cmd.add_argument("--brain-dump", required=True, dest="brain_dump", help="Original user input / brain dump")
+    intent_create_cmd.add_argument(
+        "--brain-dump", required=True, dest="brain_dump", help="Original user input / brain dump"
+    )
     intent_create_cmd.add_argument("--boundary", default="", help="Scope boundary description (what NOT to touch)")
-    intent_create_cmd.add_argument("--success-condition", default="", dest="success_condition", help="What 'done' looks like")
+    intent_create_cmd.add_argument(
+        "--success-condition", default="", dest="success_condition", help="What 'done' looks like"
+    )
     intent_create_cmd.add_argument("--risk", default="medium", choices=["low", "medium", "high"])
     intent_create_cmd.add_argument("--scope-allow", action="append", default=[], help="Allowed file globs")
     intent_create_cmd.add_argument("--scope-deny", action="append", default=[], help="Denied file globs")
@@ -320,7 +354,9 @@ def _build_parser() -> argparse.ArgumentParser:
     ticket_create_cmd = sub.add_parser("ticket-create", help="Create a task or epic ticket linked to an intent")
     ticket_create_cmd.add_argument("title", help="Short ticket title")
     ticket_create_cmd.add_argument("--kind", default="task", choices=["task", "epic"])
-    ticket_create_cmd.add_argument("--parent", required=True, dest="parent_id", help="Parent ticket ID (intent or epic)")
+    ticket_create_cmd.add_argument(
+        "--parent", required=True, dest="parent_id", help="Parent ticket ID (intent or epic)"
+    )
     ticket_create_cmd.add_argument("--scope-allow", action="append", default=[], help="Allowed file globs")
     ticket_create_cmd.add_argument("--scope-deny", action="append", default=[], help="Denied file globs")
     ticket_create_cmd.add_argument("--max-files", type=int, default=12, help="File budget")
@@ -335,38 +371,64 @@ def _build_parser() -> argparse.ArgumentParser:
     pr_check_cmd.add_argument("--head", default="HEAD", help="Head ref (default: HEAD)")
     pr_check_cmd.add_argument("--drift-threshold", type=float, default=0.7, help="Drift score threshold for warnings")
 
-    adapter_cmd = sub.add_parser("adapter-generate", help="Generate repo-root agent config files (CLAUDE.md, .cursorrules, AGENTS.md) from governance state")
-    adapter_cmd.add_argument("--target", action="append", default=[], help=f"Target adapter(s): {', '.join(sorted(ADAPTER_TARGETS))}. Omit for all.")
+    adapter_cmd = sub.add_parser(
+        "adapter-generate",
+        help="Generate repo-root agent config files (CLAUDE.md, .cursorrules, AGENTS.md) from governance state",
+    )
+    adapter_cmd.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        help=f"Target adapter(s): {', '.join(sorted(ADAPTER_TARGETS))}. Omit for all.",
+    )
     adapter_cmd.add_argument("--dry-run", action="store_true", help="Preview output without writing files")
 
     features_cmd = sub.add_parser("features", help="List feature definitions from .exo/features.yaml")
     features_cmd.add_argument("--status", help="Filter by status (active, deprecated, deleted, experimental)")
 
-    trace_cmd = sub.add_parser("trace", help="Run feature traceability linter: cross-reference @feature: tags against manifest")
-    trace_cmd.add_argument("--glob", action="append", default=[], help="File globs to scan (default: common source extensions)")
-    trace_cmd.add_argument("--no-check-unbound", action="store_true", help="Skip checking for features with no code tags")
+    trace_cmd = sub.add_parser(
+        "trace", help="Run feature traceability linter: cross-reference @feature: tags against manifest"
+    )
+    trace_cmd.add_argument(
+        "--glob", action="append", default=[], help="File globs to scan (default: common source extensions)"
+    )
+    trace_cmd.add_argument(
+        "--no-check-unbound", action="store_true", help="Skip checking for features with no code tags"
+    )
 
     prune_cmd = sub.add_parser("prune", help="Remove code blocks tagged with deleted (or deprecated) features")
-    prune_cmd.add_argument("--include-deprecated", action="store_true", help="Also prune deprecated features (default: only deleted)")
+    prune_cmd.add_argument(
+        "--include-deprecated", action="store_true", help="Also prune deprecated features (default: only deleted)"
+    )
     prune_cmd.add_argument("--glob", action="append", default=[], help="File globs to scan")
     prune_cmd.add_argument("--dry-run", action="store_true", help="Preview removals without modifying files")
 
     requirements_cmd = sub.add_parser("requirements", help="List requirement definitions from .exo/requirements.yaml")
     requirements_cmd.add_argument("--status", help="Filter by status (active, deprecated, deleted)")
 
-    trace_reqs_cmd = sub.add_parser("trace-reqs", help="Run requirement traceability linter: cross-reference @req: annotations against manifest")
-    trace_reqs_cmd.add_argument("--glob", action="append", default=[], help="File globs to scan (default: common source extensions)")
-    trace_reqs_cmd.add_argument("--no-check-uncovered", action="store_true", help="Skip checking for requirements with no code refs")
+    trace_reqs_cmd = sub.add_parser(
+        "trace-reqs", help="Run requirement traceability linter: cross-reference @req: annotations against manifest"
+    )
+    trace_reqs_cmd.add_argument(
+        "--glob", action="append", default=[], help="File globs to scan (default: common source extensions)"
+    )
+    trace_reqs_cmd.add_argument(
+        "--no-check-uncovered", action="store_true", help="Skip checking for requirements with no code refs"
+    )
 
     drift_cmd = sub.add_parser("drift", help="Run composite governance drift check across all subsystems")
-    drift_cmd.add_argument("--stale-hours", type=float, default=48.0, help="Threshold for flagging stale sessions (default: 48)")
+    drift_cmd.add_argument(
+        "--stale-hours", type=float, default=48.0, help="Threshold for flagging stale sessions (default: 48)"
+    )
     drift_cmd.add_argument("--skip-adapters", action="store_true", help="Skip adapter freshness check")
     drift_cmd.add_argument("--skip-features", action="store_true", help="Skip feature traceability check")
     drift_cmd.add_argument("--skip-requirements", action="store_true", help="Skip requirement traceability check")
     drift_cmd.add_argument("--skip-sessions", action="store_true", help="Skip session health check")
     drift_cmd.add_argument("--skip-coherence", action="store_true", help="Skip coherence check")
 
-    coherence_cmd = sub.add_parser("coherence", help="Check semantic coherence: co-update rules and docstring freshness")
+    coherence_cmd = sub.add_parser(
+        "coherence", help="Check semantic coherence: co-update rules and docstring freshness"
+    )
     coherence_cmd.add_argument("--skip-co-updates", action="store_true", help="Skip co-update rule checks")
     coherence_cmd.add_argument("--skip-docstrings", action="store_true", help="Skip docstring freshness checks")
     coherence_cmd.add_argument("--base", default="main", help="Git base ref (default: main)")
@@ -378,7 +440,9 @@ def _build_parser() -> argparse.ArgumentParser:
     gc_locks_cmd = sub.add_parser("gc-locks", help="Clean up expired distributed locks on remote")
     gc_locks_cmd.add_argument("--remote", default="origin", help="Git remote name (default: origin)")
     gc_locks_cmd.add_argument("--dry-run", action="store_true", help="Preview what would be cleaned up")
-    gc_locks_cmd.add_argument("--list", action="store_true", dest="list_only", help="List all remote locks without cleaning")
+    gc_locks_cmd.add_argument(
+        "--list", action="store_true", dest="list_only", help="List all remote locks without cleaning"
+    )
 
     reflect_cmd = sub.add_parser("reflect", help="Record an operational learning from session experience")
     reflect_cmd.add_argument("--pattern", required=True, help="What keeps happening (the recurring failure/error)")
@@ -399,7 +463,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("scan", help="Scan repo and preview what exo init would detect")
 
     doctor_cmd = sub.add_parser("doctor", help="Run unified governance health check")
-    doctor_cmd.add_argument("--stale-hours", type=float, default=48.0, help="Hours before a session is considered stale")
+    doctor_cmd.add_argument(
+        "--stale-hours", type=float, default=48.0, help="Hours before a session is considered stale"
+    )
 
     sub.add_parser("config-validate", help="Validate .exo/config.yaml structure and values")
 
@@ -428,9 +494,14 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-_SESSION_COMMANDS = frozenset({
-    "session-start", "session-finish", "session-audit", "session-resume",
-})
+_SESSION_COMMANDS = frozenset(
+    {
+        "session-start",
+        "session-finish",
+        "session-audit",
+        "session-resume",
+    }
+)
 
 
 def _render_human(response: dict[str, Any], *, command: str = "") -> None:
@@ -442,7 +513,20 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
             return
 
         # Special rendering for pr-check, trace, and prune commands
-        if command in ("pr-check", "trace", "prune", "trace-reqs", "drift", "coherence", "gc", "reflections", "scan", "doctor", "config-validate", "upgrade"):
+        if command in (
+            "pr-check",
+            "trace",
+            "prune",
+            "trace-reqs",
+            "drift",
+            "coherence",
+            "gc",
+            "reflections",
+            "scan",
+            "doctor",
+            "config-validate",
+            "upgrade",
+        ):
             data = response.get("data", {})
             human_summary = data.pop("_human_summary", "")
             if human_summary:
@@ -750,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
                 release_lock = None
 
             parsed_errors: list[dict[str, Any]] = []
-            for err_str in (args.errors or []):
+            for err_str in args.errors or []:
                 if ":" in err_str:
                     tool, msg = err_str.split(":", 1)
                     parsed_errors.append({"tool": tool.strip(), "message": msg.strip(), "count": 1})
@@ -799,14 +883,12 @@ def main(argv: list[str] | None = None) -> int:
             if args.status:
                 target_status = args.status.strip().lower()
                 timeline["intents"] = [
-                    i for i in timeline["intents"]
-                    if i.get("status", "").strip().lower() == target_status
+                    i for i in timeline["intents"] if i.get("status", "").strip().lower() == target_status
                 ]
             if args.drift_above is not None:
                 threshold = float(args.drift_above)
                 timeline["intents"] = [
-                    i for i in timeline["intents"]
-                    if i.get("drift_avg") is not None and i["drift_avg"] > threshold
+                    i for i in timeline["intents"] if i.get("drift_avg") is not None and i["drift_avg"] > threshold
                 ]
 
             response = _ok(timeline)
@@ -814,13 +896,15 @@ def main(argv: list[str] | None = None) -> int:
             repo_path = Path(args.repo).resolve()
             ticket = load_ticket(repo_path, args.ticket_id)
             reasons = validate_intent_hierarchy(repo_path, ticket)
-            response = _ok({
-                "ticket_id": args.ticket_id,
-                "kind": str(ticket.get("kind", "task")),
-                "parent_id": ticket.get("parent_id"),
-                "valid": len(reasons) == 0,
-                "reasons": reasons,
-            })
+            response = _ok(
+                {
+                    "ticket_id": args.ticket_id,
+                    "kind": str(ticket.get("kind", "task")),
+                    "parent_id": ticket.get("parent_id"),
+                    "valid": len(reasons) == 0,
+                    "reasons": reasons,
+                }
+            )
         elif cmd == "intent-create":
             repo_path = Path(args.repo).resolve()
             intent_id = allocate_intent_id(repo_path)
@@ -846,11 +930,13 @@ def main(argv: list[str] | None = None) -> int:
             }
             saved_path = save_ticket(repo_path, ticket_data)
             saved_ticket = normalize_ticket(ticket_data)
-            response = _ok({
-                "intent_id": intent_id,
-                "path": str(saved_path.relative_to(repo_path)),
-                "ticket": saved_ticket,
-            })
+            response = _ok(
+                {
+                    "intent_id": intent_id,
+                    "path": str(saved_path.relative_to(repo_path)),
+                    "ticket": saved_ticket,
+                }
+            )
         elif cmd == "ticket-create":
             repo_path = Path(args.repo).resolve()
             # Validate parent exists
@@ -911,12 +997,14 @@ def main(argv: list[str] | None = None) -> int:
                 children.append(ticket_id)
                 parent["children"] = children
                 save_ticket(repo_path, parent)
-            response = _ok({
-                "ticket_id": ticket_id,
-                "parent_id": args.parent_id,
-                "path": str(saved_path.relative_to(repo_path)),
-                "ticket": saved_ticket,
-            })
+            response = _ok(
+                {
+                    "ticket_id": ticket_id,
+                    "parent_id": args.parent_id,
+                    "path": str(saved_path.relative_to(repo_path)),
+                    "ticket": saved_ticket,
+                }
+            )
         elif cmd == "pr-check":
             repo_path = Path(args.repo).resolve()
             report = pr_check(
@@ -1006,6 +1094,7 @@ def main(argv: list[str] | None = None) -> int:
             response = _ok(data)
         elif cmd == "coherence":
             from exo.stdlib.coherence import check_coherence, coherence_to_dict, format_coherence_human
+
             repo_path = Path(args.repo).resolve()
             report = check_coherence(
                 repo_path,
@@ -1028,15 +1117,18 @@ def main(argv: list[str] | None = None) -> int:
             response = _ok(data)
         elif cmd == "gc-locks":
             from exo.stdlib.distributed_leases import GitDistributedLeaseManager
+
             repo_path = Path(args.repo).resolve()
             manager = GitDistributedLeaseManager(repo_path)
             if bool(args.list_only):
                 locks = manager.list_locks(remote=args.remote)
-                response = _ok({
-                    "remote": args.remote,
-                    "locks": locks,
-                    "count": len(locks),
-                })
+                response = _ok(
+                    {
+                        "remote": args.remote,
+                        "locks": locks,
+                        "count": len(locks),
+                    }
+                )
             else:
                 data = manager.cleanup_locks(
                     remote=args.remote,
@@ -1085,6 +1177,7 @@ def main(argv: list[str] | None = None) -> int:
         elif cmd == "scan":
             repo_path = Path(args.repo).resolve()
             from exo.stdlib.scan import scan_repo, scan_to_dict, format_scan_human as fmt_scan
+
             report = scan_repo(repo_path)
             data = scan_to_dict(report)
             data["_human_summary"] = fmt_scan(report)
@@ -1092,6 +1185,7 @@ def main(argv: list[str] | None = None) -> int:
         elif cmd == "doctor":
             repo_path = Path(args.repo).resolve()
             from exo.stdlib.doctor import doctor as run_doctor, doctor_to_dict, format_doctor_human
+
             report = run_doctor(repo_path, stale_hours=float(args.stale_hours))
             data = doctor_to_dict(report)
             data["_human_summary"] = format_doctor_human(report)
@@ -1099,6 +1193,7 @@ def main(argv: list[str] | None = None) -> int:
         elif cmd == "config-validate":
             repo_path = Path(args.repo).resolve()
             from exo.stdlib.config_schema import validate_config, validation_to_dict, format_validation_human
+
             result = validate_config(repo_path)
             data = validation_to_dict(result)
             data["_human_summary"] = format_validation_human(result)
@@ -1106,6 +1201,7 @@ def main(argv: list[str] | None = None) -> int:
         elif cmd == "upgrade":
             repo_path = Path(args.repo).resolve()
             from exo.stdlib.upgrade import upgrade as run_upgrade, format_upgrade_human
+
             data = run_upgrade(repo_path, dry_run=bool(args.dry_run))
             data["_human_summary"] = format_upgrade_human(data)
             response = _ok(data)

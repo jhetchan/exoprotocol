@@ -39,12 +39,7 @@ def create_thread(repo: Path, topic: str) -> dict[str, str]:
     thread_id = _next_thread_id(repo)
     path = repo / THREADS_DIR / f"{thread_id}.md"
     ensure_dir(path.parent)
-    body = (
-        f"# Thread: {topic}\n\n"
-        f"Created: {now_iso()}\n\n"
-        "## Notes\n\n"
-        "- \n"
-    )
+    body = f"# Thread: {topic}\n\nCreated: {now_iso()}\n\n## Notes\n\n- \n"
     path.write_text(body, encoding="utf-8")
     return {
         "thread_id": thread_id,

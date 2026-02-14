@@ -44,17 +44,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -127,7 +124,6 @@ def _write_index(repo: Path, entries: list[dict[str, Any]]) -> Path:
 
 
 class TestFileAge:
-
     def test_fresh_file_age(self, tmp_path: Path) -> None:
         path = tmp_path / "fresh.txt"
         _create_fresh_file(path)
@@ -150,7 +146,6 @@ class TestFileAge:
 
 
 class TestGCMementos:
-
     def test_no_mementos(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         scanned, removed, paths = _gc_mementos(repo, 30.0, False)
@@ -189,7 +184,6 @@ class TestGCMementos:
 
 
 class TestGCCursors:
-
     def test_no_cursors(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         scanned, removed, paths = _gc_cursors(repo, 30.0, False)
@@ -216,7 +210,6 @@ class TestGCCursors:
 
 
 class TestGCBootstraps:
-
     def test_no_bootstraps(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         scanned, removed, paths = _gc_bootstraps(repo, 30.0, False)
@@ -249,7 +242,6 @@ class TestGCBootstraps:
 
 
 class TestCompactIndex:
-
     def test_no_index(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         before, after, pruned = _compact_index(repo, set(), False)
@@ -257,10 +249,13 @@ class TestCompactIndex:
 
     def test_no_pruning_needed(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_index(repo, [
-            {"session_id": "SES-001", "ticket_id": "TICKET-001"},
-            {"session_id": "SES-002", "ticket_id": "TICKET-002"},
-        ])
+        _write_index(
+            repo,
+            [
+                {"session_id": "SES-001", "ticket_id": "TICKET-001"},
+                {"session_id": "SES-002", "ticket_id": "TICKET-002"},
+            ],
+        )
         before, after, pruned = _compact_index(repo, set(), False)
         assert before == 2
         assert after == 2
@@ -268,11 +263,14 @@ class TestCompactIndex:
 
     def test_prune_removed_sessions(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        _write_index(repo, [
-            {"session_id": "SES-001", "ticket_id": "TICKET-001"},
-            {"session_id": "SES-002", "ticket_id": "TICKET-002"},
-            {"session_id": "SES-003", "ticket_id": "TICKET-003"},
-        ])
+        _write_index(
+            repo,
+            [
+                {"session_id": "SES-001", "ticket_id": "TICKET-001"},
+                {"session_id": "SES-002", "ticket_id": "TICKET-002"},
+                {"session_id": "SES-003", "ticket_id": "TICKET-003"},
+            ],
+        )
         before, after, pruned = _compact_index(repo, {"SES-001", "SES-003"}, False)
         assert before == 3
         assert after == 1
@@ -280,9 +278,12 @@ class TestCompactIndex:
 
     def test_dry_run_preserves_index(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
-        index_path = _write_index(repo, [
-            {"session_id": "SES-001", "ticket_id": "TICKET-001"},
-        ])
+        index_path = _write_index(
+            repo,
+            [
+                {"session_id": "SES-001", "ticket_id": "TICKET-001"},
+            ],
+        )
         _compact_index(repo, {"SES-001"}, True)
         # Verify file still has original content
         with index_path.open("r") as f:
@@ -293,7 +294,6 @@ class TestCompactIndex:
 
 
 class TestCleanupEmptyDirs:
-
     def test_no_empty_dirs(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _create_memento(repo, "TICKET-001", "SES-001")
@@ -321,7 +321,6 @@ class TestCleanupEmptyDirs:
 
 
 class TestExtractSessionIds:
-
     def test_extract_from_paths(self) -> None:
         paths = [
             ".exo/memory/sessions/TICKET-001/SES-20250101-ABCD.md",
@@ -343,7 +342,6 @@ class TestExtractSessionIds:
 
 
 class TestGC:
-
     def test_empty_repo(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         report = gc(repo)
@@ -359,10 +357,13 @@ class TestGC:
         _create_cursor(repo, "agent-old", age_days=60)
         _create_cursor(repo, "agent-fresh", age_days=3)
         _create_bootstrap(repo, "agent-orphan", age_days=40)
-        _write_index(repo, [
-            {"session_id": "SES-OLD-001", "ticket_id": "TICKET-001"},
-            {"session_id": "SES-FRESH-002", "ticket_id": "TICKET-001"},
-        ])
+        _write_index(
+            repo,
+            [
+                {"session_id": "SES-OLD-001", "ticket_id": "TICKET-001"},
+                {"session_id": "SES-FRESH-002", "ticket_id": "TICKET-001"},
+            ],
+        )
         report = gc(repo, max_age_days=30.0)
         assert report.mementos_removed == 1
         assert report.cursors_removed == 1
@@ -394,7 +395,6 @@ class TestGC:
 
 
 class TestGCReport:
-
     def test_to_dict_structure(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         report = gc(repo)
@@ -439,9 +439,12 @@ class TestGCReport:
     def test_human_format_index_pruned(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _create_memento(repo, "TICKET-001", "SES-OLD-001", age_days=45)
-        _write_index(repo, [
-            {"session_id": "SES-OLD-001", "ticket_id": "TICKET-001"},
-        ])
+        _write_index(
+            repo,
+            [
+                {"session_id": "SES-OLD-001", "ticket_id": "TICKET-001"},
+            ],
+        )
         report = gc(repo)
         text = format_gc_human(report)
         assert "index:" in text
@@ -452,12 +455,13 @@ class TestGCReport:
 
 
 class TestCLIGC:
-
     def test_json_output(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "gc"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -469,7 +473,9 @@ class TestCLIGC:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "human", "--repo", str(repo), "gc"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         assert "Garbage Collection: COMPLETE" in result.stdout
@@ -478,7 +484,9 @@ class TestCLIGC:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "gc", "--dry-run"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -488,7 +496,9 @@ class TestCLIGC:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "gc", "--max-age-days", "7"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
@@ -500,7 +510,9 @@ class TestCLIGC:
         _create_cursor(repo, "agent-old", age_days=60)
         result = subprocess.run(
             ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "gc"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)

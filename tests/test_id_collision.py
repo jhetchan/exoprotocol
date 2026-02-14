@@ -28,17 +28,14 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
-    constitution = (
-        "# Test Constitution\n\n"
-        + _policy_block(
-            {
-                "id": "RULE-SEC-001",
-                "type": "filesystem_deny",
-                "patterns": ["**/.env*"],
-                "actions": ["read", "write"],
-                "message": "Secret deny",
-            }
-        )
+    constitution = "# Test Constitution\n\n" + _policy_block(
+        {
+            "id": "RULE-SEC-001",
+            "type": "filesystem_deny",
+            "patterns": ["**/.env*"],
+            "actions": ["read", "write"],
+            "message": "Secret deny",
+        }
     )
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
     governance_mod.compile_constitution(repo)
@@ -73,13 +70,16 @@ class TestAllocateTicketId:
         placeholder = tickets_mod.load_ticket(repo, tid)
         assert placeholder.get("title") is None or placeholder.get("title") == ""
         # Full save overwrites
-        tickets_mod.save_ticket(repo, {
-            "id": tid,
-            "title": "Real ticket",
-            "intent": "Do something real",
-            "kind": "task",
-            "status": "todo",
-        })
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": tid,
+                "title": "Real ticket",
+                "intent": "Do something real",
+                "kind": "task",
+                "status": "todo",
+            },
+        )
         loaded = tickets_mod.load_ticket(repo, tid)
         assert loaded["title"] == "Real ticket"
 
@@ -99,12 +99,15 @@ class TestAllocateTicketId:
     def test_skips_existing_numbers(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         # Pre-create TICKET-001 manually
-        tickets_mod.save_ticket(repo, {
-            "id": "TICKET-001",
-            "title": "Existing",
-            "intent": "Existing",
-            "status": "todo",
-        })
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "TICKET-001",
+                "title": "Existing",
+                "intent": "Existing",
+                "status": "todo",
+            },
+        )
         tid = tickets_mod.allocate_ticket_id(repo)
         assert tid == "TICKET-002"
 
@@ -133,14 +136,17 @@ class TestAllocateIntentId:
     def test_save_ticket_overwrites_placeholder(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         iid = tickets_mod.allocate_intent_id(repo)
-        tickets_mod.save_ticket(repo, {
-            "id": iid,
-            "title": "Real intent",
-            "intent": "The real deal",
-            "kind": "intent",
-            "brain_dump": "User wants auth",
-            "status": "todo",
-        })
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": iid,
+                "title": "Real intent",
+                "intent": "The real deal",
+                "kind": "intent",
+                "brain_dump": "User wants auth",
+                "status": "todo",
+            },
+        )
         loaded = tickets_mod.load_ticket(repo, iid)
         assert loaded["brain_dump"] == "User wants auth"
 
@@ -241,6 +247,7 @@ class TestIdGuard:
         locks_dir = repo / ".exo" / "locks"
         if locks_dir.exists():
             import shutil
+
             shutil.rmtree(locks_dir)
         # Should auto-create
         tid = tickets_mod.allocate_ticket_id(repo)

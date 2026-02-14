@@ -7,6 +7,7 @@ Also compacts the session index JSONL by removing entries for GC'd sessions.
 This is designed to run periodically or on-demand (`exo gc`) to reclaim disk
 space and keep the governance data directory clean.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,6 +29,7 @@ CURSOR_CACHE_DIR = Path(".exo/cache/orchestrator")
 @dataclass
 class GCReport:
     """Result of a garbage collection run."""
+
     mementos_scanned: int = 0
     mementos_removed: int = 0
     mementos_removed_paths: list[str] = field(default_factory=list)
@@ -311,7 +313,9 @@ def format_gc_human(report: GCReport) -> str:
         f"  bootstraps: {report.bootstraps_removed}/{report.bootstraps_scanned} removed",
     ]
     if report.index_entries_pruned > 0:
-        lines.append(f"  index: {report.index_entries_pruned} entries pruned ({report.index_entries_before} -> {report.index_entries_after})")
+        lines.append(
+            f"  index: {report.index_entries_pruned} entries pruned ({report.index_entries_before} -> {report.index_entries_after})"
+        )
     if report.empty_dirs_removed > 0:
         lines.append(f"  empty dirs: {report.empty_dirs_removed} removed")
     lines.append(f"  total files removed: {total}")

@@ -110,7 +110,9 @@ def _normalize_sidecar_path(repo: Path, sidecar: str) -> tuple[Path, str]:
     if rel.startswith("./"):
         rel = rel[2:]
     if not rel:
-        raise ExoError(code="SIDECAR_PATH_INVALID", message="sidecar path must not resolve to repository root", blocked=True)
+        raise ExoError(
+            code="SIDECAR_PATH_INVALID", message="sidecar path must not resolve to repository root", blocked=True
+        )
     return absolute, rel
 
 
@@ -203,10 +205,20 @@ def _ensure_governance_branch(
             error_code="GOVERNANCE_BRANCH_FETCH_FAILED",
             message=f"Failed to fetch branch {remote}/{branch}",
         )
-        return {"branch_created": False, "branch_source": f"{remote}/{branch}", "fetched_from_remote": True, "orphan_commit": None}
+        return {
+            "branch_created": False,
+            "branch_source": f"{remote}/{branch}",
+            "fetched_from_remote": True,
+            "orphan_commit": None,
+        }
 
     orphan_commit = _create_orphan_branch(repo, branch)
-    return {"branch_created": True, "branch_source": "orphan", "fetched_from_remote": False, "orphan_commit": orphan_commit}
+    return {
+        "branch_created": True,
+        "branch_source": "orphan",
+        "fetched_from_remote": False,
+        "orphan_commit": orphan_commit,
+    }
 
 
 def _existing_worktree_branch(path: Path) -> str | None:
@@ -306,8 +318,7 @@ def init_sidecar_worktree(
         raise ExoError(
             code="SIDECAR_BRANCH_MISMATCH",
             message=(
-                f"Sidecar path {sidecar_rel} already points to branch {existing_branch}; "
-                f"expected {normalized_branch}"
+                f"Sidecar path {sidecar_rel} already points to branch {existing_branch}; expected {normalized_branch}"
             ),
             blocked=True,
         )
@@ -325,7 +336,9 @@ def init_sidecar_worktree(
                     message=f"Sidecar path exists and is not a directory: {sidecar_rel}",
                     blocked=True,
                 )
-            backup_path = repo / f"{sidecar_rel.replace('/', '_')}.pre-sidecar-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            backup_path = (
+                repo / f"{sidecar_rel.replace('/', '_')}.pre-sidecar-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            )
             shutil.move(str(sidecar_path), str(backup_path))
             migrated = True
 
@@ -355,7 +368,7 @@ def init_sidecar_worktree(
         if fallback_proc.returncode == 0:
             current_branch = fallback_proc.stdout.strip()
     if not current_branch:
-        current_branch = (default_branch.strip() or "main")
+        current_branch = default_branch.strip() or "main"
 
     return {
         "repo": repo.as_posix(),
