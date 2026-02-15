@@ -7,6 +7,7 @@ constitution and config so ``exo init`` adds value from day one.
 
 Storage: scan results are ephemeral (returned, never persisted).
 """
+# @feature:smart-init
 
 from __future__ import annotations
 

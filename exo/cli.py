@@ -1,3 +1,4 @@
+# @feature:cli-mcp-transport
 from __future__ import annotations
 
 import argparse

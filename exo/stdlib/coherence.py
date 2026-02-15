@@ -8,6 +8,7 @@ Two check types:
 1. Co-update rules — config-driven file pairs that must change together.
 2. Docstring freshness — flags functions whose body changed but docstring didn't.
 """
+# @feature:coherence-detection
 
 from __future__ import annotations
 

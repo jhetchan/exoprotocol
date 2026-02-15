@@ -1,3 +1,4 @@
+# @feature:session-lifecycle
 from __future__ import annotations
 
 import contextlib

@@ -7,6 +7,7 @@ benefit from accumulated knowledge without the 4-step evolution pipeline.
 
 Storage: ``.exo/memory/reflections/REF-NNN.yaml`` — one file per reflection.
 """
+# @feature:error-reflection
 
 from __future__ import annotations
 

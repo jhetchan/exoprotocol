@@ -7,6 +7,7 @@ manifest to detect orphan references, uncovered requirements, and deleted usage.
 This is deterministic (regex-based, no LLM) and designed to run as a governed
 check at session-finish or in CI.
 """
+# @feature:requirement-traceability
 
 from __future__ import annotations
 

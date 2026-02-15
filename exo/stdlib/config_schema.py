@@ -3,6 +3,7 @@
 Validates ``.exo/config.yaml`` structure, types, and value ranges.
 Returns a list of issues (errors and warnings) rather than raising.
 """
+# @feature:config-health
 
 from __future__ import annotations
 

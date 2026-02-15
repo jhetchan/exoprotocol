@@ -7,6 +7,7 @@ Also compacts the session index JSONL by removing entries for GC'd sessions.
 This is designed to run periodically or on-demand (`exo gc`) to reclaim disk
 space and keep the governance data directory clean.
 """
+# @feature:infra-ops
 
 from __future__ import annotations
 

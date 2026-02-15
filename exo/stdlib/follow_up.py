@@ -8,6 +8,7 @@ This is the chain reaction: session finishes → gaps detected → tickets creat
 
 Deterministic (no LLM). Called from session-finish and CLI/MCP.
 """
+# @feature:follow-up-chain
 
 from __future__ import annotations
 

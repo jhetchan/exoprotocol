@@ -3,6 +3,7 @@
 Designed to run in CI or be consumed by a review agent. Returns structured
 data about governance coverage, session compliance, and drift scores.
 """
+# @feature:pr-governance
 
 from __future__ import annotations
 
