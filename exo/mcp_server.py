@@ -1842,6 +1842,44 @@ if FastMCP:
                 "blocked": False,
             }
 
+    @mcp.tool()
+    def exo_ci_fix(
+        repo: str = ".",
+        run_id: str = "",
+        apply: bool = False,
+        push: bool = False,
+    ) -> dict[str, Any]:
+        """Fetch the latest failed CI run, parse errors, and optionally auto-fix.
+
+        Uses the gh CLI to fetch failed workflow run logs, parses them into
+        structured error entries, suggests fixes, and can apply auto-fixable
+        errors. With push=True, commits and pushes the fix to retrigger CI.
+        """
+        try:
+            from exo.stdlib.ci_fix import (
+                apply_fixes,
+                commit_and_push,
+                fetch_ci_failure,
+            )
+
+            repo_path = Path(repo).resolve()
+            report = fetch_ci_failure(repo_path, run_id=run_id)
+            if apply or push:
+                report = apply_fixes(repo_path, report=report)
+                if push and report.get("status") == "fixed":
+                    push_result = commit_and_push(repo_path, run_id=report.get("run_id", ""))
+                    report.update(push_result)
+            return {"ok": True, "data": report, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
 
 def main() -> int:
     if not FastMCP:
