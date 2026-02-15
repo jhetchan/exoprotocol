@@ -280,6 +280,35 @@ def _commit_if_needed(sidecar_root: Path, *, commit_changes: bool, message: str)
     return {"staged": True, "committed": True, "commit": commit or None}
 
 
+def is_sidecar_worktree(repo: Path | str, *, sidecar: str = ".exo") -> bool:
+    """Return True if the sidecar path is a mounted git worktree."""
+    sidecar_path = Path(repo).resolve() / sidecar
+    return _existing_worktree_branch(sidecar_path) is not None
+
+
+def commit_sidecar(
+    repo: Path | str,
+    *,
+    message: str,
+    sidecar: str = ".exo",
+) -> dict[str, Any]:
+    """Commit all pending changes in the sidecar worktree.
+
+    Returns {"committed": bool, "commit": str|None, "branch": str|None}.
+    No-op if sidecar is not a worktree or nothing to commit.
+    """
+    sidecar_path = Path(repo).resolve() / sidecar
+    branch = _existing_worktree_branch(sidecar_path)
+    if not branch:
+        return {"committed": False, "commit": None, "branch": None}
+    result = _commit_if_needed(sidecar_path, commit_changes=True, message=message)
+    return {
+        "committed": result.get("committed", False),
+        "commit": result.get("commit"),
+        "branch": branch,
+    }
+
+
 def init_sidecar_worktree(
     root: Path | str,
     *,

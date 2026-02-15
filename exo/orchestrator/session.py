@@ -57,6 +57,19 @@ def _current_git_branch(repo: Path) -> str:
     return ""
 
 
+def _commit_sidecar_advisory(root: Path, message: str) -> dict[str, Any] | None:
+    """Advisory sidecar commit — returns result dict or None on skip/error."""
+    try:
+        from exo.stdlib.sidecar import commit_sidecar
+
+        result = commit_sidecar(root, message=message)
+        if result.get("committed"):
+            return result
+    except Exception:
+        pass  # Advisory — never blocks session lifecycle
+    return None
+
+
 def _exo_banner(
     *,
     event: str,
@@ -752,6 +765,10 @@ class AgentSessionManager:
                 },
             ),
         )
+        sidecar_commit = _commit_sidecar_advisory(
+            self.root,
+            f"chore(exo): session-start {session_id} [{chosen_ticket}]",
+        )
         return {
             "session": session_payload,
             "bootstrap_path": str(relative_posix(self.bootstrap_path, self.root)),
@@ -759,6 +776,7 @@ class AgentSessionManager:
             "exo_banner": start_banner,
             "reused": False,
             "start_advisories": start_advisories if start_advisories else None,
+            "sidecar_commit": sidecar_commit,
         }
 
     def finish(
@@ -1179,6 +1197,11 @@ class AgentSessionManager:
 
         self.active_session_path.unlink(missing_ok=True)
 
+        sidecar_commit = _commit_sidecar_advisory(
+            self.root,
+            f"chore(exo): session-finish {session_id} [{target_ticket}]",
+        )
+
         finish_banner = _exo_banner(
             event="finish",
             mode=session_mode,
@@ -1211,6 +1234,7 @@ class AgentSessionManager:
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
             "exo_banner": finish_banner,
+            "sidecar_commit": sidecar_commit,
         }
         if audit_warnings:
             result["audit_warnings"] = audit_warnings
@@ -1342,6 +1366,10 @@ class AgentSessionManager:
 
         self.active_session_path.unlink(missing_ok=True)
 
+        sidecar_commit = _commit_sidecar_advisory(
+            self.root,
+            f"chore(exo): session-suspend {session_id} [{target_ticket}]",
+        )
         return {
             "session_id": session_id,
             "ticket_id": target_ticket,
@@ -1352,6 +1380,7 @@ class AgentSessionManager:
             "stash_ref": stash_ref,
             "previous_ticket_status": previous_status,
             "suspended_path": str(relative_posix(suspended_path, self.root)),
+            "sidecar_commit": sidecar_commit,
         }
 
     def resume(
@@ -1582,6 +1611,10 @@ class AgentSessionManager:
 
         suspended_path.unlink(missing_ok=True)
 
+        sidecar_commit = _commit_sidecar_advisory(
+            self.root,
+            f"chore(exo): session-resume {session_id} [{target_ticket}]",
+        )
         return {
             "session": session_payload,
             "bootstrap_path": str(relative_posix(self.bootstrap_path, self.root)),
@@ -1591,6 +1624,7 @@ class AgentSessionManager:
             "acquired_lock": lock is not None,
             "stash_popped": stash_popped,
             "ticket_id": target_ticket,
+            "sidecar_commit": sidecar_commit,
         }
 
     def get_active(self) -> dict[str, Any] | None:
