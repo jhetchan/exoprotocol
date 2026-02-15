@@ -1029,6 +1029,13 @@ def main(argv: list[str] | None = None) -> int:
             }
             saved_path = save_ticket(repo_path, ticket_data)
             saved_ticket = normalize_ticket(ticket_data)
+            # Advisory sidecar commit
+            try:
+                from exo.stdlib.sidecar import commit_sidecar
+
+                commit_sidecar(repo_path, message=f"chore(exo): intent-create {intent_id}")
+            except Exception:
+                pass
             response = _ok(
                 {
                     "intent_id": intent_id,
@@ -1096,6 +1103,13 @@ def main(argv: list[str] | None = None) -> int:
                 children.append(ticket_id)
                 parent["children"] = children
                 save_ticket(repo_path, parent)
+            # Advisory sidecar commit
+            try:
+                from exo.stdlib.sidecar import commit_sidecar
+
+                commit_sidecar(repo_path, message=f"chore(exo): ticket-create {ticket_id}")
+            except Exception:
+                pass
             response = _ok(
                 {
                     "ticket_id": ticket_id,
