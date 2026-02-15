@@ -390,21 +390,32 @@ class TestTicketCreationSidecarAutoCommit:
         repo = _init_sidecar_repo(tmp_path)
         # Create parent intent first
         intent_id = allocate_intent_id(repo)
-        save_ticket(repo, {
-            "id": intent_id, "title": "Parent", "kind": "intent",
-            "brain_dump": "test", "scope": {"allow": ["**"], "deny": []},
-            "budgets": {"max_files_changed": 12, "max_loc_changed": 400},
-        })
+        save_ticket(
+            repo,
+            {
+                "id": intent_id,
+                "title": "Parent",
+                "kind": "intent",
+                "brain_dump": "test",
+                "scope": {"allow": ["**"], "deny": []},
+                "budgets": {"max_files_changed": 12, "max_loc_changed": 400},
+            },
+        )
         commit_sidecar(repo, message=f"chore(exo): intent-create {intent_id}")
 
         # Create child ticket
         ticket_id = allocate_ticket_id(repo, kind="task")
-        save_ticket(repo, {
-            "id": ticket_id, "title": "Child task", "kind": "task",
-            "parent_id": intent_id,
-            "scope": {"allow": ["**"], "deny": []},
-            "budgets": {"max_files_changed": 6, "max_loc_changed": 200},
-        })
+        save_ticket(
+            repo,
+            {
+                "id": ticket_id,
+                "title": "Child task",
+                "kind": "task",
+                "parent_id": intent_id,
+                "scope": {"allow": ["**"], "deny": []},
+                "budgets": {"max_files_changed": 6, "max_loc_changed": 200},
+            },
+        )
         result = commit_sidecar(repo, message=f"chore(exo): ticket-create {ticket_id}")
         assert result["committed"] is True
         status = _sidecar_status(repo)
@@ -428,13 +439,17 @@ class TestTicketCreationSidecarAutoCommit:
 
         repo = _init_sidecar_repo(tmp_path)
         intent_id = allocate_intent_id(repo)
-        save_ticket(repo, {
-            "id": intent_id, "title": "Tracked intent", "kind": "intent",
-            "brain_dump": "test", "scope": {"allow": ["**"], "deny": []},
-            "budgets": {"max_files_changed": 12, "max_loc_changed": 400},
-        })
+        save_ticket(
+            repo,
+            {
+                "id": intent_id,
+                "title": "Tracked intent",
+                "kind": "intent",
+                "brain_dump": "test",
+                "scope": {"allow": ["**"], "deny": []},
+                "budgets": {"max_files_changed": 12, "max_loc_changed": 400},
+            },
+        )
         commit_sidecar(repo, message=f"chore(exo): intent-create {intent_id}")
         messages = _sidecar_log(repo, n=3)
-        assert any(intent_id in m for m in messages), (
-            f"Intent ID {intent_id} not in sidecar log: {messages}"
-        )
+        assert any(intent_id in m for m in messages), f"Intent ID {intent_id} not in sidecar log: {messages}"
