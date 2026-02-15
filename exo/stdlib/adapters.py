@@ -78,7 +78,7 @@ def _format_structural_rules(rules: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
-def _generate_preamble(lock: dict[str, Any], config: dict[str, Any]) -> str:
+def _generate_preamble(lock: dict[str, Any], config: dict[str, Any], repo: Path | None = None) -> str:
     """Shared governance preamble used by all adapter targets."""
     kernel = lock.get("kernel", {})
     rules = lock.get("rules", [])
@@ -186,12 +186,43 @@ def _generate_preamble(lock: dict[str, Any], config: dict[str, Any]) -> str:
         ]
     )
 
+    # Tool Reuse Protocol (advisory — skipped if tools module unavailable)
+    if repo is not None:
+        try:
+            from exo.stdlib.tools import TOOLS_PATH, load_tools
+
+            tools = load_tools(repo) if (repo / TOOLS_PATH).exists() else []
+            sections.extend(
+                [
+                    "",
+                    "### Tool Reuse Protocol",
+                    "",
+                    "Before writing new utility functions, SEARCH the tool registry:",
+                    '  `exo tool-search "<keywords>"`',
+                    "",
+                    "After building a reusable utility, REGISTER it:",
+                    '  `exo tool-register <module> <function> --description "..."`',
+                    "",
+                    "Mark a tool as used when you import/call it:",
+                    '  `exo tool-use <tool_id>`',
+                    "",
+                ]
+            )
+            if tools:
+                sections.append(f"**Registered Tools ({len(tools)}):**")
+                for tool in tools:
+                    tag_str = f" [{', '.join(tool.tags)}]" if tool.tags else ""
+                    sections.append(f"- `{tool.id}`{tag_str}: {tool.description}")
+                sections.append("")
+        except Exception:  # noqa: BLE001
+            pass  # Advisory — never blocks adapter generation
+
     return "\n".join(sections)
 
 
 def generate_claude(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str:
     """Generate CLAUDE.md content for Claude Code."""
-    preamble = _generate_preamble(lock, config)
+    preamble = _generate_preamble(lock, config, repo=repo)
 
     return f"""\
 # ExoProtocol — Governed Repository
@@ -223,7 +254,7 @@ Before starting any work:
 
 def generate_cursor(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str:
     """Generate .cursorrules content for Cursor IDE."""
-    preamble = _generate_preamble(lock, config)
+    preamble = _generate_preamble(lock, config, repo=repo)
 
     return f"""\
 # ExoProtocol — Governed Repository
@@ -254,7 +285,7 @@ Before starting any work:
 
 def generate_agents(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str:
     """Generate AGENTS.md content (vendor-agnostic, for Copilot/generic runtimes)."""
-    preamble = _generate_preamble(lock, config)
+    preamble = _generate_preamble(lock, config, repo=repo)
 
     return f"""\
 # ExoProtocol — Agent Operating Instructions

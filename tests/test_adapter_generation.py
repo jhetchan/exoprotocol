@@ -1019,3 +1019,117 @@ class TestDriftWithMarkers:
 
         section = _check_adapters(repo)
         assert section.status == "pass", f"Expected pass, got {section.status}: {section.summary}"
+
+
+# ── Tool Reuse Protocol in Adapters ────────────────────────────────
+
+
+class TestToolReuseProtocolInAdapters:
+    def test_claude_includes_tool_protocol_with_tools(self, tmp_path: Path) -> None:
+        """CLAUDE.md includes Tool Reuse Protocol when tools.yaml exists."""
+        from exo.kernel.utils import dump_yaml
+
+        repo = _bootstrap_repo(tmp_path)
+        tools_path = repo / ".exo" / "tools.yaml"
+        dump_yaml(
+            tools_path,
+            {
+                "tools": [
+                    {
+                        "id": "lib.csv:parse",
+                        "module": "lib/csv.py",
+                        "function": "parse",
+                        "description": "Parse CSV files",
+                        "tags": ["csv", "parsing"],
+                    }
+                ]
+            },
+        )
+        generate_adapters(repo, targets=["claude"])
+        content = (repo / "CLAUDE.md").read_text()
+        assert "Tool Reuse Protocol" in content
+        assert "exo tool-search" in content
+        assert "exo tool-register" in content
+        assert "lib.csv:parse" in content
+        assert "Parse CSV files" in content
+
+    def test_cursor_includes_tool_protocol(self, tmp_path: Path) -> None:
+        """Cursor adapter also gets the tool protocol."""
+        from exo.kernel.utils import dump_yaml
+
+        repo = _bootstrap_repo(tmp_path)
+        tools_path = repo / ".exo" / "tools.yaml"
+        dump_yaml(tools_path, {"tools": [{"id": "t1:fn", "module": "t1.py", "function": "fn", "description": "Test"}]})
+        generate_adapters(repo, targets=["cursor"])
+        content = (repo / ".cursorrules").read_text()
+        assert "Tool Reuse Protocol" in content
+        assert "t1:fn" in content
+
+    def test_agents_includes_tool_protocol(self, tmp_path: Path) -> None:
+        """AGENTS.md also gets the tool protocol."""
+        from exo.kernel.utils import dump_yaml
+
+        repo = _bootstrap_repo(tmp_path)
+        tools_path = repo / ".exo" / "tools.yaml"
+        dump_yaml(tools_path, {"tools": [{"id": "t1:fn", "module": "t1.py", "function": "fn", "description": "Test"}]})
+        generate_adapters(repo, targets=["agents"])
+        content = (repo / "AGENTS.md").read_text()
+        assert "Tool Reuse Protocol" in content
+
+    def test_no_tools_yaml_still_has_protocol(self, tmp_path: Path) -> None:
+        """When no tools.yaml exists, protocol section is still injected (empty)."""
+        repo = _bootstrap_repo(tmp_path)
+        generate_adapters(repo, targets=["claude"])
+        content = (repo / "CLAUDE.md").read_text()
+        assert "Tool Reuse Protocol" in content
+        assert "exo tool-search" in content
+        # No registered tools section
+        assert "Registered Tools" not in content
+
+    def test_ci_does_not_include_tool_protocol(self, tmp_path: Path) -> None:
+        """CI adapter should NOT include tool protocol (it's a YAML workflow)."""
+        from exo.kernel.utils import dump_yaml
+
+        repo = _bootstrap_repo(tmp_path)
+        tools_path = repo / ".exo" / "tools.yaml"
+        dump_yaml(tools_path, {"tools": [{"id": "t1:fn", "module": "t1.py", "function": "fn", "description": "Test"}]})
+        generate_adapters(repo, targets=["ci"])
+        content = (repo / ".github" / "workflows" / "exo-governance.yml").read_text()
+        assert "Tool Reuse Protocol" not in content
+
+    def test_tool_tags_in_adapter(self, tmp_path: Path) -> None:
+        """Tool tags appear in adapter output."""
+        from exo.kernel.utils import dump_yaml
+
+        repo = _bootstrap_repo(tmp_path)
+        tools_path = repo / ".exo" / "tools.yaml"
+        dump_yaml(
+            tools_path,
+            {"tools": [{"id": "t:fn", "module": "t.py", "function": "fn", "description": "D", "tags": ["csv", "io"]}]},
+        )
+        generate_adapters(repo, targets=["claude"])
+        content = (repo / "CLAUDE.md").read_text()
+        assert "[csv, io]" in content
+
+    def test_multiple_tools_listed(self, tmp_path: Path) -> None:
+        """Multiple tools are all listed in adapter output."""
+        from exo.kernel.utils import dump_yaml
+
+        repo = _bootstrap_repo(tmp_path)
+        tools_path = repo / ".exo" / "tools.yaml"
+        dump_yaml(
+            tools_path,
+            {
+                "tools": [
+                    {"id": "a:fn", "module": "a.py", "function": "fn", "description": "Tool A"},
+                    {"id": "b:fn", "module": "b.py", "function": "fn", "description": "Tool B"},
+                    {"id": "c:fn", "module": "c.py", "function": "fn", "description": "Tool C"},
+                ]
+            },
+        )
+        generate_adapters(repo, targets=["claude"])
+        content = (repo / "CLAUDE.md").read_text()
+        assert "Registered Tools (3)" in content
+        assert "a:fn" in content
+        assert "b:fn" in content
+        assert "c:fn" in content
