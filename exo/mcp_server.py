@@ -53,6 +53,15 @@ from exo.stdlib.requirements import (
     trace_requirements as run_trace_reqs,
 )
 from exo.stdlib.timeline import build_intent_timeline
+from exo.stdlib.tools import (
+    load_tools,
+    mark_tool_used,
+    register_tool,
+    remove_tool,
+    search_tools,
+    tool_to_dict,
+    tools_to_list,
+)
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -1420,6 +1429,169 @@ if FastMCP:
         try:
             ref = dismiss_reflection(Path(repo).resolve(), reflection_id)
             return {"ok": True, "data": reflect_to_dict(ref), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_tools(
+        repo: str = ".",
+        tag: str | None = None,
+    ) -> dict[str, Any]:
+        """List registered tools from .exo/tools.yaml with optional tag filter."""
+        try:
+            repo_path = Path(repo).resolve()
+            tools = load_tools(repo_path)
+            if tag:
+                target = tag.strip().lower()
+                tools = [t for t in tools if target in [tg.lower() for tg in t.tags]]
+            return {
+                "ok": True,
+                "data": {"tools": tools_to_list(tools), "count": len(tools)},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_tool_register(
+        module: str,
+        function: str,
+        description: str,
+        repo: str = ".",
+        signature: str = "",
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Register a reusable tool in the .exo/tools.yaml registry."""
+        try:
+            tool = register_tool(
+                Path(repo).resolve(),
+                module=module,
+                function=function,
+                description=description,
+                signature=signature,
+                tags=tags,
+            )
+            return {
+                "ok": True,
+                "data": {"tool": tool_to_dict(tool)},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_tool_search(
+        query: str,
+        repo: str = ".",
+    ) -> dict[str, Any]:
+        """Search registered tools by keyword matching on description, tags, module, function."""
+        try:
+            results = search_tools(Path(repo).resolve(), query=query)
+            return {
+                "ok": True,
+                "data": {"results": tools_to_list(results), "count": len(results)},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_tool_remove(
+        tool_id: str,
+        repo: str = ".",
+    ) -> dict[str, Any]:
+        """Remove a tool from the .exo/tools.yaml registry."""
+        try:
+            remove_tool(Path(repo).resolve(), tool_id=tool_id)
+            return {
+                "ok": True,
+                "data": {"removed": tool_id},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_tool_use(
+        tool_id: str,
+        repo: str = ".",
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        """Record that a tool was used in a session. Updates usage tracking."""
+        try:
+            tool = mark_tool_used(
+                Path(repo).resolve(), tool_id=tool_id, session_id=session_id
+            )
+            return {
+                "ok": True,
+                "data": {"tool": tool_to_dict(tool)},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool(
+        name="exo_tool_suggest",
+        description="Detect duplication patterns across sessions and suggest tool registration. Finds underused tools, sessions without tool awareness, and summaries mentioning utility patterns without registration.",
+    )
+    def exo_tool_suggest(repo: str = ".") -> dict[str, Any]:
+        try:
+            from exo.stdlib.suggest import suggest_tools, suggestions_to_list
+
+            suggestions = suggest_tools(Path(repo).resolve())
+            return {
+                "ok": True,
+                "data": {"count": len(suggestions), "suggestions": suggestions_to_list(suggestions)},
+                "events": [],
+                "blocked": False,
+            }
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001

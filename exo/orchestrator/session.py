@@ -669,6 +669,19 @@ class AgentSessionManager:
             except Exception:  # noqa: BLE001
                 pass  # Reflection injection is advisory — never blocks session start
 
+        # --- Tool Reuse Protocol injection ---
+        if mode != "audit":
+            try:
+                from exo.stdlib.tools import TOOLS_PATH, format_bootstrap_tools, load_tools
+
+                if (self.root / TOOLS_PATH).exists():
+                    registered_tools = load_tools(self.root)
+                    bootstrap_lines.extend(format_bootstrap_tools(registered_tools))
+                else:
+                    bootstrap_lines.extend(format_bootstrap_tools([]))
+            except Exception:  # noqa: BLE001
+                pass  # Tool registry injection is advisory — never blocks session start
+
         bootstrap_lines.extend(
             [
                 "## Current Task",
@@ -906,6 +919,22 @@ class AgentSessionManager:
             except Exception:
                 pass  # Advisory — never blocks session-finish
 
+        # --- Tool registry session summary ---
+        tools_summary: dict[str, Any] | None = None
+        tools_section: str = ""
+        if str(session.get("mode", "work")).strip() != "audit":
+            try:
+                from exo.stdlib.tools import TOOLS_PATH, format_tools_memento, tools_session_summary
+
+                if (self.root / TOOLS_PATH).exists():
+                    tools_summary = tools_session_summary(
+                        self.root,
+                        session_id=str(session.get("session_id", "")),
+                    )
+                    tools_section = format_tools_memento(tools_summary)
+            except Exception:
+                pass  # Advisory — never blocks session-finish
+
         ticket_status = None
         if set_status != "keep":
             ticket_data = tickets.load_ticket(self.root, target_ticket)
@@ -974,6 +1003,9 @@ class AgentSessionManager:
         if memory_leak_section:
             memento_sections.append("")
             memento_sections.append(memory_leak_section)
+        if tools_section:
+            memento_sections.append("")
+            memento_sections.append(tools_section)
         memento_sections.extend(
             [
                 "",
@@ -1053,6 +1085,8 @@ class AgentSessionManager:
             "trace_passed": trace_report.passed if trace_report else None,
             "trace_violations": len(trace_report.violations) if trace_report else None,
             "coherence_warnings": coherence_data.get("warning_count") if coherence_data else None,
+            "tools_created": tools_summary["tools_created"] if tools_summary else None,
+            "tools_used": tools_summary["tools_used"] if tools_summary else None,
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
             "audit_warnings": audit_warnings if audit_warnings else None,
@@ -1119,6 +1153,7 @@ class AgentSessionManager:
             "drift": drift_data,
             "trace": trace_data,
             "coherence": coherence_data,
+            "tools": tools_summary,
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
             "exo_banner": finish_banner,

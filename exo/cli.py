@@ -54,6 +54,17 @@ from exo.stdlib.requirements import (
     trace_requirements,
 )
 from exo.stdlib.timeline import build_intent_timeline, format_timeline_human
+from exo.stdlib.tools import (
+    TOOLS_PATH,
+    format_tools_human,
+    load_tools,
+    mark_tool_used,
+    register_tool,
+    remove_tool,
+    search_tools,
+    tool_to_dict,
+    tools_to_list,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -463,6 +474,29 @@ def _build_parser() -> argparse.ArgumentParser:
     dismiss_cmd = sub.add_parser("reflect-dismiss", help="Dismiss a reflection so it stops appearing in bootstraps")
     dismiss_cmd.add_argument("reflection_id", help="Reflection ID (e.g., REF-001)")
 
+    # Tool awareness registry
+    tools_cmd = sub.add_parser("tools", help="List registered tools from .exo/tools.yaml")
+    tools_cmd.add_argument("--tag", help="Filter by tag")
+
+    tool_register_cmd = sub.add_parser("tool-register", help="Register a reusable tool")
+    tool_register_cmd.add_argument("module", help="Module path (e.g. lib/utils.py)")
+    tool_register_cmd.add_argument("function", help="Function name")
+    tool_register_cmd.add_argument("--description", required=True, help="What the tool does")
+    tool_register_cmd.add_argument("--signature", default="", help="Function signature")
+    tool_register_cmd.add_argument("--tag", action="append", default=[], help="Tags (repeatable)")
+
+    tool_search_cmd = sub.add_parser("tool-search", help="Search tools by description/tags")
+    tool_search_cmd.add_argument("query", help="Search query")
+
+    tool_remove_cmd = sub.add_parser("tool-remove", help="Remove a tool from registry")
+    tool_remove_cmd.add_argument("tool_id", help="Tool ID to remove")
+
+    tool_use_cmd = sub.add_parser("tool-use", help="Record that a tool was used in a session")
+    tool_use_cmd.add_argument("tool_id", help="Tool ID that was used")
+    tool_use_cmd.add_argument("--session-id", default="", help="Session ID (auto-detected if active)")
+
+    sub.add_parser("tool-suggest", help="Detect duplication patterns and suggest tool registration")
+
     sub.add_parser("scan", help="Scan repo and preview what exo init would detect")
 
     doctor_cmd = sub.add_parser("doctor", help="Run unified governance health check")
@@ -529,6 +563,9 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
             "doctor",
             "config-validate",
             "upgrade",
+            "tools",
+            "tool-search",
+            "tool-suggest",
         ):
             data = response.get("data", {})
             human_summary = data.pop("_human_summary", "")
@@ -1177,6 +1214,62 @@ def main(argv: list[str] | None = None) -> int:
             repo_path = Path(args.repo).resolve()
             ref = dismiss_reflection(repo_path, args.reflection_id)
             response = _ok(reflect_to_dict(ref))
+        elif cmd == "tools":
+            repo_path = Path(args.repo).resolve()
+            tools = load_tools(repo_path)
+            if args.tag:
+                target_tag = args.tag.strip().lower()
+                tools = [t for t in tools if target_tag in [tg.lower() for tg in t.tags]]
+            data: dict[str, Any] = {
+                "tools": tools_to_list(tools),
+                "count": len(tools),
+            }
+            data["_human_summary"] = format_tools_human(tools)
+            response = _ok(data)
+        elif cmd == "tool-register":
+            repo_path = Path(args.repo).resolve()
+            tool = register_tool(
+                repo_path,
+                module=args.module,
+                function=args.function,
+                description=args.description,
+                signature=args.signature,
+                tags=args.tag,
+            )
+            response = _ok({"tool": tool_to_dict(tool), "path": str(TOOLS_PATH)})
+        elif cmd == "tool-search":
+            repo_path = Path(args.repo).resolve()
+            results = search_tools(repo_path, query=args.query)
+            data = {
+                "results": tools_to_list(results),
+                "count": len(results),
+            }
+            data["_human_summary"] = format_tools_human(results)
+            response = _ok(data)
+        elif cmd == "tool-remove":
+            repo_path = Path(args.repo).resolve()
+            remove_tool(repo_path, tool_id=args.tool_id)
+            response = _ok({"removed": args.tool_id})
+        elif cmd == "tool-use":
+            repo_path = Path(args.repo).resolve()
+            session_id = args.session_id
+            tool = mark_tool_used(repo_path, tool_id=args.tool_id, session_id=session_id)
+            response = _ok({"tool": tool_to_dict(tool)})
+        elif cmd == "tool-suggest":
+            repo_path = Path(args.repo).resolve()
+            from exo.stdlib.suggest import (
+                format_suggestions_human,
+                suggest_tools,
+                suggestions_to_list,
+            )
+
+            suggestions = suggest_tools(repo_path)
+            data: dict[str, Any] = {
+                "count": len(suggestions),
+                "suggestions": suggestions_to_list(suggestions),
+                "_human_summary": format_suggestions_human(suggestions),
+            }
+            response = _ok(data)
         elif cmd == "scan":
             repo_path = Path(args.repo).resolve()
             from exo.stdlib.scan import format_scan_human as fmt_scan
