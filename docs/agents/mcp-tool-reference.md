@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-Signatures and parameters for all 64 ExoProtocol MCP tools.
+Signatures and parameters for all 68 ExoProtocol MCP tools.
 
 ## Conventions
 
@@ -187,6 +187,28 @@ Finish a session and write memento.
 - `break_glass_reason`: Justification for skipping checks
 - `drift_threshold`: Custom drift threshold (default from config)
 - `errors`: List of error dicts with "tool" and "message" keys for reflection
+
+### exo_session_handoff
+```python
+exo_session_handoff(
+    to_actor: str,
+    ticket_id: str,
+    summary: str,
+    repo: str = ".",
+    reason: str = "",
+    next_steps: str = "",
+    release_lock: bool = True,
+) -> dict[str, Any]
+```
+Hand off active session to another agent with context transfer. Finishes the current session, writes a handoff record, and (by default) releases the lock so the target agent can pick up.
+- `to_actor`: Target actor identifier (e.g., "agent:claude-sonnet")
+- `ticket_id`: Ticket being handed off
+- `summary`: Summary of work done
+- `reason`: Why the handoff is needed
+- `next_steps`: What the receiving agent should do next
+- `release_lock`: Whether to release ticket lock (default: true)
+
+Returns: `from_session_id`, `to_actor`, `handoff_path`, `released_lock`
 
 ### exo_session_scan
 ```python
@@ -561,6 +583,46 @@ exo_gc_locks(
 ) -> dict[str, Any]
 ```
 Clean up expired distributed locks on a git remote. Scans refs/exoprotocol/locks/* on the remote, identifies expired leases, and deletes their refs. Use list_only=True to inspect without cleaning, or dry_run=True to preview cleanup.
+
+---
+
+## Observability
+
+### exo_metrics
+```python
+exo_metrics(repo: str = ".") -> dict[str, Any]
+```
+Compute governance metrics for dashboards. Returns aggregate statistics from session history including verification rates, drift distribution, ticket throughput, and actor breakdown.
+
+Returns: `session_count`, `verify_pass_rate`, `verify_passed`, `verify_failed`, `verify_bypassed`, `avg_drift_score`, `max_drift_score`, `drift_distribution`, `tickets_touched`, `actor_count`, `actors`, `mode_counts`, `computed_at`
+
+### exo_fleet_drift
+```python
+exo_fleet_drift(
+    repo: str = ".",
+    stale_hours: float = 48.0,
+    include_finished: int = 10,
+) -> dict[str, Any]
+```
+Aggregate drift across active, suspended, and recent finished sessions. Provides a fleet-level view of governance drift for multi-agent teams.
+- `stale_hours`: Threshold for stale session detection
+- `include_finished`: Number of recent finished sessions to include
+
+Returns: `agents` (per-agent records), `agent_count`, `active_count`, `suspended_count`, `finished_count`, `stale_count`, `avg_drift`, `max_drift`, `high_drift_count`
+
+### exo_export_traces
+```python
+exo_export_traces(
+    repo: str = ".",
+    since: str = "",
+    write: bool = True,
+) -> dict[str, Any]
+```
+Export governance events as OTel-compatible JSONL traces. Reads session index and converts each session into an OpenTelemetry span with attributes, events, and status.
+- `since`: Only export sessions started after this ISO timestamp
+- `write`: Whether to write output to `.exo/logs/traces.jsonl` (default: true)
+
+Returns: `span_count`, `spans`, `output_path`, `since`
 
 ---
 

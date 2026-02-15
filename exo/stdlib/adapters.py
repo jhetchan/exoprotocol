@@ -8,6 +8,7 @@ bridging ExoProtocol governance into the agent's native config format.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from pathlib import Path
@@ -24,7 +25,7 @@ CONFIG_PATH = Path(".exo/config.yaml")
 EXO_MARKER_BEGIN = "<!-- exo:governance:begin -->"
 EXO_MARKER_END = "<!-- exo:governance:end -->"
 
-ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents", "ci"})
+ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents", "ci", "sandbox"})
 AGENT_ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents"})  # targets with governance preamble
 
 # Map target name → output file
@@ -33,6 +34,7 @@ TARGET_FILES: dict[str, str] = {
     "cursor": ".cursorrules",
     "agents": "AGENTS.md",
     "ci": ".github/workflows/exo-governance.yml",
+    "sandbox": ".claude/settings.json",
 }
 
 
@@ -425,12 +427,132 @@ jobs:
 {checks_step}"""
 
 
+def _derive_permission_deny(rules: list[dict[str, Any]], repo: Path | None = None) -> list[str]:
+    """Convert constitution filesystem_deny rules to Claude Code permission deny entries.
+
+    Maps governance deny rules to the Claude Code permissions format:
+    - read action → Read(pattern)
+    - write action → Edit(pattern)
+    - delete action → Edit(pattern) + Bash(rm pattern)
+    """
+    entries: list[str] = []
+    for rule in rules:
+        if rule.get("type") != "filesystem_deny":
+            continue
+        patterns = rule.get("patterns", [])
+        actions = rule.get("actions", [])
+        for pattern in patterns:
+            if "read" in actions:
+                entries.append(f"Read({pattern})")
+            if "write" in actions:
+                entries.append(f"Edit({pattern})")
+            if "delete" in actions:
+                if "write" not in actions:
+                    entries.append(f"Edit({pattern})")
+                entries.append(f"Bash(rm {pattern})")
+
+    # Feature governance: locked features generate deny globs
+    if repo is not None:
+        try:
+            from exo.stdlib.features import generate_scope_deny, load_features
+
+            features = load_features(repo)
+            feature_deny = generate_scope_deny(features)
+            for pattern in feature_deny:
+                entries.append(f"Edit({pattern})")
+        except Exception:  # noqa: BLE001
+            pass  # Advisory — never blocks adapter generation
+
+    return entries
+
+
+def generate_sandbox(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str:
+    """Generate .claude/settings.json permissions fragment from governance state.
+
+    Returns JSON string with permissions.deny derived from constitution deny rules.
+    The caller merges this into existing settings.json to preserve hooks/other config.
+    """
+    rules = lock.get("rules", [])
+    deny_entries = _derive_permission_deny(rules, repo=repo)
+    governance_hash = lock.get("source_hash", "")
+
+    settings_fragment: dict[str, Any] = {
+        "permissions": {
+            "deny": deny_entries,
+        },
+        "_exo_governance_hash": governance_hash[:16],
+    }
+    return json.dumps(settings_fragment, indent=2, ensure_ascii=True)
+
+
 _GENERATORS: dict[str, Any] = {
     "claude": generate_claude,
     "cursor": generate_cursor,
     "agents": generate_agents,
     "ci": generate_ci,
+    "sandbox": generate_sandbox,
 }
+
+
+def derive_sandbox_policy(repo: Path) -> dict[str, Any]:
+    """Derive sandbox permission policy from constitution deny rules.
+
+    Public API for inspecting what sandbox permissions would be generated
+    without writing any files. Useful for previewing or programmatic access.
+
+    Returns dict with deny_entries, source_rules, and governance_hash.
+    """
+    repo = Path(repo).resolve()
+    lock = _load_governance_lock(repo)
+    rules = lock.get("rules", [])
+    deny_entries = _derive_permission_deny(rules, repo=repo)
+
+    # Collect source rule IDs for traceability
+    source_rules: list[dict[str, str]] = []
+    for rule in rules:
+        if rule.get("type") != "filesystem_deny":
+            continue
+        source_rules.append({
+            "id": rule.get("id", ""),
+            "patterns": rule.get("patterns", []),
+            "actions": rule.get("actions", []),
+        })
+
+    return {
+        "deny_entries": deny_entries,
+        "deny_count": len(deny_entries),
+        "source_rules": source_rules,
+        "source_rule_count": len(source_rules),
+        "governance_hash": lock.get("source_hash", "")[:16],
+    }
+
+
+def format_sandbox_policy_human(policy: dict[str, Any]) -> str:
+    """Format sandbox policy for human-readable CLI output."""
+    lines: list[str] = []
+    lines.append(f"Governance hash: {policy.get('governance_hash', 'unknown')}")
+    lines.append(f"Source deny rules: {policy.get('source_rule_count', 0)}")
+    lines.append("")
+
+    source_rules = policy.get("source_rules", [])
+    if source_rules:
+        lines.append("Constitution deny rules:")
+        for sr in source_rules:
+            rule_id = sr.get("id", "?")
+            patterns = ", ".join(sr.get("patterns", []))
+            actions = ", ".join(sr.get("actions", []))
+            lines.append(f"  {rule_id}: {actions} on {patterns}")
+        lines.append("")
+
+    deny_entries = policy.get("deny_entries", [])
+    lines.append(f"Derived sandbox permissions.deny ({len(deny_entries)} entries):")
+    if deny_entries:
+        for entry in deny_entries:
+            lines.append(f"  - {entry}")
+    else:
+        lines.append("  (none)")
+
+    return "\n".join(lines)
 
 
 # ── Brownfield Merge Helpers ────────────────────────────────────
@@ -584,6 +706,28 @@ def generate_adapters(
                     written.append(filename)
                 else:
                     result_entry["content"] = wrapped
+        elif target == "sandbox":
+            # Sandbox target: JSON merge with existing .claude/settings.json
+            fragment = json.loads(content)
+            existing_settings: dict[str, Any] = {}
+            if output_path.exists():
+                try:
+                    existing_settings = json.loads(output_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    existing_settings = {}
+
+            existing_settings["permissions"] = fragment["permissions"]
+            existing_settings["_exo_governance_hash"] = fragment["_exo_governance_hash"]
+            merged_json = json.dumps(existing_settings, indent=2, ensure_ascii=True) + "\n"
+
+            result_entry["content_length"] = len(merged_json)
+            result_entry["merged"] = bool(existing_settings.keys() - {"permissions", "_exo_governance_hash"})
+            if not dry_run:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(merged_json, encoding="utf-8")
+                written.append(filename)
+            else:
+                result_entry["content"] = merged_json
         else:
             # CI target: unconditional overwrite (no markers, no merge)
             result_entry["content_length"] = len(content)

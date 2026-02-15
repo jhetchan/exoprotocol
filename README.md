@@ -44,6 +44,32 @@ EXO_ACTOR=agent:claude exo session-finish \
 
 Session start generates a bootstrap prompt with governance rules, scope constraints, sibling awareness, and operational learnings from prior sessions. Session finish runs drift detection, feature tracing, and writes a closeout memento.
 
+## Agent handoff
+
+```bash
+# Agent A hands off to Agent B
+EXO_ACTOR=agent:claude-opus exo session-handoff \
+  --to agent:claude-sonnet --ticket-id TICKET-001 \
+  --summary "Built API endpoints" --next-step "Write tests"
+
+# Agent B starts — handoff context auto-injected into bootstrap
+EXO_ACTOR=agent:claude-sonnet exo session-start --ticket-id TICKET-001 ...
+```
+
+## SDK integrations
+
+```python
+# OpenAI Agents SDK
+from exo.integrations.openai_agents import ExoRunHooks
+hooks = ExoRunHooks(repo=".", ticket_id="TKT-...", actor="agent:openai")
+result = await Runner.run(agent, hooks=hooks)
+```
+
+```bash
+pip install exoprotocol[openai-agents]  # OpenAI Agents SDK
+pip install exoprotocol[claude]         # Claude Code hooks (auto-installed)
+```
+
 ## What session-start does
 
 When an agent session starts, ExoProtocol:
@@ -97,11 +123,11 @@ Works with Claude Code, Cursor, and any MCP-compatible client. Every CLI command
 ### Agent Reference
 
 - [Agent Quickstart](docs/agents/quickstart.md) — zero to first governed session
-- [Session Lifecycle](docs/agents/session-lifecycle.md) — state machine, bootstrap anatomy, audit mode
+- [Session Lifecycle](docs/agents/session-lifecycle.md) — state machine, bootstrap anatomy, handoff, audit mode
 - [Governance Rules](docs/agents/governance-rules.md) — rule types, budgets, scope, traceability
 - [Config Reference](docs/agents/config-reference.md) — complete `.exo/config.yaml` schema
 - [Error Reference](docs/agents/error-reference.md) — every ExoError code with resolution steps
-- [MCP Tool Reference](docs/agents/mcp-tool-reference.md) — all 64 MCP tool signatures
+- [MCP Tool Reference](docs/agents/mcp-tool-reference.md) — all 68 MCP tool signatures
 
 ### Shared
 
