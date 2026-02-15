@@ -1522,7 +1522,9 @@ class TestDeriveSandboxPolicy:
         """derive_sandbox_policy raises when no governance lock exists."""
         import pytest
 
-        with pytest.raises(Exception):
+        from exo.kernel.errors import ExoError
+
+        with pytest.raises(ExoError):
             derive_sandbox_policy(tmp_path)
 
 
