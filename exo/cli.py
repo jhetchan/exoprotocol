@@ -36,6 +36,7 @@ from exo.stdlib.features import (
 )
 from exo.stdlib.gc import format_gc_human, gc_to_dict
 from exo.stdlib.gc import gc as run_gc
+from exo.stdlib.metrics import compute_metrics, format_metrics_human
 from exo.stdlib.pr_check import format_pr_check_human, pr_check, pr_check_to_dict
 from exo.stdlib.reflect import (
     dismiss_reflection,
@@ -54,9 +55,7 @@ from exo.stdlib.requirements import (
     requirements_to_list,
     trace_requirements,
 )
-from exo.stdlib.metrics import compute_metrics, format_metrics_human
 from exo.stdlib.timeline import build_intent_timeline, format_timeline_human
-from exo.stdlib.traces import export_traces, format_traces_human
 from exo.stdlib.tools import (
     TOOLS_PATH,
     format_tools_human,
@@ -68,6 +67,7 @@ from exo.stdlib.tools import (
     tool_to_dict,
     tools_to_list,
 )
+from exo.stdlib.traces import export_traces, format_traces_human
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -496,6 +496,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--list", action="store_true", dest="list_only", help="List all remote locks without cleaning"
     )
 
+    ci_fix_cmd = sub.add_parser("ci-fix", help="Fetch failed CI run, parse errors, auto-fix and push")
+    ci_fix_cmd.add_argument("--run-id", default="", help="Specific run ID (default: latest failure)")
+    ci_fix_cmd.add_argument("--apply", action="store_true", help="Apply auto-fixable errors")
+    ci_fix_cmd.add_argument("--push", action="store_true", help="Commit and push after applying fixes")
+
     reflect_cmd = sub.add_parser("reflect", help="Record an operational learning from session experience")
     reflect_cmd.add_argument("--pattern", required=True, help="What keeps happening (the recurring failure/error)")
     reflect_cmd.add_argument("--insight", required=True, help="What was learned (the fix/workaround)")
@@ -608,6 +613,7 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
             "tool-search",
             "tool-suggest",
             "follow-ups",
+            "ci-fix",
         ):
             data = response.get("data", {})
             human_summary = data.pop("_human_summary", "")
@@ -1252,6 +1258,23 @@ def main(argv: list[str] | None = None) -> int:
                     dry_run=bool(args.dry_run),
                 )
                 response = _ok(data)
+        elif cmd == "ci-fix":
+            from exo.stdlib.ci_fix import (
+                apply_fixes,
+                commit_and_push,
+                fetch_ci_failure,
+                format_ci_fix_human,
+            )
+
+            repo_path = Path(args.repo).resolve()
+            report = fetch_ci_failure(repo_path, run_id=args.run_id)
+            if bool(args.apply) or bool(args.push):
+                report = apply_fixes(repo_path, report=report)
+                if bool(args.push) and report.get("status") == "fixed":
+                    push_result = commit_and_push(repo_path, run_id=report.get("run_id", ""))
+                    report.update(push_result)
+            report["_human_summary"] = format_ci_fix_human(report)
+            response = _ok(report)
         elif cmd == "reflect":
             repo_path = Path(args.repo).resolve()
             session_id = args.session_id
