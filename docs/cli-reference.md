@@ -103,6 +103,12 @@ All commands support `--format json`.
 | `exo fleet-drift [--stale-hours N] [--include-finished N]` | Aggregate drift across active/suspended/finished sessions |
 | `exo export-traces [--since ISO] [--no-write]` | Export governance events as OTel-compatible JSONL traces |
 
+## CI integration
+
+| Command | Description |
+|---|---|
+| `exo ci-fix [--run-id ID] [--apply] [--push]` | Fetch failed CI run, parse errors, auto-fix and push |
+
 ## Infrastructure
 
 | Command | Description |

@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-Signatures and parameters for all 68 ExoProtocol MCP tools.
+Signatures and parameters for all 69 ExoProtocol MCP tools.
 
 ## Conventions
 
@@ -583,6 +583,26 @@ exo_gc_locks(
 ) -> dict[str, Any]
 ```
 Clean up expired distributed locks on a git remote. Scans refs/exoprotocol/locks/* on the remote, identifies expired leases, and deletes their refs. Use list_only=True to inspect without cleaning, or dry_run=True to preview cleanup.
+
+---
+
+## CI integration
+
+### exo_ci_fix
+```python
+exo_ci_fix(
+    repo: str = ".",
+    run_id: str = "",
+    apply: bool = False,
+    push: bool = False,
+) -> dict[str, Any]
+```
+Fetch the latest failed CI run, parse errors into structured entries, and optionally auto-fix and push. Uses the `gh` CLI to interact with GitHub Actions.
+- `run_id`: Specific run ID to inspect (default: latest failed run)
+- `apply`: Apply auto-fixable errors (e.g., `ruff format`)
+- `push`: Commit and push fixes after applying (implies `apply`)
+
+Returns: `status` ("no_failures" | "failure" | "fixed" | "partial"), `run_id`, `run_info`, `errors`, `fixes`, `fix_commands`, `logs`
 
 ---
 

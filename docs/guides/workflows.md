@@ -337,6 +337,31 @@ Each session becomes an OTel span with `exo.*` attributes. Import into Jaeger, G
 
 ---
 
+## CI failure auto-fix
+
+When CI fails, `exo ci-fix` fetches the failed run logs via the `gh` CLI, parses errors into structured entries, and can auto-fix + push:
+
+```bash
+# Inspect the latest failed CI run
+exo ci-fix
+
+# Auto-fix what's fixable (e.g., ruff format) and push
+exo ci-fix --apply --push
+
+# Inspect a specific run
+exo ci-fix --run-id 12345678
+```
+
+Supported error parsers:
+- **ruff format** — detects "N files would be reformatted", auto-fixable via `ruff format`
+- **ruff lint** — parses `file:line:col: CODE message` entries
+- **pytest** — extracts `FAILED path::Class::method` entries
+- **Python compile** — catches `SyntaxError`, `IndentationError`, `TabError`
+
+Requires `gh` CLI installed and authenticated (`gh auth login`).
+
+---
+
 ## SDK integrations
 
 ### OpenAI Agents SDK
@@ -376,6 +401,7 @@ Installed via `exo hook-install`. Automatically starts/finishes governed session
 | Record a learning | `exo reflect --pattern "..." --insight "..."` |
 | Find existing tools | `exo tool-search "keywords"` |
 | Preview sandbox policy | `exo sandbox-policy` |
+| Fix CI failures | `exo ci-fix [--apply] [--push]` |
 | Clean up | `exo gc`, `exo gc-locks`, `exo session-cleanup` |
 | Regenerate adapters | `exo adapter-generate` |
 | Validate config | `exo config-validate` |
