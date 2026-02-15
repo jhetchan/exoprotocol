@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -331,3 +332,236 @@ class TestDiscoverTools:
         valid_types = {"cli", "mcp", "hooks", "integration"}
         for tool in tools:
             assert tool["type"] in valid_types
+
+
+# ── Git Pre-Commit Hook ─────────────────────────────────────────
+
+
+class TestInstallGitHook:
+    def test_requires_git_dir(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        result = install_git_hook(tmp_path)
+        assert result["installed"] is False
+        assert result["error"] == "no_git_dir"
+
+    def test_installs_hook(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        (tmp_path / ".git").mkdir()
+        result = install_git_hook(tmp_path)
+        assert result["installed"] is True
+        hook = Path(result["path"])
+        assert hook.exists()
+        assert "ExoProtocol pre-commit hook" in hook.read_text(encoding="utf-8")
+
+    def test_hook_is_executable(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        (tmp_path / ".git").mkdir()
+        install_git_hook(tmp_path)
+        hook = tmp_path / ".git" / "hooks" / "pre-commit"
+        assert os.access(hook, os.X_OK)
+
+    def test_hook_runs_exo_check(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        (tmp_path / ".git").mkdir()
+        install_git_hook(tmp_path)
+        hook = tmp_path / ".git" / "hooks" / "pre-commit"
+        content = hook.read_text(encoding="utf-8")
+        assert "exo check" in content
+
+    def test_dry_run(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        (tmp_path / ".git").mkdir()
+        result = install_git_hook(tmp_path, dry_run=True)
+        assert result["dry_run"] is True
+        assert result["installed"] is False
+        assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
+
+    def test_backs_up_existing_non_exo_hook(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        git_hooks = tmp_path / ".git" / "hooks"
+        git_hooks.mkdir(parents=True)
+        existing_hook = git_hooks / "pre-commit"
+        existing_hook.write_text("#!/bin/bash\necho custom hook\n", encoding="utf-8")
+
+        result = install_git_hook(tmp_path)
+        assert result["installed"] is True
+        assert result["backed_up"]
+        backup = Path(result["backed_up"])
+        assert backup.exists()
+        assert "custom hook" in backup.read_text(encoding="utf-8")
+
+    def test_no_backup_for_exo_hook(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        git_hooks = tmp_path / ".git" / "hooks"
+        git_hooks.mkdir(parents=True)
+        # Install once
+        install_git_hook(tmp_path)
+        # Install again (idempotent, no backup needed)
+        result = install_git_hook(tmp_path)
+        assert result["installed"] is True
+        assert result["backed_up"] == ""
+
+    def test_idempotent(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        (tmp_path / ".git").mkdir()
+        install_git_hook(tmp_path)
+        install_git_hook(tmp_path)
+        hook = tmp_path / ".git" / "hooks" / "pre-commit"
+        content = hook.read_text(encoding="utf-8")
+        assert content.count("ExoProtocol pre-commit hook") == 1
+
+    def test_creates_hooks_dir(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_git_hook
+
+        (tmp_path / ".git").mkdir()
+        result = install_git_hook(tmp_path)
+        assert result["installed"] is True
+        assert (tmp_path / ".git" / "hooks").is_dir()
+
+
+# ── Claude Code PreToolUse Enforce Hook ──────────────────────────
+
+
+class TestInstallEnforceHooks:
+    def test_generates_pretooluse_config(self) -> None:
+        from exo.stdlib.hooks import generate_enforce_config
+
+        config = generate_enforce_config()
+        assert "hooks" in config
+        assert "PreToolUse" in config["hooks"]
+        entries = config["hooks"]["PreToolUse"]
+        assert len(entries) == 1
+        assert entries[0]["matcher"] == "Bash"
+
+    def test_enforce_command_contains_exo_check(self) -> None:
+        from exo.stdlib.hooks import generate_enforce_config
+
+        config = generate_enforce_config()
+        cmd = config["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        assert "exo check" in cmd
+        assert "git commit" in cmd
+        assert "git push" in cmd
+
+    def test_installs_enforce_hooks(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_enforce_hooks
+
+        result = install_enforce_hooks(tmp_path)
+        assert result["installed"] is True
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "PreToolUse" in settings["hooks"]
+
+    def test_preserves_existing_session_hooks(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_enforce_hooks
+
+        # Install session hooks first
+        install_hooks(tmp_path)
+        # Then install enforce hooks
+        install_enforce_hooks(tmp_path)
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "SessionStart" in settings["hooks"]
+        assert "SessionEnd" in settings["hooks"]
+        assert "PreToolUse" in settings["hooks"]
+
+    def test_preserves_existing_settings(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_enforce_hooks
+
+        settings_dir = tmp_path / ".claude"
+        settings_dir.mkdir(parents=True)
+        (settings_dir / "settings.json").write_text(json.dumps({"customKey": "kept"}), encoding="utf-8")
+        install_enforce_hooks(tmp_path)
+        settings = json.loads((settings_dir / "settings.json").read_text(encoding="utf-8"))
+        assert settings["customKey"] == "kept"
+
+    def test_dry_run(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_enforce_hooks
+
+        result = install_enforce_hooks(tmp_path, dry_run=True)
+        assert result["dry_run"] is True
+        assert result["installed"] is False
+        assert not (tmp_path / ".claude" / "settings.json").exists()
+
+    def test_idempotent(self, tmp_path: Path) -> None:
+        from exo.stdlib.hooks import install_enforce_hooks
+
+        install_enforce_hooks(tmp_path)
+        install_enforce_hooks(tmp_path)
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert len(settings["hooks"]["PreToolUse"]) == 1
+
+    def test_enforce_config_timeout(self) -> None:
+        from exo.stdlib.hooks import generate_enforce_config
+
+        config = generate_enforce_config()
+        hook = config["hooks"]["PreToolUse"][0]["hooks"][0]
+        assert hook["timeout"] == 30
+
+
+# ── Governed Push (exo push) ─────────────────────────────────────
+
+
+class TestGovernedPush:
+    def _setup_repo(self, tmp_path: Path) -> Path:
+        repo = _bootstrap_repo(tmp_path)
+        _create_ticket_and_lock(repo)
+        return repo
+
+    def test_push_blocks_on_failed_checks(self, tmp_path: Path) -> None:
+        """Push should be blocked when checks fail."""
+        from exo.stdlib.engine import KernelEngine
+
+        repo = self._setup_repo(tmp_path)
+        # Add a check that will fail
+        ticket = tickets.load_ticket(repo, "TICKET-001")
+        ticket["checks"] = ["false"]  # always-fail command
+        tickets.save_ticket(repo, ticket)
+        # Allowlist it
+        config_path = repo / ".exo" / "config.yaml"
+        config_path.write_text("checks_allowlist:\n  - 'false'\n", encoding="utf-8")
+
+        engine = KernelEngine(str(repo))
+        result = engine.push()
+        assert result.get("blocked") is True
+        data = result.get("data", {})
+        assert data.get("pushed") is False
+        assert data.get("reason") == "checks_failed"
+
+    def test_push_proceeds_on_passed_checks(self, tmp_path: Path) -> None:
+        """Push should proceed when checks pass (git push may still fail without remote)."""
+        from exo.stdlib.engine import KernelEngine
+
+        repo = self._setup_repo(tmp_path)
+        # No checks = auto-pass
+        engine = KernelEngine(str(repo))
+        result = engine.push()
+        # Checks passed, but git push may fail (no remote in test)
+        data = result.get("data", {})
+        assert data.get("checks", {}).get("passed") is True
+
+    def test_push_returns_check_results(self, tmp_path: Path) -> None:
+        """Push result should include check results."""
+        from exo.stdlib.engine import KernelEngine
+
+        repo = self._setup_repo(tmp_path)
+        engine = KernelEngine(str(repo))
+        result = engine.push()
+        data = result.get("data", {})
+        assert "checks" in data
+        assert "passed" in data["checks"]
+
+    def test_push_with_ticket_id(self, tmp_path: Path) -> None:
+        """Push should accept explicit ticket_id."""
+        from exo.stdlib.engine import KernelEngine
+
+        repo = self._setup_repo(tmp_path)
+        engine = KernelEngine(str(repo))
+        result = engine.push("TICKET-001")
+        data = result.get("data", {})
+        assert "checks" in data

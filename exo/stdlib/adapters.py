@@ -268,6 +268,19 @@ Before starting any work:
 3. **Execute work** within ticket scope
 4. **Finish session**: `EXO_ACTOR=agent:claude python3 -m exo.cli session-finish --ticket-id <TICKET> --summary "<SUMMARY>" --set-status review`
 
+## Governed Push
+
+Before pushing code, ALWAYS run checks first:
+
+```
+exo push                      # runs exo check, then git push (recommended)
+# OR
+exo check && git push         # manual equivalent
+```
+
+Do NOT use bare `git push` — it bypasses governance checks.
+If checks fail, fix the issues before pushing.
+
 ## Non-Negotiables
 
 - Do NOT start work without an active session (`session-start`)
@@ -299,6 +312,11 @@ Before starting any work:
 2. Read bootstrap: `.exo/cache/sessions/agent-cursor.bootstrap.md`
 3. Execute work within ticket scope
 4. Finish session: `EXO_ACTOR=agent:cursor python3 -m exo.cli session-finish --ticket-id <TICKET> --summary "<SUMMARY>" --set-status review`
+
+## Governed Push
+
+Before pushing: `exo push` (runs checks, then git push).
+Do NOT use bare `git push` — it bypasses governance checks.
 
 ## Rules
 
@@ -335,6 +353,19 @@ This repository is governed by ExoProtocol. All AI agent work must follow the se
 - The bootstrap file contains your session's scope, checks, and lifecycle commands
 - Drift detection runs at session-finish and is recorded in the session memento
 - Audit sessions may be triggered to review your work independently
+
+## Governed Push
+
+Before pushing code, ALWAYS run checks first:
+
+```
+exo push                      # runs exo check, then git push (recommended)
+# OR
+exo check && git push         # manual equivalent
+```
+
+Do NOT use bare `git push` — it bypasses governance checks.
+If checks fail, fix the issues before pushing.
 
 ## Non-Negotiables
 

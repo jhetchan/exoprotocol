@@ -439,3 +439,46 @@ def write_learnings(repo: Path) -> str:
     learnings_path.parent.mkdir(parents=True, exist_ok=True)
     learnings_path.write_text(content, encoding="utf-8")
     return str(LEARNINGS_PATH)
+
+
+# ── Check Promotion ───────────────────────────────────────────────
+
+CONFIG_PATH = Path(".exo/config.yaml")
+
+
+def promote_check(repo: Path, *, command: str) -> dict[str, Any]:
+    """Add a check command to the checks_allowlist in config.
+
+    This closes the learning loop: reflection → promoted check → mechanical
+    enforcement on ``exo check`` / ``exo push`` / session-finish.
+
+    Returns dict with the promoted command and updated allowlist.
+    """
+    repo = Path(repo).resolve()
+    cmd = command.strip()
+    if not cmd:
+        raise ExoError(
+            code="PROMOTE_COMMAND_REQUIRED",
+            message="--promote-check requires a command string",
+            blocked=True,
+        )
+
+    config_path = repo / CONFIG_PATH
+    config: dict[str, Any] = {}
+    if config_path.exists():
+        loaded = load_yaml(config_path)
+        if isinstance(loaded, dict):
+            config = loaded
+
+    allowlist: list[str] = list(config.get("checks_allowlist", []))
+
+    if cmd in allowlist:
+        return {"promoted": False, "reason": "already_in_allowlist", "command": cmd, "checks_allowlist": allowlist}
+
+    allowlist.append(cmd)
+    config["checks_allowlist"] = allowlist
+
+    ensure_dir(config_path.parent)
+    dump_yaml(config_path, config)
+
+    return {"promoted": True, "command": cmd, "checks_allowlist": allowlist}

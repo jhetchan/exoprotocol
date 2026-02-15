@@ -43,6 +43,8 @@ class GCReport:
     index_entries_after: int = 0
     index_entries_pruned: int = 0
     empty_dirs_removed: int = 0
+    tickets_archived: int = 0
+    tickets_archived_ids: list[str] = field(default_factory=list)
     dry_run: bool = False
     max_age_days: float = 30.0
     gc_at: str = ""
@@ -229,6 +231,7 @@ def gc(
     *,
     max_age_days: float = 30.0,
     dry_run: bool = False,
+    archive_done: bool = False,
 ) -> GCReport:
     """Run garbage collection across mementos, cursors, and bootstraps.
 
@@ -275,6 +278,23 @@ def gc(
     # 5. Clean up empty ticket directories
     report.empty_dirs_removed = _cleanup_empty_dirs(repo, dry_run)
 
+    # 6. Archive done tickets (optional)
+    if archive_done:
+        try:
+            from exo.kernel.tickets import archive_done_tickets, load_all_tickets
+
+            if dry_run:
+                all_tickets = load_all_tickets(repo)
+                done_ids = [str(t.get("id", "")) for t in all_tickets if str(t.get("status", "")) == "done"]
+                report.tickets_archived = len(done_ids)
+                report.tickets_archived_ids = done_ids
+            else:
+                archived = archive_done_tickets(repo)
+                report.tickets_archived = len(archived)
+                report.tickets_archived_ids = [a["id"] for a in archived]
+        except Exception:
+            pass  # Advisory — ticket archival failure doesn't block GC
+
     return report
 
 
@@ -294,6 +314,8 @@ def gc_to_dict(report: GCReport) -> dict[str, Any]:
         "index_entries_after": report.index_entries_after,
         "index_entries_pruned": report.index_entries_pruned,
         "empty_dirs_removed": report.empty_dirs_removed,
+        "tickets_archived": report.tickets_archived,
+        "tickets_archived_ids": report.tickets_archived_ids,
         "dry_run": report.dry_run,
         "max_age_days": report.max_age_days,
         "gc_at": report.gc_at,
@@ -318,5 +340,7 @@ def format_gc_human(report: GCReport) -> str:
         )
     if report.empty_dirs_removed > 0:
         lines.append(f"  empty dirs: {report.empty_dirs_removed} removed")
+    if report.tickets_archived > 0:
+        lines.append(f"  tickets archived: {report.tickets_archived}")
     lines.append(f"  total files removed: {total}")
     return "\n".join(lines)

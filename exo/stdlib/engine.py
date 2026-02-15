@@ -1220,11 +1220,27 @@ class KernelEngine:
         allowlist = list(config.get("checks_allowlist", []))
         results = [self._run_allowlisted_command(str(cmd), allowlist, "run_check") for cmd in checks]
         passed = all(item["ok"] for item in results)
+
+        # Advisory coherence check — co-update rules + docstring freshness
+        coherence_result: dict[str, Any] | None = None
+        try:
+            from exo.stdlib.coherence import check_coherence, coherence_to_dict
+
+            coherence_config = config.get("coherence", {})
+            if isinstance(coherence_config, dict) and coherence_config.get("enabled", True):
+                report = check_coherence(self.repo)
+                coherence_result = coherence_to_dict(report)
+                if not report.passed:
+                    passed = False
+        except Exception:  # noqa: BLE001
+            pass  # Coherence is advisory — never breaks check pipeline
+
         return {
             "checks": checks,
             "allowlist": allowlist,
             "results": results,
             "passed": passed,
+            "coherence": coherence_result,
             "script": script_out.get("_script_source"),
         }
 
@@ -1573,6 +1589,34 @@ class KernelEngine:
                 created_tickets.append(str(ticket["id"]))
                 self._audit("create_ticket", "ok", ticket=str(ticket["id"]))
 
+        # Advisory: check if any created ticket's scope overlaps co-update rules
+        co_update_advisories: list[dict[str, Any]] = []
+        try:
+            from exo.stdlib.coherence import check_co_updates
+
+            plan_config = self._config()
+            coherence_cfg = plan_config.get("coherence", {}) if isinstance(plan_config.get("coherence"), dict) else {}
+            rules = coherence_cfg.get("co_update_rules", [])
+            if rules and created_tickets:
+                all_scope_files: list[str] = []
+                for tid in created_tickets:
+                    t = tickets.load_ticket(self.repo, tid)
+                    scope = t.get("scope", {})
+                    all_scope_files.extend(scope.get("allow", []))
+                violations = check_co_updates(all_scope_files, rules)
+                for v in violations:
+                    co_update_advisories.append(
+                        {
+                            "kind": "co_update_impact",
+                            "severity": "warning",
+                            "message": v.message,
+                            "missing_file": v.file,
+                            "detail": v.detail,
+                        }
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Advisory — never blocks plan
+
         self._audit("plan", "ok", details={"tickets_created": len(created_tickets)})
 
         # Advisory sidecar commit for newly created tickets
@@ -1587,13 +1631,14 @@ class KernelEngine:
             except Exception:
                 pass
 
-        return self._response(
-            {
-                "spec": str(spec_path.relative_to(self.repo)),
-                "tickets_created": created_tickets,
-                "script": script_out.get("_script_source"),
-            }
-        )
+        result: dict[str, Any] = {
+            "spec": str(spec_path.relative_to(self.repo)),
+            "tickets_created": created_tickets,
+            "script": script_out.get("_script_source"),
+        }
+        if co_update_advisories:
+            result["co_update_advisories"] = co_update_advisories
+        return self._response(result)
 
     def next(
         self,
@@ -2111,6 +2156,73 @@ class KernelEngine:
         results = self._execute_checks(ticket)
         self._audit("check", "ok" if results.get("passed") else "failed", ticket=(ticket or {}).get("id"))
         return self._response(results, blocked=not bool(results.get("passed")))
+
+    def push(
+        self,
+        ticket_id: str | None = None,
+        *,
+        remote: str = "origin",
+        branch: str = "",
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Run ``exo check``, then ``git push`` only if checks pass."""
+        self._begin()
+        self._verify_integrity()
+
+        ticket: dict[str, Any] | None
+        if ticket_id:
+            ticket = tickets.load_ticket(self.repo, ticket_id)
+        else:
+            lock = tickets.load_lock(self.repo)
+            ticket = tickets.load_ticket(self.repo, str(lock["ticket_id"])) if lock else None
+
+        check_results = self._execute_checks(ticket)
+        if not check_results.get("passed"):
+            self._audit("push", "blocked", ticket=(ticket or {}).get("id"), details={"reason": "checks_failed"})
+            return self._response(
+                {"checks": check_results, "pushed": False, "reason": "checks_failed"},
+                blocked=True,
+            )
+
+        # Resolve branch
+        if not branch:
+            import subprocess
+
+            cp = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=str(self.repo),
+            )
+            branch = cp.stdout.strip() or "HEAD"
+
+        push_cmd = ["git", "push", remote, branch]
+        if force:
+            push_cmd.append("--force-with-lease")
+
+        import subprocess
+
+        cp = subprocess.run(push_cmd, capture_output=True, text=True, cwd=str(self.repo))
+        pushed = cp.returncode == 0
+
+        self._audit(
+            "push",
+            "ok" if pushed else "failed",
+            ticket=(ticket or {}).get("id"),
+            details={"remote": remote, "branch": branch, "returncode": cp.returncode},
+        )
+        return self._response(
+            {
+                "checks": check_results,
+                "pushed": pushed,
+                "remote": remote,
+                "branch": branch,
+                "stdout": cp.stdout,
+                "stderr": cp.stderr,
+                "returncode": cp.returncode,
+            },
+            blocked=not pushed,
+        )
 
     def jot(self, line: str) -> dict[str, Any]:
         self._begin()

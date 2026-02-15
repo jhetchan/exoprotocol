@@ -58,6 +58,26 @@ def _current_git_branch(repo: Path) -> str:
     return ""
 
 
+def _git_commits_since(repo: Path, since_iso: str, branch: str = "") -> list[str]:
+    """Get commit SHAs created since a given ISO timestamp on the current branch."""
+    try:
+        cmd = ["git", "log", "--format=%H", f"--since={since_iso}"]
+        if branch:
+            cmd.append(branch)
+        result = subprocess.run(
+            cmd,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return [sha.strip() for sha in result.stdout.strip().splitlines() if sha.strip()]
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return []
+
+
 def _commit_sidecar_advisory(root: Path, message: str) -> dict[str, Any] | None:
     """Advisory sidecar commit — returns result dict or None on skip/error."""
     try:
@@ -536,6 +556,7 @@ class AgentSessionManager:
         advisory_lines: list[str] = []
         try:
             from exo.stdlib.conflicts import (
+                StartAdvisory,
                 advisories_to_dicts,
                 detect_base_divergence,
                 detect_machine_load,
@@ -581,6 +602,43 @@ class AgentSessionManager:
                     resource_profile=resource_profile,
                 )
             )
+            # Co-update advisory: warn when ticket scope overlaps co-update counterpart files
+            try:
+                from exo.kernel.utils import load_yaml as _load_yaml
+
+                _config_path = self.root / ".exo" / "config.yaml"
+                if _config_path.exists():
+                    _full_cfg = _load_yaml(_config_path)
+                    _coh_cfg = (_full_cfg or {}).get("coherence", {}) if isinstance(_full_cfg, dict) else {}
+                    _co_rules = _coh_cfg.get("co_update_rules", []) if isinstance(_coh_cfg, dict) else []
+                    _scope_allow = list((ticket.get("scope") or {}).get("allow", []))
+                    for rule in _co_rules:
+                        rule_files = rule.get("files", [])
+                        if not isinstance(rule_files, list) or len(rule_files) < 2:
+                            continue
+                        in_scope = [f for f in rule_files if f in _scope_allow]
+                        out_scope = [f for f in rule_files if f not in _scope_allow]
+                        if in_scope and out_scope:
+                            label = rule.get("label", "co-update rule")
+                            _advisories.append(
+                                StartAdvisory(
+                                    kind="co_update_impact",
+                                    severity="warning",
+                                    message=(
+                                        f"Co-update rule ({label}): your scope includes "
+                                        f"{', '.join(in_scope)} but not {', '.join(out_scope)}. "
+                                        f"Changes may require updates to {', '.join(out_scope)} too."
+                                    ),
+                                    detail={
+                                        "label": label,
+                                        "in_scope": in_scope,
+                                        "out_scope": out_scope,
+                                    },
+                                )
+                            )
+            except Exception:
+                pass  # Co-update advisory is advisory — never blocks start
+
             if _advisories:
                 fmt = format_advisories(_advisories)
                 if fmt:
@@ -977,6 +1035,15 @@ class AgentSessionManager:
         finish_branch = _current_git_branch(self.root)
         branch_drifted = bool(start_branch and finish_branch and start_branch != finish_branch)
 
+        # --- Git SHA traceability ---
+        session_commits: list[str] = []
+        try:
+            started_at = str(session.get("started_at", "")).strip()
+            if started_at:
+                session_commits = _git_commits_since(self.root, started_at, branch=finish_branch)
+        except Exception:
+            pass  # Advisory — never blocks session-finish
+
         # --- Coherence check ---
         coherence_section: str = ""
         coherence_data: dict[str, Any] | None = None
@@ -1080,8 +1147,21 @@ class AgentSessionManager:
         if set_status != "keep":
             ticket_data = tickets.load_ticket(self.root, target_ticket)
             ticket_data["status"] = set_status
+            if session_commits:
+                existing = ticket_data.get("commits") or []
+                merged = list(dict.fromkeys(existing + session_commits))
+                ticket_data["commits"] = merged
             tickets.save_ticket(self.root, ticket_data)
             ticket_status = set_status
+        elif session_commits:
+            try:
+                ticket_data = tickets.load_ticket(self.root, target_ticket)
+                existing = ticket_data.get("commits") or []
+                merged = list(dict.fromkeys(existing + session_commits))
+                ticket_data["commits"] = merged
+                tickets.save_ticket(self.root, ticket_data)
+            except Exception:
+                pass  # Advisory — never blocks session-finish
 
         effective_release = bool(release_lock) if release_lock is not None else set_status != "keep"
         released_lock = False
@@ -1128,10 +1208,16 @@ class AgentSessionManager:
             f"- git_branch_finish: {finish_branch}",
             f"- branch_drifted: {branch_drifted}",
             f"- break_glass_reason: {break_glass_reason.strip() if isinstance(break_glass_reason, str) else ''}",
+            f"- commits: {len(session_commits)}",
             "",
             "## Summary",
             text_summary,
         ]
+        if session_commits:
+            memento_sections.append("")
+            memento_sections.append("## Commits")
+            for sha in session_commits:
+                memento_sections.append(f"- {sha}")
         if drift_section:
             memento_sections.append("")
             memento_sections.append(drift_section)
@@ -1235,6 +1321,8 @@ class AgentSessionManager:
             "follow_ups_created": follow_up_data["created_count"] if follow_up_data else None,
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
+            "commits": session_commits if session_commits else None,
+            "commit_count": len(session_commits),
             "audit_warnings": audit_warnings if audit_warnings else None,
             "errors": errors_list if errors_list else None,
             "error_count": sum(e["count"] for e in errors_list) if errors_list else 0,
@@ -1308,6 +1396,8 @@ class AgentSessionManager:
             "follow_ups": follow_up_data,
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
+            "commits": session_commits if session_commits else None,
+            "commit_count": len(session_commits),
             "exo_banner": finish_banner,
             "sidecar_commit": sidecar_commit,
         }

@@ -15,6 +15,7 @@ All commands support `--format json`.
 | `exo next [--owner] [--distributed]` | Dispatch next ticket and acquire lock |
 | `exo do [TICKET-ID]` | Run controlled execution pipeline |
 | `exo check` | Run allowlisted checks |
+| `exo push [TICKET-ID] [--remote] [--branch] [--force]` | Run checks then git push (governed push) |
 | `exo plan <input>` | Generate SPEC + tickets from input |
 
 ## Session lifecycle
@@ -91,7 +92,7 @@ All commands support `--format json`.
 
 | Command | Description |
 |---|---|
-| `exo reflect --pattern "..." --insight "..."` | Record operational learning |
+| `exo reflect --pattern "..." --insight "..." [--promote-check "cmd"]` | Record operational learning (optionally promote to check) |
 | `exo reflections [--status] [--scope] [--severity]` | List stored reflections |
 | `exo reflect-dismiss <REF-ID>` | Dismiss a reflection |
 
@@ -108,6 +109,14 @@ All commands support `--format json`.
 | Command | Description |
 |---|---|
 | `exo ci-fix [--run-id ID] [--apply] [--push]` | Fetch failed CI run, parse errors, auto-fix and push |
+
+## Enforcement hooks
+
+| Command | Description |
+|---|---|
+| `exo hook-install` | Install session lifecycle hooks into .claude/settings.json |
+| `exo hook-install --git [--dry-run]` | Install git pre-commit hook that runs `exo check` |
+| `exo hook-install --enforce [--dry-run]` | Install Claude Code PreToolUse hook gating git commit/push |
 
 ## Infrastructure
 

@@ -179,6 +179,156 @@ def install_hooks(repo: Path | str, *, dry_run: bool = False) -> dict[str, Any]:
     return {"installed": True, "dry_run": False, "config": config, "path": str(settings_path)}
 
 
+# ── Git pre-commit hook ───────────────────────────────────────────
+
+
+GIT_HOOK_SCRIPT = """\
+#!/usr/bin/env bash
+# ExoProtocol pre-commit hook — runs governed checks before commit.
+# Installed by: exo hook-install --git
+set -euo pipefail
+
+if command -v exo >/dev/null 2>&1; then
+    exo check --format json 2>/dev/null
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo ""
+        echo "exo pre-commit: checks failed. Fix issues or use --no-verify to bypass."
+        exit 1
+    fi
+fi
+"""
+
+
+def install_git_hook(repo: Path | str, *, dry_run: bool = False) -> dict[str, Any]:
+    """Install a git pre-commit hook that runs ``exo check`` before each commit.
+
+    The hook script exits non-zero when ``exo check`` fails, blocking the commit.
+    Falls through silently if ``exo`` is not on PATH.
+    """
+    repo = Path(repo).resolve()
+    git_dir = repo / ".git"
+    if not git_dir.is_dir():
+        return {"installed": False, "error": "no_git_dir", "path": ""}
+
+    hooks_dir = git_dir / "hooks"
+    hook_path = hooks_dir / "pre-commit"
+
+    if dry_run:
+        return {
+            "installed": False,
+            "dry_run": True,
+            "path": str(hook_path),
+            "script": GIT_HOOK_SCRIPT,
+        }
+
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+
+    # If existing hook exists and is NOT ours, back it up
+    backed_up = ""
+    if hook_path.exists():
+        existing = hook_path.read_text(encoding="utf-8")
+        if "ExoProtocol pre-commit hook" not in existing:
+            backup = hook_path.with_suffix(".pre-exo")
+            backup.write_text(existing, encoding="utf-8")
+            backed_up = str(backup)
+
+    hook_path.write_text(GIT_HOOK_SCRIPT, encoding="utf-8")
+    hook_path.chmod(0o755)
+
+    return {
+        "installed": True,
+        "dry_run": False,
+        "path": str(hook_path),
+        "backed_up": backed_up,
+    }
+
+
+# ── Claude Code PreToolUse enforcement hook ───────────────────────
+
+
+ENFORCE_HOOK_COMMAND = "exo check --format json"
+
+
+def generate_enforce_config() -> dict[str, Any]:
+    """Generate Claude Code PreToolUse enforcement hook config.
+
+    Intercepts ``Bash`` tool calls matching ``git commit`` or ``git push``
+    and runs ``exo check``. If checks fail the tool call is blocked.
+    """
+    return {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": (
+                                "bash -c '"
+                                "INPUT=$(cat); "
+                                'CMD=$(echo "$INPUT" | python3 -c "import sys,json; '
+                                "d=json.load(sys.stdin); "
+                                "print(d.get('input',{}).get('command',''))"
+                                '"); '
+                                'case "$CMD" in '
+                                "*git commit*|*git push*) "
+                                f"{ENFORCE_HOOK_COMMAND} || "
+                                "exit 2;; "
+                                "esac'"
+                            ),
+                            "timeout": 30,
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+
+
+def install_enforce_hooks(repo: Path | str, *, dry_run: bool = False) -> dict[str, Any]:
+    """Install Claude Code PreToolUse enforcement hooks.
+
+    Merges a ``PreToolUse`` entry into ``.claude/settings.json`` that
+    intercepts ``git commit``/``git push`` bash commands and gates them
+    on ``exo check`` passing.  Existing session lifecycle hooks and other
+    settings are preserved.
+    """
+    repo = Path(repo).resolve()
+    settings_path = repo / ".claude" / "settings.json"
+    config = generate_enforce_config()
+
+    if dry_run:
+        return {
+            "installed": False,
+            "dry_run": True,
+            "config": config,
+            "path": str(settings_path),
+        }
+
+    existing: dict[str, Any] = {}
+    if settings_path.exists():
+        existing = json.loads(settings_path.read_text(encoding="utf-8"))
+
+    hooks = existing.setdefault("hooks", {})
+
+    # Merge: keep existing SessionStart/SessionEnd, add/replace PreToolUse
+    hooks["PreToolUse"] = config["hooks"]["PreToolUse"]
+
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps(existing, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+
+    return {
+        "installed": True,
+        "dry_run": False,
+        "config": config,
+        "path": str(settings_path),
+    }
+
+
 def discover_tools() -> list[dict[str, Any]]:
     """Discover available ExoProtocol tools via importlib.metadata.
 
