@@ -417,7 +417,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "export-traces",
         help="Export governance events as OTel-compatible JSONL traces",
     )
-    export_traces_cmd.add_argument("--since", default=None, help="Only export sessions started after this ISO timestamp")
+    export_traces_cmd.add_argument(
+        "--since", default=None, help="Only export sessions started after this ISO timestamp"
+    )
     export_traces_cmd.add_argument("--no-write", action="store_true", help="Return spans without writing to file")
 
     features_cmd = sub.add_parser("features", help="List feature definitions from .exo/features.yaml")

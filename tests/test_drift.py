@@ -497,8 +497,7 @@ class TestFleetDrift:
     def test_include_finished_limits(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         entries = [
-            {"session_id": f"SES-{i}", "actor": "agent:a", "ticket_id": "T1", "drift_score": 0.1}
-            for i in range(20)
+            {"session_id": f"SES-{i}", "actor": "agent:a", "ticket_id": "T1", "drift_score": 0.1} for i in range(20)
         ]
         _write_index_entries(repo, entries)
         data = fleet_drift(repo, include_finished=5)
@@ -513,7 +512,18 @@ class TestFleetDrift:
         repo = _bootstrap_repo(tmp_path)
         from exo.kernel import tickets as tkt
 
-        tkt.save_ticket(repo, {"id": "TKT-1", "title": "T", "intent": "T", "priority": 2, "labels": [], "type": "feature", "status": "todo"})
+        tkt.save_ticket(
+            repo,
+            {
+                "id": "TKT-1",
+                "title": "T",
+                "intent": "T",
+                "priority": 2,
+                "labels": [],
+                "type": "feature",
+                "status": "todo",
+            },
+        )
         tkt.acquire_lock(repo, "TKT-1", owner="agent:test", role="developer")
         from exo.orchestrator.session import AgentSessionManager
 

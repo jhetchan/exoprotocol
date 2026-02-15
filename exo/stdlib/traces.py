@@ -81,22 +81,26 @@ def _session_to_span(entry: dict[str, Any]) -> dict[str, Any]:
 
     drift_score = entry.get("drift_score")
     if drift_score is not None:
-        events.append({
-            "name": "drift_check",
-            "timeUnixNano": finish_nano,
-            "attributes": {"exo.drift_score": drift_score},
-        })
+        events.append(
+            {
+                "name": "drift_check",
+                "timeUnixNano": finish_nano,
+                "attributes": {"exo.drift_score": drift_score},
+            }
+        )
 
     trace_passed = entry.get("trace_passed")
     if trace_passed is not None:
-        events.append({
-            "name": "feature_trace",
-            "timeUnixNano": finish_nano,
-            "attributes": {
-                "exo.trace_passed": trace_passed,
-                "exo.trace_violations": entry.get("trace_violations", 0),
-            },
-        })
+        events.append(
+            {
+                "name": "feature_trace",
+                "timeUnixNano": finish_nano,
+                "attributes": {
+                    "exo.trace_passed": trace_passed,
+                    "exo.trace_violations": entry.get("trace_violations", 0),
+                },
+            }
+        )
 
     mode = entry.get("mode", "work")
     return {
