@@ -8,6 +8,7 @@ This is deterministic (regex-based, no LLM) and designed to run as a governed
 check at session-finish or in CI.
 """
 # @feature:feature-traceability
+# @req: REQ-TRACE-001
 
 from __future__ import annotations
 

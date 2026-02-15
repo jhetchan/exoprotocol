@@ -16,6 +16,8 @@ from .errors import ExoError
 from .types import Action, Decision, Governance, Plan, Session, Ticket, to_dict
 from .utils import any_pattern_matches, load_yaml, relative_posix, sha256_text
 
+# @req: REQ-GOV-002
+
 
 def _normalize_action(action: Action | dict[str, Any]) -> Action:
     if isinstance(action, Action):

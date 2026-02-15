@@ -8,6 +8,7 @@ This is designed to run periodically or on-demand (`exo gc`) to reclaim disk
 space and keep the governance data directory clean.
 """
 # @feature:infra-ops
+# @req: REQ-OPS-001
 
 from __future__ import annotations
 
