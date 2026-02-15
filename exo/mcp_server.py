@@ -933,6 +933,13 @@ if FastMCP:
             }
             saved_path = save_ticket(repo_path, ticket_data)
             saved_ticket = normalize_ticket(ticket_data)
+            # Advisory sidecar commit
+            try:
+                from exo.stdlib.sidecar import commit_sidecar
+
+                commit_sidecar(repo_path, message=f"chore(exo): intent-create {intent_id}")
+            except Exception:
+                pass
             return {
                 "ok": True,
                 "data": {
@@ -1019,6 +1026,13 @@ if FastMCP:
                 children.append(ticket_id)
                 parent["children"] = children
                 save_ticket(repo_path, parent)
+            # Advisory sidecar commit
+            try:
+                from exo.stdlib.sidecar import commit_sidecar
+
+                commit_sidecar(repo_path, message=f"chore(exo): ticket-create {ticket_id}")
+            except Exception:
+                pass
             return {
                 "ok": True,
                 "data": {

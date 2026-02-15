@@ -339,3 +339,102 @@ class TestSessionSidecarAutoCommit:
         # Messages should contain session_id and ticket_id
         assert any(session_id in m for m in start_msgs), f"session_id {session_id} not in start messages: {start_msgs}"
         assert any("TICKET-111" in m for m in finish_msgs), f"TICKET-111 not in finish messages: {finish_msgs}"
+
+
+# ===========================================================================
+# Ticket Creation Sidecar Auto-Commit Tests
+# ===========================================================================
+
+
+class TestTicketCreationSidecarAutoCommit:
+    """Ticket creation paths (plan, intent-create, ticket-create) should
+    auto-commit to the sidecar worktree so new ticket YAML files never
+    remain untracked in the governance branch."""
+
+    def test_intent_create_commits_sidecar(self, tmp_path: Path) -> None:
+        from exo.kernel.tickets import allocate_intent_id, save_ticket, normalize_ticket
+        from exo.stdlib.sidecar import commit_sidecar
+
+        repo = _init_sidecar_repo(tmp_path)
+        intent_id = allocate_intent_id(repo)
+        ticket_data = {
+            "id": intent_id,
+            "title": "Test intent",
+            "intent": "Test intent",
+            "kind": "intent",
+            "brain_dump": "test",
+            "boundary": "",
+            "success_condition": "",
+            "risk": "medium",
+            "priority": 3,
+            "labels": [],
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 12, "max_loc_changed": 400},
+        }
+        save_ticket(repo, ticket_data)
+        # Simulate the advisory sidecar commit that intent-create now does
+        result = commit_sidecar(repo, message=f"chore(exo): intent-create {intent_id}")
+        assert result["committed"] is True
+        # Sidecar should be clean
+        status = _sidecar_status(repo)
+        assert status == "", f"Sidecar not clean after intent-create commit: {status}"
+
+    def test_ticket_create_commits_sidecar(self, tmp_path: Path) -> None:
+        from exo.kernel.tickets import (
+            allocate_intent_id,
+            allocate_ticket_id,
+            save_ticket,
+        )
+        from exo.stdlib.sidecar import commit_sidecar
+
+        repo = _init_sidecar_repo(tmp_path)
+        # Create parent intent first
+        intent_id = allocate_intent_id(repo)
+        save_ticket(repo, {
+            "id": intent_id, "title": "Parent", "kind": "intent",
+            "brain_dump": "test", "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 12, "max_loc_changed": 400},
+        })
+        commit_sidecar(repo, message=f"chore(exo): intent-create {intent_id}")
+
+        # Create child ticket
+        ticket_id = allocate_ticket_id(repo, kind="task")
+        save_ticket(repo, {
+            "id": ticket_id, "title": "Child task", "kind": "task",
+            "parent_id": intent_id,
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 6, "max_loc_changed": 200},
+        })
+        result = commit_sidecar(repo, message=f"chore(exo): ticket-create {ticket_id}")
+        assert result["committed"] is True
+        status = _sidecar_status(repo)
+        assert status == "", f"Sidecar not clean after ticket-create commit: {status}"
+
+    def test_plan_commits_sidecar(self, tmp_path: Path) -> None:
+        """KernelEngine.plan() should auto-commit created tickets to sidecar."""
+        from exo.stdlib.engine import KernelEngine
+        from exo.stdlib.sidecar import commit_sidecar
+
+        repo = _init_sidecar_repo(tmp_path)
+        engine = KernelEngine(repo, no_llm=True)
+        engine.plan("Build a widget")
+        # After plan, sidecar should be clean (tickets committed)
+        status = _sidecar_status(repo)
+        assert status == "", f"Sidecar not clean after plan: {status}"
+
+    def test_sidecar_commit_message_contains_ticket_id(self, tmp_path: Path) -> None:
+        from exo.kernel.tickets import allocate_intent_id, save_ticket
+        from exo.stdlib.sidecar import commit_sidecar
+
+        repo = _init_sidecar_repo(tmp_path)
+        intent_id = allocate_intent_id(repo)
+        save_ticket(repo, {
+            "id": intent_id, "title": "Tracked intent", "kind": "intent",
+            "brain_dump": "test", "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 12, "max_loc_changed": 400},
+        })
+        commit_sidecar(repo, message=f"chore(exo): intent-create {intent_id}")
+        messages = _sidecar_log(repo, n=3)
+        assert any(intent_id in m for m in messages), (
+            f"Intent ID {intent_id} not in sidecar log: {messages}"
+        )

@@ -1574,6 +1574,19 @@ class KernelEngine:
                 self._audit("create_ticket", "ok", ticket=str(ticket["id"]))
 
         self._audit("plan", "ok", details={"tickets_created": len(created_tickets)})
+
+        # Advisory sidecar commit for newly created tickets
+        if created_tickets:
+            try:
+                from exo.stdlib.sidecar import commit_sidecar
+
+                commit_sidecar(
+                    self.repo,
+                    message=f"chore(exo): plan — {len(created_tickets)} ticket(s) created",
+                )
+            except Exception:
+                pass
+
         return self._response(
             {
                 "spec": str(spec_path.relative_to(self.repo)),
@@ -2159,6 +2172,15 @@ class KernelEngine:
         thread_path.write_text(body + marker, encoding="utf-8")
 
         self._audit("promote", "ok", ticket=ticket_id, path=path)
+
+        # Advisory sidecar commit
+        try:
+            from exo.stdlib.sidecar import commit_sidecar
+
+            commit_sidecar(self.repo, message=f"chore(exo): promote {thread_id} → {ticket_id}")
+        except Exception:
+            pass
+
         return self._response(
             {
                 "thread_id": thread_id,
