@@ -1558,9 +1558,7 @@ if FastMCP:
     ) -> dict[str, Any]:
         """Record that a tool was used in a session. Updates usage tracking."""
         try:
-            tool = mark_tool_used(
-                Path(repo).resolve(), tool_id=tool_id, session_id=session_id
-            )
+            tool = mark_tool_used(Path(repo).resolve(), tool_id=tool_id, session_id=session_id)
             return {
                 "ok": True,
                 "data": {"tool": tool_to_dict(tool)},

@@ -204,7 +204,7 @@ def _generate_preamble(lock: dict[str, Any], config: dict[str, Any], repo: Path 
                     '  `exo tool-register <module> <function> --description "..."`',
                     "",
                     "Mark a tool as used when you import/call it:",
-                    '  `exo tool-use <tool_id>`',
+                    "  `exo tool-use <tool_id>`",
                     "",
                 ]
             )
