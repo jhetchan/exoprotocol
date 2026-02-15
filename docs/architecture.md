@@ -62,7 +62,7 @@ Orchestration and governance subsystems:
 | `scratchpad.py` | Scratch notes and threads |
 | `defaults.py` | Default config and constitution templates |
 | `coherence.py` | Co-update rules and docstring freshness checks |
-| `sidecar.py` | Dual-timeline sidecar worktree management |
+| `sidecar.py` | Dual-timeline sidecar worktree management and auto-commit |
 | `tools.py` | Tool registry, search, usage tracking |
 | `suggest.py` | Duplication detection, tool registration suggestions |
 | `follow_up.py` | Chain reaction: auto-create follow-up tickets from governance gaps |
@@ -202,3 +202,19 @@ coherence:
 ```
 
 Coherence is also included as a subsystem in the composite `exo drift` check.
+
+### Sidecar worktree (dual-timeline)
+
+`exo sidecar-init` mounts `.exo/` as a dedicated git worktree on an orphan `exo-governance` branch, giving app code and governance state independent git histories.
+
+Auto-commit at lifecycle boundaries:
+- **session-start**: commits bootstrap, active session file
+- **session-finish**: commits memento, index row, ticket status changes
+- **session-suspend**: commits suspended payload, ticket pause
+- **session-resume**: commits restored session, stash pop
+
+All commits use `ExoProtocol <exo@local.invalid>` as author, with structured messages like `chore(exo): session-finish SES-xxx [TICKET-yyy]`. Auto-commit is advisory — failures never block the lifecycle event.
+
+Public API:
+- `is_sidecar_worktree(repo)` — detect if `.exo/` is a mounted worktree
+- `commit_sidecar(repo, message=...)` — commit all pending governance changes
