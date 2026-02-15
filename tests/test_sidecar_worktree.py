@@ -352,7 +352,7 @@ class TestTicketCreationSidecarAutoCommit:
     remain untracked in the governance branch."""
 
     def test_intent_create_commits_sidecar(self, tmp_path: Path) -> None:
-        from exo.kernel.tickets import allocate_intent_id, save_ticket, normalize_ticket
+        from exo.kernel.tickets import allocate_intent_id, save_ticket
         from exo.stdlib.sidecar import commit_sidecar
 
         repo = _init_sidecar_repo(tmp_path)
@@ -424,7 +424,6 @@ class TestTicketCreationSidecarAutoCommit:
     def test_plan_commits_sidecar(self, tmp_path: Path) -> None:
         """KernelEngine.plan() should auto-commit created tickets to sidecar."""
         from exo.stdlib.engine import KernelEngine
-        from exo.stdlib.sidecar import commit_sidecar
 
         repo = _init_sidecar_repo(tmp_path)
         engine = KernelEngine(repo, no_llm=True)
