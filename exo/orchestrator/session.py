@@ -1390,10 +1390,8 @@ class AgentSessionManager:
         # Release lock if requested
         released = False
         if release_lock:
-            try:
+            with contextlib.suppress(Exception):
                 released = tickets.release_lock(self.root, ticket_id)
-            except Exception:
-                pass
 
         return {
             "handoff_id": ticket_id,
