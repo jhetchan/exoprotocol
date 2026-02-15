@@ -88,7 +88,14 @@ Works with Claude Code, Cursor, and any MCP-compatible client. Every CLI command
 
 ## Documentation
 
-- [Architecture](https://exoprotocol.dev/#architecture) — layer model, key concepts, module map
+- [Agent Quickstart](docs/agent-quickstart.md) — zero to first governed session
+- [Session Lifecycle](docs/session-lifecycle.md) — state machine, bootstrap anatomy, audit mode
+- [Governance Rules](docs/governance-rules.md) — rule types, budgets, scope, traceability
+- [Config Reference](docs/config-reference.md) — complete `.exo/config.yaml` schema
+- [Error Reference](docs/error-reference.md) — every ExoError code with resolution steps
+- [CLI Reference](docs/cli-reference.md) — all commands at a glance
+- [MCP Tool Reference](docs/mcp-tool-reference.md) — all 64 MCP tool signatures
+- [Architecture](docs/architecture.md) — layer model, key concepts, module map
 - [exoprotocol.dev](https://exoprotocol.dev/) — project site
 
 ## License
