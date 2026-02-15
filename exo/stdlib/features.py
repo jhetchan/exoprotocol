@@ -61,6 +61,8 @@ SKIP_DIRS = frozenset(
         ".pytest_cache",
         "dist",
         "build",
+        "tests",
+        "test",
     }
 )
 

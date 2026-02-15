@@ -23,7 +23,7 @@ REQUIREMENTS_PATH = Path(".exo/requirements.yaml")
 VALID_STATUSES = frozenset({"active", "deprecated", "deleted"})
 VALID_PRIORITIES = frozenset({"high", "medium", "low"})
 
-# Regex: matches `# @req: REQ-001` or `# @req: REQ-001, REQ-002` or `// @implements: REQ-003`
+# Regex: matches requirement annotations (req or implements prefix, comma-separated IDs)
 REQ_TAG_PATTERN = re.compile(
     r"[#/]\s*@(?:req|implements):\s*(.+)",
     re.IGNORECASE,
@@ -63,6 +63,8 @@ SKIP_DIRS = frozenset(
         ".pytest_cache",
         "dist",
         "build",
+        "tests",
+        "test",
     }
 )
 
@@ -223,7 +225,7 @@ def _scan_files(repo: Path, globs: list[str] | None = None) -> list[Path]:
 
 
 def scan_req_refs(repo: Path, *, globs: list[str] | None = None) -> list[ReqCodeRef]:
-    """Scan source files for @req: / @implements: annotations."""
+    """Scan source files for requirement and implements annotations."""
     repo = Path(repo).resolve()
     files = _scan_files(repo, globs)
     refs: list[ReqCodeRef] = []
