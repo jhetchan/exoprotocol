@@ -1305,3 +1305,92 @@ class TestCLIPrune:
         assert "remove_me" not in content
         assert "before" in content
         assert "after" in content
+
+
+# ──────────────────────────────────────────────────────────────
+# Uncovered code detection
+# ──────────────────────────────────────────────────────────────
+
+
+class TestUncoveredCode:
+    def test_uncovered_file_detected(self, tmp_path: Path) -> None:
+        """A source file with no tags and no glob coverage should be flagged."""
+        repo = _bootstrap_repo(tmp_path)
+        _write_features_yaml(repo, [{"id": "auth", "status": "active", "files": ["src/auth.py"]}])
+        _write_source_file(repo, "src/auth.py", "# @feature: auth\ndef login(): pass\n# @endfeature\n")
+        _write_source_file(repo, "src/orphan.py", "def orphan(): pass\n")
+        report = trace(repo)
+        uncovered_kinds = [v for v in report.violations if v.kind == "uncovered_code"]
+        assert len(uncovered_kinds) >= 1
+        uncovered_files = [v.file for v in uncovered_kinds]
+        assert "src/orphan.py" in uncovered_files
+        assert "src/orphan.py" in report.uncovered_files
+
+    def test_file_covered_by_glob_not_flagged(self, tmp_path: Path) -> None:
+        """A file matched by a feature's files glob should not be flagged."""
+        repo = _bootstrap_repo(tmp_path)
+        _write_features_yaml(repo, [{"id": "utils", "status": "active", "files": ["lib/*.py"]}])
+        _write_source_file(repo, "lib/helpers.py", "def helper(): pass\n")
+        report = trace(repo)
+        uncovered_kinds = [v for v in report.violations if v.kind == "uncovered_code"]
+        uncovered_files = [v.file for v in uncovered_kinds]
+        assert "lib/helpers.py" not in uncovered_files
+
+    def test_file_covered_by_tag_not_flagged(self, tmp_path: Path) -> None:
+        """A file with a @feature: tag should not be flagged."""
+        repo = _bootstrap_repo(tmp_path)
+        _write_features_yaml(repo, [{"id": "core", "status": "active"}])
+        _write_source_file(repo, "src/core.py", "# @feature: core\ndef main(): pass\n# @endfeature\n")
+        report = trace(repo)
+        uncovered_kinds = [v for v in report.violations if v.kind == "uncovered_code"]
+        uncovered_files = [v.file for v in uncovered_kinds]
+        assert "src/core.py" not in uncovered_files
+
+    def test_init_files_excluded(self, tmp_path: Path) -> None:
+        """__init__.py files should never be flagged as uncovered."""
+        repo = _bootstrap_repo(tmp_path)
+        _write_features_yaml(repo, [{"id": "pkg", "status": "active"}])
+        _write_source_file(repo, "src/__init__.py", "")
+        _write_source_file(repo, "src/main.py", "# @feature: pkg\ndef fn(): pass\n")
+        report = trace(repo)
+        uncovered_files = [v.file for v in report.violations if v.kind == "uncovered_code"]
+        assert "src/__init__.py" not in uncovered_files
+
+    def test_test_files_excluded(self, tmp_path: Path) -> None:
+        """Files in tests/ directories should be excluded from uncovered check."""
+        repo = _bootstrap_repo(tmp_path)
+        _write_features_yaml(repo, [{"id": "app", "status": "active", "files": ["src/app.py"]}])
+        _write_source_file(repo, "src/app.py", "def app(): pass\n")
+        _write_source_file(repo, "tests/test_app.py", "def test_it(): pass\n")
+        report = trace(repo)
+        uncovered_files = [v.file for v in report.violations if v.kind == "uncovered_code"]
+        assert "tests/test_app.py" not in uncovered_files
+
+    def test_check_uncovered_disabled(self, tmp_path: Path) -> None:
+        """When check_uncovered=False, no uncovered_code violations are produced."""
+        repo = _bootstrap_repo(tmp_path)
+        _write_features_yaml(repo, [{"id": "x", "status": "active"}])
+        _write_source_file(repo, "src/orphan.py", "def orphan(): pass\n")
+        report = trace(repo, check_uncovered=False)
+        uncovered_kinds = [v for v in report.violations if v.kind == "uncovered_code"]
+        assert len(uncovered_kinds) == 0
+        assert report.uncovered_files == []
+
+    def test_uncovered_in_trace_to_dict(self, tmp_path: Path) -> None:
+        """The uncovered_files field should appear in the serialized report."""
+        repo = _bootstrap_repo(tmp_path)
+        _write_features_yaml(repo, [{"id": "x", "status": "active"}])
+        _write_source_file(repo, "src/orphan.py", "def orphan(): pass\n")
+        report = trace(repo)
+        d = trace_to_dict(report)
+        assert "uncovered_files" in d
+        assert "src/orphan.py" in d["uncovered_files"]
+
+    def test_uncovered_in_human_output(self, tmp_path: Path) -> None:
+        """format_trace_human should mention uncovered files when present."""
+        repo = _bootstrap_repo(tmp_path)
+        _write_features_yaml(repo, [{"id": "x", "status": "active"}])
+        _write_source_file(repo, "src/orphan.py", "def orphan(): pass\n")
+        report = trace(repo)
+        text = format_trace_human(report)
+        assert "uncovered" in text.lower()

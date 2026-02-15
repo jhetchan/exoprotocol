@@ -33,7 +33,8 @@ All commands support `--format json`.
 | `exo audit` | Run integrity/rule/lock audit |
 | `exo doctor [--stale-hours N]` | Unified health check (scaffold + config + drift + scan) |
 | `exo config-validate` | Validate .exo/config.yaml structure and values |
-| `exo drift [--skip-adapters] [--skip-features] ...` | Composite governance drift check |
+| `exo drift [--skip-adapters] [--skip-features] [--skip-coherence] ...` | Composite governance drift check |
+| `exo coherence [--skip-co-updates] [--skip-docstrings] [--base main]` | Check co-update rules and docstring freshness |
 | `exo pr-check [--base] [--head] [--drift-threshold]` | PR governance check (commit-to-session coverage) |
 | `exo upgrade [--dry-run]` | Upgrade .exo/ to latest schema (backfill config, create dirs) |
 
@@ -56,6 +57,23 @@ All commands support `--format json`.
 | `exo requirements [--status]` | List requirements from manifest |
 | `exo trace-reqs [--glob "..."]` | Scan code for @req/@implements tags |
 
+## Tool awareness
+
+| Command | Description |
+|---|---|
+| `exo tools [--tag TAG]` | List registered tools from .exo/tools.yaml |
+| `exo tool-register <module> <function> --description "..."` | Register a reusable tool |
+| `exo tool-search <query>` | Search tools by description/tags |
+| `exo tool-remove <tool-id>` | Remove a tool from registry |
+| `exo tool-use <tool-id> [--session-id]` | Record that a tool was used in a session |
+| `exo tool-suggest` | Detect duplication patterns and suggest tool registration |
+
+## Chain reaction
+
+| Command | Description |
+|---|---|
+| `exo follow-ups [--ticket-id TID]` | Detect governance gaps that warrant follow-up tickets (dry-run) |
+
 ## Adapter generation
 
 | Command | Description |
@@ -77,6 +95,7 @@ All commands support `--format json`.
 |---|---|
 | `exo gc [--max-age-days N] [--dry-run]` | Garbage collect old mementos and caches |
 | `exo gc-locks [--remote origin] [--dry-run] [--list]` | Clean up expired distributed leases |
+| `exo sidecar-init [--branch] [--sidecar] [--remote]` | Mount .exo/ as dedicated governance worktree |
 
 ## Lease management
 
@@ -121,6 +140,9 @@ All commands support `--format json`.
 | `exo quorum <ref-id> [--required N]` | Check quorum status |
 | `exo decide-override <intent-id> --override-cap <cap>` | Override decision (cap-gated) |
 | `exo policy-set --policy-cap <cap>` | Install policy bundle (cap-gated) |
+| `exo worker-poll [--topic] [--since] [--limit N]` | Poll ledger topic once and execute pending intents |
+| `exo worker-loop [--topic] [--iterations N] [--sleep-seconds N]` | Run repeated ledger polling loop |
+| `exo escalate-intent <intent-id> --reason "..."` | Record escalation for an intent |
 
 ## MCP server
 

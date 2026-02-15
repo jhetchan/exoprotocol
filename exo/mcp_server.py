@@ -1601,6 +1601,50 @@ if FastMCP:
             }
 
     @mcp.tool(
+        name="exo_follow_ups",
+        description="Detect governance gaps that warrant follow-up tickets. Analyzes feature trace, requirement trace, drift scores, and tool usage to find gaps. Dry-run mode — does not create tickets.",
+    )
+    def exo_follow_ups(repo: str = ".", ticket_id: str = "") -> dict[str, Any]:
+        try:
+            from exo.stdlib.follow_up import (
+                detect_follow_ups,
+                follow_ups_to_list,
+            )
+
+            repo_path = Path(repo).resolve()
+            # Gather trace data if available
+            fu_trace_report = None
+            try:
+                from exo.stdlib.features import FEATURES_PATH
+                from exo.stdlib.features import trace as run_trace
+
+                if (repo_path / FEATURES_PATH).exists():
+                    fu_trace_report = run_trace(repo_path)
+            except Exception:
+                pass
+
+            fu_list = detect_follow_ups(
+                repo_path,
+                ticket_id=ticket_id,
+                trace_report=fu_trace_report,
+            )
+            return {
+                "ok": True,
+                "data": {"count": len(fu_list), "follow_ups": follow_ups_to_list(fu_list)},
+                "events": [],
+                "blocked": False,
+            }
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool(
         name="exo_scan",
         description="Scan repository and detect languages, sensitive files, build dirs, CI systems, and existing governance. Read-only preview of what 'exo init' would customize.",
     )

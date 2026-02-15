@@ -13,7 +13,7 @@ from uuid import uuid4
 from exo.kernel import tickets
 from exo.kernel.audit import append_audit, event_template
 from exo.kernel.errors import ExoError
-from exo.kernel.utils import default_topic_id, ensure_dir, now_iso, relative_posix
+from exo.kernel.utils import default_topic_id, ensure_dir, load_yaml, now_iso, relative_posix
 from exo.stdlib import distributed_leases
 from exo.stdlib.engine import KernelEngine
 from exo.stdlib.features import FEATURES_PATH, TraceReport, format_trace_human, trace_to_dict
@@ -935,6 +935,52 @@ class AgentSessionManager:
             except Exception:
                 pass  # Advisory — never blocks session-finish
 
+        # --- Chain reaction: follow-up tickets (advisory) ---
+        follow_up_data: dict[str, Any] | None = None
+        follow_up_section: str = ""
+        if str(session.get("mode", "work")).strip() != "audit":
+            try:
+                from exo.stdlib.follow_up import (
+                    create_follow_ups,
+                    detect_follow_ups,
+                    format_follow_ups_human,
+                    report_to_dict,
+                )
+
+                fu_list = detect_follow_ups(
+                    self.root,
+                    ticket_id=target_ticket,
+                    trace_report=trace_report,
+                    drift_data={"drift_score": drift_report.drift_score} if drift_report else None,
+                    tools_summary=tools_summary,
+                )
+                if fu_list:
+                    try:
+                        fu_config = load_yaml(self.root / Path(".exo/config.yaml"))
+                    except Exception:
+                        fu_config = {}
+                    fu_enabled = fu_config.get("follow_up", {}).get("enabled", False)
+                    fu_max = fu_config.get("follow_up", {}).get("max_per_session", 5)
+                    if fu_enabled:
+                        fu_report = create_follow_ups(
+                            self.root,
+                            parent_ticket_id=target_ticket,
+                            follow_ups=fu_list,
+                            max_per_session=fu_max,
+                        )
+                    else:
+                        from exo.stdlib.follow_up import FollowUpReport
+
+                        fu_report = FollowUpReport(
+                            detected=tuple(fu_list),
+                            created_ids=(),
+                            skipped=0,
+                        )
+                    follow_up_data = report_to_dict(fu_report)
+                    follow_up_section = format_follow_ups_human(fu_report)
+            except Exception:
+                pass  # Advisory — never blocks session-finish
+
         ticket_status = None
         if set_status != "keep":
             ticket_data = tickets.load_ticket(self.root, target_ticket)
@@ -1006,6 +1052,9 @@ class AgentSessionManager:
         if tools_section:
             memento_sections.append("")
             memento_sections.append(tools_section)
+        if follow_up_section:
+            memento_sections.append("")
+            memento_sections.append(follow_up_section)
         memento_sections.extend(
             [
                 "",
@@ -1087,6 +1136,8 @@ class AgentSessionManager:
             "coherence_warnings": coherence_data.get("warning_count") if coherence_data else None,
             "tools_created": tools_summary["tools_created"] if tools_summary else None,
             "tools_used": tools_summary["tools_used"] if tools_summary else None,
+            "follow_ups_detected": follow_up_data["detected_count"] if follow_up_data else None,
+            "follow_ups_created": follow_up_data["created_count"] if follow_up_data else None,
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
             "audit_warnings": audit_warnings if audit_warnings else None,
@@ -1154,6 +1205,7 @@ class AgentSessionManager:
             "trace": trace_data,
             "coherence": coherence_data,
             "tools": tools_summary,
+            "follow_ups": follow_up_data,
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
             "exo_banner": finish_banner,
