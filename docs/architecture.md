@@ -69,6 +69,7 @@ Orchestration and governance subsystems:
 | `metrics.py` | Governance metrics API for dashboards |
 | `traces.py` | OTel-compatible JSONL trace export |
 | `hooks.py` | Claude Code lifecycle hooks and tool auto-discovery |
+| `ci_fix.py` | CI failure detection, auto-fix, and push |
 
 ### Orchestrator (`exo/orchestrator/`)
 
