@@ -177,7 +177,7 @@ def enforce_scope_partition(
     from exo.kernel import tickets as _tickets  # lazy to avoid circular
     from exo.kernel.errors import ExoError
 
-    own_allow = (ticket_scope.get("allow") or ["**"])
+    own_allow = ticket_scope.get("allow") or ["**"]
 
     for sib in siblings:
         sib_ticket_id = str(sib.get("ticket_id", "")).strip()
@@ -211,9 +211,7 @@ def enforce_scope_partition(
             sib_actor = sib.get("actor", "?")
             raise ExoError(
                 code="SCOPE_PARTITION_VIOLATION",
-                message=(
-                    f"scope overlap with {sib_actor} ({sib_ticket_id}): {', '.join(patterns)}"
-                ),
+                message=(f"scope overlap with {sib_actor} ({sib_ticket_id}): {', '.join(patterns)}"),
                 details={
                     "ticket_id": ticket_id,
                     "sibling_ticket": sib_ticket_id,

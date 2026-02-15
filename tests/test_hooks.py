@@ -242,9 +242,7 @@ class TestInstallHooks:
     def test_idempotent(self, tmp_path: Path) -> None:
         install_hooks(tmp_path)
         install_hooks(tmp_path)
-        settings = json.loads(
-            (tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8")
-        )
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
         # Only one entry per event
         assert len(settings["hooks"]["SessionStart"]) == 1
         assert len(settings["hooks"]["SessionEnd"]) == 1

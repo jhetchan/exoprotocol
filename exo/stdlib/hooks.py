@@ -191,32 +191,38 @@ def discover_tools() -> list[dict[str, Any]]:
     tools: list[dict[str, Any]] = []
 
     # Core CLI — always available
-    tools.append({
-        "name": "exo",
-        "type": "cli",
-        "module": "exo.cli",
-        "description": "ExoProtocol governance CLI",
-    })
+    tools.append(
+        {
+            "name": "exo",
+            "type": "cli",
+            "module": "exo.cli",
+            "description": "ExoProtocol governance CLI",
+        }
+    )
 
     # MCP server — available when mcp extra installed
     try:
         importlib.metadata.distribution("mcp")
-        tools.append({
-            "name": "exo-mcp",
-            "type": "mcp",
-            "module": "exo.mcp_server",
-            "description": "ExoProtocol MCP server",
-        })
+        tools.append(
+            {
+                "name": "exo-mcp",
+                "type": "mcp",
+                "module": "exo.mcp_server",
+                "description": "ExoProtocol MCP server",
+            }
+        )
     except importlib.metadata.PackageNotFoundError:
         pass
 
     # Claude Code hooks — always available (part of core package)
-    tools.append({
-        "name": "claude-hooks",
-        "type": "hooks",
-        "module": "exo.stdlib.hooks",
-        "description": "Claude Code SessionStart/SessionEnd hooks",
-    })
+    tools.append(
+        {
+            "name": "claude-hooks",
+            "type": "hooks",
+            "module": "exo.stdlib.hooks",
+            "description": "Claude Code SessionStart/SessionEnd hooks",
+        }
+    )
 
     # Dynamically discovered integration entry points
     try:
@@ -226,12 +232,14 @@ def discover_tools() -> list[dict[str, Any]]:
         else:
             exo_eps = list(eps.get("exoprotocol.integrations", []))
         for ep in exo_eps:
-            tools.append({
-                "name": ep.name,
-                "type": "integration",
-                "module": str(ep.value),
-                "description": f"ExoProtocol {ep.name} integration",
-            })
+            tools.append(
+                {
+                    "name": ep.name,
+                    "type": "integration",
+                    "module": str(ep.value),
+                    "description": f"ExoProtocol {ep.name} integration",
+                }
+            )
     except Exception:  # noqa: BLE001
         pass  # Never crash on discovery failure
 

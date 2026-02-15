@@ -1288,9 +1288,7 @@ class TestSandboxAdapter:
             "hooks": {"SessionStart": [{"matcher": "startup", "hooks": []}]},
             "customKey": "preserved",
         }
-        (claude_dir / "settings.json").write_text(
-            json.dumps(existing), encoding="utf-8"
-        )
+        (claude_dir / "settings.json").write_text(json.dumps(existing), encoding="utf-8")
         generate_adapters(repo, targets=["sandbox"])
         settings = json.loads((claude_dir / "settings.json").read_text(encoding="utf-8"))
         # Hooks and custom keys preserved
@@ -1341,9 +1339,7 @@ class TestSandboxAdapter:
         repo = _bootstrap_repo(tmp_path)
         claude_dir = repo / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
-        (claude_dir / "settings.json").write_text(
-            json.dumps({"hooks": {}}), encoding="utf-8"
-        )
+        (claude_dir / "settings.json").write_text(json.dumps({"hooks": {}}), encoding="utf-8")
         result = generate_adapters(repo, targets=["sandbox"])
         assert result["files"]["sandbox"]["merged"] is True
 

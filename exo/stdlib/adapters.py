@@ -512,11 +512,13 @@ def derive_sandbox_policy(repo: Path) -> dict[str, Any]:
     for rule in rules:
         if rule.get("type") != "filesystem_deny":
             continue
-        source_rules.append({
-            "id": rule.get("id", ""),
-            "patterns": rule.get("patterns", []),
-            "actions": rule.get("actions", []),
-        })
+        source_rules.append(
+            {
+                "id": rule.get("id", ""),
+                "patterns": rule.get("patterns", []),
+                "actions": rule.get("actions", []),
+            }
+        )
 
     return {
         "deny_entries": deny_entries,

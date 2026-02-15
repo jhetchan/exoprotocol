@@ -83,9 +83,7 @@ class TestEnforceScopePartition:
         _create_ticket(repo, "TICKET-B", scope_allow=["tests/**"])
         siblings = [{"ticket_id": "TICKET-B", "actor": "agent-b"}]
         # Should not raise
-        enforce_scope_partition(
-            repo, "TICKET-A", {"allow": ["src/**"], "deny": []}, siblings
-        )
+        enforce_scope_partition(repo, "TICKET-A", {"allow": ["src/**"], "deny": []}, siblings)
 
     def test_overlap_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -93,9 +91,7 @@ class TestEnforceScopePartition:
         _create_ticket(repo, "TICKET-B", scope_allow=["src/api/**"])
         siblings = [{"ticket_id": "TICKET-B", "actor": "agent-b"}]
         with pytest.raises(ExoError, match="SCOPE_PARTITION_VIOLATION"):
-            enforce_scope_partition(
-                repo, "TICKET-A", {"allow": ["src/**"], "deny": []}, siblings
-            )
+            enforce_scope_partition(repo, "TICKET-A", {"allow": ["src/**"], "deny": []}, siblings)
 
     def test_both_default_raises(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -103,17 +99,13 @@ class TestEnforceScopePartition:
         _create_ticket(repo, "TICKET-B")  # default scope ["**"]
         siblings = [{"ticket_id": "TICKET-B", "actor": "agent-b"}]
         with pytest.raises(ExoError, match="concurrent sessions require explicit scope"):
-            enforce_scope_partition(
-                repo, "TICKET-A", {"allow": ["**"], "deny": []}, siblings
-            )
+            enforce_scope_partition(repo, "TICKET-A", {"allow": ["**"], "deny": []}, siblings)
 
     def test_no_siblings_passes(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         _create_ticket(repo, "TICKET-A", scope_allow=["src/**"])
         # No siblings — should not raise
-        enforce_scope_partition(
-            repo, "TICKET-A", {"allow": ["src/**"], "deny": []}, []
-        )
+        enforce_scope_partition(repo, "TICKET-A", {"allow": ["src/**"], "deny": []}, [])
 
     def test_error_includes_details(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
@@ -121,9 +113,7 @@ class TestEnforceScopePartition:
         _create_ticket(repo, "TICKET-B", scope_allow=["src/api/**"])
         siblings = [{"ticket_id": "TICKET-B", "actor": "agent-b"}]
         with pytest.raises(ExoError) as exc_info:
-            enforce_scope_partition(
-                repo, "TICKET-A", {"allow": ["src/**"], "deny": []}, siblings
-            )
+            enforce_scope_partition(repo, "TICKET-A", {"allow": ["src/**"], "deny": []}, siblings)
         details = exc_info.value.details
         assert details["sibling_ticket"] == "TICKET-B"
         assert details["sibling_actor"] == "agent-b"

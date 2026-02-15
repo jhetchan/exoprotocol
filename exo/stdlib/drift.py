@@ -583,34 +583,40 @@ def fleet_drift(
     agents: list[dict[str, Any]] = []
 
     for session in active:
-        agents.append({
-            "actor": session.get("actor", ""),
-            "session_id": session.get("session_id", ""),
-            "ticket_id": session.get("ticket_id", ""),
-            "state": "active",
-            "drift_score": None,  # drift only computed at finish
-            "stale": session in stale,
-        })
+        agents.append(
+            {
+                "actor": session.get("actor", ""),
+                "session_id": session.get("session_id", ""),
+                "ticket_id": session.get("ticket_id", ""),
+                "state": "active",
+                "drift_score": None,  # drift only computed at finish
+                "stale": session in stale,
+            }
+        )
 
     for session in suspended:
-        agents.append({
-            "actor": session.get("actor", ""),
-            "session_id": session.get("session_id", ""),
-            "ticket_id": session.get("ticket_id", ""),
-            "state": "suspended",
-            "drift_score": None,
-            "stale": session in stale,
-        })
+        agents.append(
+            {
+                "actor": session.get("actor", ""),
+                "session_id": session.get("session_id", ""),
+                "ticket_id": session.get("ticket_id", ""),
+                "state": "suspended",
+                "drift_score": None,
+                "stale": session in stale,
+            }
+        )
 
     for entry in finished:
-        agents.append({
-            "actor": entry.get("actor", ""),
-            "session_id": entry.get("session_id", ""),
-            "ticket_id": entry.get("ticket_id", ""),
-            "state": "finished",
-            "drift_score": entry.get("drift_score"),
-            "stale": False,
-        })
+        agents.append(
+            {
+                "actor": entry.get("actor", ""),
+                "session_id": entry.get("session_id", ""),
+                "ticket_id": entry.get("ticket_id", ""),
+                "state": "finished",
+                "drift_score": entry.get("drift_score"),
+                "stale": False,
+            }
+        )
 
     # Compute fleet-level aggregates
     drift_scores = [a["drift_score"] for a in agents if a["drift_score"] is not None]

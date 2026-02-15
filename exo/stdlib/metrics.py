@@ -113,8 +113,7 @@ def format_metrics_human(data: dict[str, Any]) -> str:
 
     lines.append("Verification:")
     lines.append(
-        f"  passed: {data['verify_passed']}, failed: {data['verify_failed']}, "
-        f"bypassed: {data['verify_bypassed']}"
+        f"  passed: {data['verify_passed']}, failed: {data['verify_failed']}, bypassed: {data['verify_bypassed']}"
     )
     lines.append(f"  pass rate: {data['verify_pass_rate']:.1%}")
     lines.append("")

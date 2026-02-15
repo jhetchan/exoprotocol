@@ -69,6 +69,7 @@ class MockAgent:
 
 class MockContext:
     """Minimal mock for OpenAI Agents SDK RunContext."""
+
     pass
 
 
@@ -111,9 +112,7 @@ class TestExoRunHooksLifecycle:
         _create_ticket_with_lock(repo, "TKT-1", owner="agent:openai")
         hooks = ExoRunHooks(repo=repo, actor="agent:openai")
 
-        asyncio.run(
-            hooks.on_agent_start(MockContext(), MockAgent())
-        )
+        asyncio.run(hooks.on_agent_start(MockContext(), MockAgent()))
         assert hooks.get_session_id() != ""
 
     def test_start_reuses_active_session(self, tmp_path: Path) -> None:
@@ -127,9 +126,7 @@ class TestExoRunHooksLifecycle:
         existing_id = result["session"]["session_id"]
 
         hooks = ExoRunHooks(repo=repo, actor="agent:openai")
-        asyncio.run(
-            hooks.on_agent_start(MockContext(), MockAgent())
-        )
+        asyncio.run(hooks.on_agent_start(MockContext(), MockAgent()))
         assert hooks.get_session_id() == existing_id
         assert hooks._started is False
 
@@ -154,15 +151,11 @@ class TestExoRunHooksLifecycle:
         repo = _bootstrap_repo(tmp_path)
         hooks = ExoRunHooks(repo=repo, actor="agent:openai")
         # Should not raise even with no session
-        asyncio.run(
-            hooks.on_agent_end(MockContext(), MockAgent(), "done")
-        )
+        asyncio.run(hooks.on_agent_end(MockContext(), MockAgent(), "done"))
 
     def test_start_no_exo_dir_is_graceful(self, tmp_path: Path) -> None:
         hooks = ExoRunHooks(repo=tmp_path, actor="agent:openai")
-        asyncio.run(
-            hooks.on_agent_start(MockContext(), MockAgent())
-        )
+        asyncio.run(hooks.on_agent_start(MockContext(), MockAgent()))
         assert hooks.get_session_id() == ""
 
 
@@ -172,9 +165,7 @@ class TestExoRunHooksLifecycle:
 class TestExoRunHooksToolTracking:
     def test_tool_start_records_call(self) -> None:
         hooks = ExoRunHooks()
-        asyncio.run(
-            hooks.on_tool_start(MockContext(), MockAgent(), MockTool("search"))
-        )
+        asyncio.run(hooks.on_tool_start(MockContext(), MockAgent(), MockTool("search")))
         calls = hooks.get_tool_calls()
         assert len(calls) == 1
         assert calls[0]["tool"] == "search"
@@ -192,9 +183,7 @@ class TestExoRunHooksToolTracking:
 
     def test_tool_end_is_noop(self) -> None:
         hooks = ExoRunHooks()
-        asyncio.run(
-            hooks.on_tool_end(MockContext(), MockAgent(), MockTool(), "result")
-        )
+        asyncio.run(hooks.on_tool_end(MockContext(), MockAgent(), MockTool(), "result"))
 
     def test_tool_calls_in_summary(self, tmp_path: Path) -> None:
         """Finished session summary includes tool call count."""
@@ -217,15 +206,11 @@ class TestExoRunHooksToolTracking:
 class TestExoRunHooksHandoff:
     def test_handoff_does_not_raise(self) -> None:
         hooks = ExoRunHooks()
-        asyncio.run(
-            hooks.on_handoff(MockContext(), MockAgent("target"), MockAgent("source"))
-        )
+        asyncio.run(hooks.on_handoff(MockContext(), MockAgent("target"), MockAgent("source")))
 
     def test_get_tool_calls_returns_copy(self) -> None:
         hooks = ExoRunHooks()
-        asyncio.run(
-            hooks.on_tool_start(MockContext(), MockAgent(), MockTool("x"))
-        )
+        asyncio.run(hooks.on_tool_start(MockContext(), MockAgent(), MockTool("x")))
         calls = hooks.get_tool_calls()
         calls.clear()
         assert len(hooks.get_tool_calls()) == 1  # original not affected
