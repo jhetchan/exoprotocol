@@ -1,4 +1,5 @@
 # @feature:session-lifecycle
+# @req: REQ-SES-001, REQ-SES-002
 from __future__ import annotations
 
 import contextlib
