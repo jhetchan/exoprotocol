@@ -162,6 +162,68 @@ def detect_scope_conflicts(
     return advisories
 
 
+def enforce_scope_partition(
+    repo: Path,
+    ticket_id: str,
+    ticket_scope: dict[str, Any],
+    siblings: list[dict[str, Any]],
+) -> None:
+    """Enforce scope disjointness with active siblings.
+
+    Unlike ``detect_scope_conflicts()`` (advisory), this raises ``ExoError``
+    on the first overlap found.  Used by concurrent session mode where scope
+    partitioning replaces lock-based exclusion.
+    """
+    from exo.kernel import tickets as _tickets  # lazy to avoid circular
+    from exo.kernel.errors import ExoError
+
+    own_allow = (ticket_scope.get("allow") or ["**"])
+
+    for sib in siblings:
+        sib_ticket_id = str(sib.get("ticket_id", "")).strip()
+        if not sib_ticket_id or sib_ticket_id == ticket_id:
+            continue
+        try:
+            sib_ticket = _tickets.load_ticket(repo, sib_ticket_id)
+        except Exception:
+            continue
+        sib_scope = sib_ticket.get("scope") or {}
+        sib_allow = sib_scope.get("allow") or ["**"]
+
+        # Both default ["**"] → can't partition without explicit scope
+        if own_allow == ["**"] and sib_allow == ["**"]:
+            raise ExoError(
+                code="SCOPE_PARTITION_VIOLATION",
+                message=(
+                    f"concurrent sessions require explicit scope — both {ticket_id} and "
+                    f"{sib_ticket_id} use default scope ['**']"
+                ),
+                details={
+                    "ticket_id": ticket_id,
+                    "sibling_ticket": sib_ticket_id,
+                    "sibling_actor": sib.get("actor", "?"),
+                },
+                blocked=True,
+            )
+
+        overlaps, patterns = _scopes_overlap(ticket_scope, sib_scope)
+        if overlaps:
+            sib_actor = sib.get("actor", "?")
+            raise ExoError(
+                code="SCOPE_PARTITION_VIOLATION",
+                message=(
+                    f"scope overlap with {sib_actor} ({sib_ticket_id}): {', '.join(patterns)}"
+                ),
+                details={
+                    "ticket_id": ticket_id,
+                    "sibling_ticket": sib_ticket_id,
+                    "sibling_actor": sib_actor,
+                    "overlapping_patterns": patterns,
+                },
+                blocked=True,
+            )
+
+
 # ---------------------------------------------------------------------------
 # 2. Unmerged work advisory
 # ---------------------------------------------------------------------------

@@ -66,10 +66,21 @@ Orchestration and governance subsystems:
 | `tools.py` | Tool registry, search, usage tracking |
 | `suggest.py` | Duplication detection, tool registration suggestions |
 | `follow_up.py` | Chain reaction: auto-create follow-up tickets from governance gaps |
+| `metrics.py` | Governance metrics API for dashboards |
+| `traces.py` | OTel-compatible JSONL trace export |
+| `hooks.py` | Claude Code lifecycle hooks and tool auto-discovery |
 
 ### Orchestrator (`exo/orchestrator/`)
 
-Layer-3 session/worker lifecycle. Handles bootstrap prompt generation, closeout mementos, suspend/resume, audit sessions, and crash recovery.
+Layer-3 session/worker lifecycle. Handles bootstrap prompt generation, closeout mementos, suspend/resume, audit sessions, agent handoff, and crash recovery.
+
+### Integrations (`exo/integrations/`)
+
+SDK-specific hooks for agent frameworks:
+
+| Module | Purpose |
+|---|---|
+| `openai_agents.py` | `ExoRunHooks` for OpenAI Agents SDK (`Runner.run(agent, hooks=...)`) |
 
 ## Key concepts
 
@@ -202,6 +213,63 @@ coherence:
 ```
 
 Coherence is also included as a subsystem in the composite `exo drift` check.
+
+### Agent handoff
+
+Governed transfer of work between agents on the same ticket:
+
+```bash
+EXO_ACTOR=agent:claude-opus exo session-handoff \
+  --to agent:claude-sonnet --ticket-id TICKET-001 \
+  --summary "Built API endpoints" --reason "Needs test expertise" \
+  --next-step "Write integration tests"
+```
+
+Flow: Agent A finishes session → writes handoff record → releases lock → Agent B starts session → handoff context injected into bootstrap → handoff record consumed.
+
+Handoff records are stored at `.exo/cache/sessions/handoff-{ticket_id}.json` and consumed (deleted) when the receiving agent starts its session.
+
+### SDK integrations
+
+ExoProtocol provides native hooks for agent frameworks:
+
+**OpenAI Agents SDK:**
+
+```python
+from exo.integrations.openai_agents import ExoRunHooks
+from agents import Runner
+
+hooks = ExoRunHooks(repo=".", ticket_id="TKT-...", actor="agent:openai")
+result = await Runner.run(agent, hooks=hooks)
+```
+
+`ExoRunHooks` wraps the session lifecycle around agent runs — `on_agent_start` creates a governed session, `on_agent_end` finishes it, `on_tool_start` logs tool invocations. All governance calls are wrapped in try/except and never crash the agent run.
+
+**Claude Code hooks:**
+
+```bash
+pip install exoprotocol
+```
+
+Claude Code hooks are installed via `exo hook-install` and automatically start/finish governed sessions on `SessionStart`/`SessionEnd` events.
+
+**Tool auto-discovery:**
+
+`discover_tools()` in `exo/stdlib/hooks.py` scans `importlib.metadata` entry points under the `exoprotocol.integrations` group, plus core CLI and MCP tools. Install extras to register integrations:
+
+```bash
+pip install exoprotocol[openai-agents]
+```
+
+### Observability
+
+**Governance metrics** (`exo metrics`): Dashboard-ready aggregate stats — verify pass rate, drift distribution (low/medium/high), ticket throughput, actor breakdown, mode counts (work vs audit).
+
+**Fleet drift** (`exo fleet-drift`): Multi-agent drift aggregation across active, suspended, and recent finished sessions. Surfaces high-drift agents and stale sessions.
+
+**Structured traces** (`exo export-traces`): Converts session index entries to OTel-compatible JSONL spans. Each session becomes a span with `exo.*` namespaced attributes, nanosecond timestamps, and events for drift checks and feature traces. Output at `.exo/logs/traces.jsonl` can be ingested by Jaeger, Grafana Tempo, or any OTel-compatible backend.
+
+**Sandbox policy preview** (`exo sandbox-policy`): Derives Claude Code sandbox permissions from constitution deny rules. Maps `read` → `Read(pattern)`, `write` → `Edit(pattern)`, `delete` → `Edit(pattern)` + `Bash(rm pattern)`.
 
 ### Sidecar worktree (dual-timeline)
 

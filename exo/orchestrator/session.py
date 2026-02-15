@@ -36,6 +36,7 @@ SESSION_SUSPENDED_DIR = Path(".exo/memory/suspended")
 SESSION_INDEX_PATH = SESSION_MEMORY_DIR / "index.jsonl"
 SESSION_LOG_PATH = Path(".exo/logs/session.log.jsonl")
 SESSION_LOG_LOCK = Path(".exo/logs/session.log.lock")
+HANDOFF_PREFIX = ".exo/cache/sessions/handoff-"
 
 EXO_PROTOCOL_VERSION = "v1"
 
@@ -98,7 +99,12 @@ def _exo_banner(
     lines = [top]
 
     if event == "start":
-        label = "EXO GOVERNED SESSION" if mode == "work" else "EXO AUDIT SESSION"
+        if mode == "concurrent":
+            label = "EXO CONCURRENT SESSION"
+        elif mode == "audit":
+            label = "EXO AUDIT SESSION"
+        else:
+            label = "EXO GOVERNED SESSION"
         lines.append(_pad(f">>> {label}"))
         lines.append(_pad(f"protocol: ExoProtocol {EXO_PROTOCOL_VERSION} | mode: {mode}"))
         lines.append(_pad(f"ticket: {ticket_id} | actor: {actor}"))
@@ -217,6 +223,24 @@ def _last_writing_session(repo: Path, ticket_id: str) -> dict[str, Any] | None:
     return latest
 
 
+def _load_handoff(repo: Path, ticket_id: str) -> dict[str, Any] | None:
+    """Load pending handoff record for a ticket, or None if absent."""
+    path = repo / f"{HANDOFF_PREFIX}{ticket_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _consume_handoff(repo: Path, ticket_id: str) -> None:
+    """Delete handoff record after consumption."""
+    path = repo / f"{HANDOFF_PREFIX}{ticket_id}.json"
+    with contextlib.suppress(FileNotFoundError):
+        path.unlink()
+
+
 class AgentSessionManager:
     """Agent bootstrap/closeout lifecycle for bounded-context multi-vendor sessions."""
 
@@ -269,6 +293,7 @@ class AgentSessionManager:
         remote: str = "origin",
         duration_hours: int = 2,
         mode: str = "work",
+        concurrent: bool = False,
         pr_base: str | None = None,
         pr_head: str | None = None,
     ) -> dict[str, Any]:
@@ -335,35 +360,55 @@ class AgentSessionManager:
             )
 
         ticket = tickets.load_ticket(self.root, chosen_ticket)
-        if acquire_lock and not lock:
-            if distributed:
-                manager = distributed_leases.GitDistributedLeaseManager(self.root)
-                out = manager.claim(
-                    chosen_ticket,
-                    owner=self.actor,
-                    role=(role or "developer"),
-                    duration_hours=duration_hours,
-                    remote=remote,
-                )
-                lock = dict(out.get("lock", {}))
-            else:
-                lock = tickets.acquire_lock(
-                    self.root,
-                    chosen_ticket,
-                    owner=self.actor,
-                    role=(role or "developer"),
-                    duration_hours=duration_hours,
-                )
 
-        lock = tickets.ensure_lock(self.root, ticket_id=chosen_ticket)
-        lock_owner = str(lock.get("owner", "")).strip()
-        if lock_owner and lock_owner != self.actor:
-            raise ExoError(
-                code="SESSION_LOCK_OWNER_MISMATCH",
-                message=f"Active lock owner is {lock_owner}; session actor is {self.actor}",
-                details={"ticket_id": chosen_ticket, "lock_owner": lock_owner, "actor": self.actor},
-                blocked=True,
-            )
+        # --- Check for pending handoff ---
+        handoff_record = _load_handoff(self.root, chosen_ticket)
+
+        # --- Concurrent mode: scope-governed, no lock required ---
+        _concurrent_siblings: list[dict[str, Any]] = []
+        if concurrent:
+            try:
+                _cscan = scan_sessions(self.root)
+                _concurrent_siblings = [
+                    s for s in _cscan.get("active_sessions", []) if s.get("actor", "") != self.actor
+                ]
+            except Exception:
+                pass
+            from exo.stdlib.conflicts import enforce_scope_partition
+
+            enforce_scope_partition(self.root, chosen_ticket, ticket.get("scope") or {}, _concurrent_siblings)
+            lock = tickets.load_lock(self.root) or {}
+            lock_owner = str(lock.get("owner", "")).strip()
+        else:
+            if acquire_lock and not lock:
+                if distributed:
+                    manager = distributed_leases.GitDistributedLeaseManager(self.root)
+                    out = manager.claim(
+                        chosen_ticket,
+                        owner=self.actor,
+                        role=(role or "developer"),
+                        duration_hours=duration_hours,
+                        remote=remote,
+                    )
+                    lock = dict(out.get("lock", {}))
+                else:
+                    lock = tickets.acquire_lock(
+                        self.root,
+                        chosen_ticket,
+                        owner=self.actor,
+                        role=(role or "developer"),
+                        duration_hours=duration_hours,
+                    )
+
+            lock = tickets.ensure_lock(self.root, ticket_id=chosen_ticket)
+            lock_owner = str(lock.get("owner", "")).strip()
+            if lock_owner and lock_owner != self.actor:
+                raise ExoError(
+                    code="SESSION_LOCK_OWNER_MISMATCH",
+                    message=f"Active lock owner is {lock_owner}; session actor is {self.actor}",
+                    details={"ticket_id": chosen_ticket, "lock_owner": lock_owner, "actor": self.actor},
+                    blocked=True,
+                )
 
         started_at = now_iso()
         session_id = _session_id()
@@ -544,9 +589,10 @@ class AgentSessionManager:
         except Exception:
             pass  # Advisory — never blocks start
 
+        banner_mode = "concurrent" if concurrent else mode
         start_banner = _exo_banner(
             event="start",
-            mode=mode,
+            mode=banner_mode,
             ticket_id=chosen_ticket,
             actor=self.actor,
             model=model,
@@ -583,6 +629,33 @@ class AgentSessionManager:
             f"- {json.dumps(ticket.get('checks') or [], ensure_ascii=True)}",
             "",
         ]
+
+        if handoff_record:
+            bootstrap_lines.append("## Handoff Context")
+            ho_from = handoff_record.get("from_actor", "unknown")
+            ho_sid = handoff_record.get("from_session_id", "unknown")
+            bootstrap_lines.append(f"Received handoff from {ho_from} (session {ho_sid})")
+            ho_reason = handoff_record.get("reason", "")
+            if ho_reason:
+                bootstrap_lines.append(f"Reason: {ho_reason}")
+            bootstrap_lines.append(f"Summary: {handoff_record.get('summary', '')}")
+            ho_next = handoff_record.get("next_steps", "")
+            if ho_next:
+                bootstrap_lines.append(f"Next steps: {ho_next}")
+            ho_branch = handoff_record.get("from_branch", "")
+            if ho_branch:
+                bootstrap_lines.append(f"Branch: {ho_branch}")
+            bootstrap_lines.append("")
+            _consume_handoff(self.root, chosen_ticket)
+
+        if concurrent and _concurrent_siblings:
+            bootstrap_lines.append("## Scope Partition (concurrent mode)")
+            bootstrap_lines.append("SCOPE ENFORCEMENT: Active. Files outside your ticket scope are DENIED.")
+            for sib in _concurrent_siblings:
+                sib_actor = sib.get("actor", "?")
+                sib_ticket = sib.get("ticket_id", "?")
+                bootstrap_lines.append(f"- {sib_actor}: ticket={sib_ticket}")
+            bootstrap_lines.append("")
 
         if git_workflow_lines:
             bootstrap_lines.extend(git_workflow_lines)
@@ -735,6 +808,8 @@ class AgentSessionManager:
             "bootstrap_path": relative_posix(self.bootstrap_path, self.root),
             "writing_session": writing_session,
             "pr_check": pr_check_data,
+            "concurrent": concurrent,
+            "handoff_from": handoff_record,
             "start_advisories": start_advisories if start_advisories else None,
             "machine_snapshot": machine_snap if machine_snap else None,
         }
@@ -1244,6 +1319,89 @@ class AgentSessionManager:
             result["errors"] = errors_list
             result["error_count"] = sum(e["count"] for e in errors_list)
         return result
+
+    def handoff(
+        self,
+        *,
+        to_actor: str,
+        ticket_id: str,
+        summary: str,
+        reason: str = "",
+        next_steps: str = "",
+        release_lock: bool = True,
+    ) -> dict[str, Any]:
+        """Hand off the current session to another agent.
+
+        Finishes the current session, writes a handoff record, and optionally
+        releases the lock so the target agent can acquire it.
+        """
+        session = self._load_active()
+        if not session:
+            raise ExoError(
+                code="SESSION_NOT_ACTIVE",
+                message=f"No active session for actor {self.actor}",
+                blocked=True,
+            )
+
+        session_ticket = str(session.get("ticket_id", "")).strip()
+        if session_ticket != ticket_id:
+            raise ExoError(
+                code="SESSION_TICKET_MISMATCH",
+                message=f"Active session is for {session_ticket}, not {ticket_id}",
+                details={"active_ticket": session_ticket, "requested_ticket": ticket_id},
+                blocked=True,
+            )
+
+        from_session_id = str(session.get("session_id", ""))
+        from_branch = str(session.get("git_branch", ""))
+        ticket = tickets.load_ticket(self.root, ticket_id)
+        scope = ticket.get("scope") or {}
+
+        # Finish the session
+        self.finish(
+            summary=summary,
+            ticket_id=ticket_id,
+            set_status="keep",
+            skip_check=True,
+            break_glass_reason=f"handoff to {to_actor}",
+            next_step=next_steps or None,
+        )
+
+        # Write handoff record
+        handoff_record: dict[str, Any] = {
+            "from_actor": self.actor,
+            "to_actor": to_actor,
+            "ticket_id": ticket_id,
+            "from_session_id": from_session_id,
+            "reason": reason,
+            "summary": summary,
+            "next_steps": next_steps,
+            "scope": scope,
+            "created_at": now_iso(),
+            "from_branch": from_branch,
+        }
+        handoff_path = self.root / f"{HANDOFF_PREFIX}{ticket_id}.json"
+        handoff_path.parent.mkdir(parents=True, exist_ok=True)
+        handoff_path.write_text(
+            json.dumps(handoff_record, indent=2, ensure_ascii=True) + "\n",
+            encoding="utf-8",
+        )
+
+        # Release lock if requested
+        released = False
+        if release_lock:
+            try:
+                released = tickets.release_lock(self.root, ticket_id)
+            except Exception:
+                pass
+
+        return {
+            "handoff_id": ticket_id,
+            "from_actor": self.actor,
+            "to_actor": to_actor,
+            "from_session_id": from_session_id,
+            "released_lock": released,
+        }
 
     def suspend(
         self,

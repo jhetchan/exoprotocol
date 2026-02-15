@@ -735,6 +735,38 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_session_handoff(
+        to_actor: str,
+        ticket_id: str,
+        summary: str,
+        repo: str = ".",
+        reason: str = "",
+        next_steps: str = "",
+        release_lock: bool = True,
+    ) -> dict[str, Any]:
+        """Hand off active session to another agent with context transfer."""
+        manager = AgentSessionManager(Path(repo).resolve(), actor="agent:mcp")
+        try:
+            data = manager.handoff(
+                to_actor=to_actor,
+                ticket_id=ticket_id,
+                summary=summary,
+                reason=reason,
+                next_steps=next_steps,
+                release_lock=release_lock,
+            )
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_observe(
         ticket_id: str,
         tag: str,
@@ -1247,6 +1279,36 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_fleet_drift(
+        repo: str = ".",
+        stale_hours: float = 48.0,
+        include_finished: int = 10,
+    ) -> dict[str, Any]:
+        """Aggregate drift across active, suspended, and recent finished sessions.
+
+        Provides a fleet-level view of governance drift for multi-agent teams.
+        Shows per-agent drift scores, stale sessions, and fleet-level averages.
+        """
+        from exo.stdlib.drift import fleet_drift
+
+        try:
+            data = fleet_drift(
+                Path(repo).resolve(),
+                stale_hours=stale_hours,
+                include_finished=include_finished,
+            )
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_coherence(
         repo: str = ".",
         base: str = "main",
@@ -1335,6 +1397,57 @@ if FastMCP:
                 }
             data = manager.cleanup_locks(remote=remote, dry_run=dry_run)
             return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_metrics(
+        repo: str = ".",
+    ) -> dict[str, Any]:
+        """Compute governance metrics for dashboards.
+
+        Returns aggregate statistics from session history including verification
+        rates, drift distribution, ticket throughput, and actor breakdown.
+        """
+        from exo.stdlib.metrics import compute_metrics
+
+        try:
+            data = compute_metrics(Path(repo).resolve())
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_export_traces(
+        repo: str = ".",
+        since: str = "",
+        write: bool = True,
+    ) -> dict[str, Any]:
+        """Export governance events as OTel-compatible JSONL traces.
+
+        Reads session index and converts each session into an OpenTelemetry
+        span with attributes, events, and status. Output is written to
+        .exo/logs/traces.jsonl by default.
+        """
+        from exo.stdlib.traces import export_traces
+
+        try:
+            result = export_traces(Path(repo).resolve(), since=since or None, write=write)
+            return {"ok": True, "data": result, "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001

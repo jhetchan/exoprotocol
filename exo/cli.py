@@ -19,9 +19,9 @@ from exo.kernel.tickets import (
 )
 from exo.kernel.utils import default_topic_id
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
-from exo.stdlib.adapters import ADAPTER_TARGETS, generate_adapters
+from exo.stdlib.adapters import ADAPTER_TARGETS, derive_sandbox_policy, format_sandbox_policy_human, generate_adapters
 from exo.stdlib.drift import drift as run_drift
-from exo.stdlib.drift import drift_to_dict, format_drift_human
+from exo.stdlib.drift import drift_to_dict, fleet_drift, format_drift_human, format_fleet_drift_human
 from exo.stdlib.engine import KernelEngine
 from exo.stdlib.features import (
     features_to_list,
@@ -54,7 +54,9 @@ from exo.stdlib.requirements import (
     requirements_to_list,
     trace_requirements,
 )
+from exo.stdlib.metrics import compute_metrics, format_metrics_human
 from exo.stdlib.timeline import build_intent_timeline, format_timeline_human
+from exo.stdlib.traces import export_traces, format_traces_human
 from exo.stdlib.tools import (
     TOOLS_PATH,
     format_tools_human,
@@ -325,6 +327,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Error encountered during session (format: 'tool:message' or just 'message')",
     )
 
+    handoff_cmd = sub.add_parser("session-handoff", help="Hand off active session to another agent")
+    handoff_cmd.add_argument("--to", required=True, dest="to_actor", help="Target actor (e.g. agent:claude-sonnet)")
+    handoff_cmd.add_argument("--ticket-id", required=True)
+    handoff_cmd.add_argument("--summary", required=True)
+    handoff_cmd.add_argument("--reason", default="")
+    handoff_cmd.add_argument("--next-step", default="")
+    handoff_cmd.add_argument("--keep-lock", action="store_true", help="Do not release lock (default: release)")
+
     audit_session_cmd = sub.add_parser(
         "session-audit", help="Start an isolated audit session with context isolation and adversarial persona"
     )
@@ -398,6 +408,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     adapter_cmd.add_argument("--dry-run", action="store_true", help="Preview output without writing files")
 
+    sub.add_parser(
+        "sandbox-policy",
+        help="Preview sandbox permissions derived from constitution deny rules",
+    )
+
+    export_traces_cmd = sub.add_parser(
+        "export-traces",
+        help="Export governance events as OTel-compatible JSONL traces",
+    )
+    export_traces_cmd.add_argument("--since", default=None, help="Only export sessions started after this ISO timestamp")
+    export_traces_cmd.add_argument("--no-write", action="store_true", help="Return spans without writing to file")
+
     features_cmd = sub.add_parser("features", help="List feature definitions from .exo/features.yaml")
     features_cmd.add_argument("--status", help="Filter by status (active, deprecated, deleted, experimental)")
 
@@ -440,6 +462,19 @@ def _build_parser() -> argparse.ArgumentParser:
     drift_cmd.add_argument("--skip-requirements", action="store_true", help="Skip requirement traceability check")
     drift_cmd.add_argument("--skip-sessions", action="store_true", help="Skip session health check")
     drift_cmd.add_argument("--skip-coherence", action="store_true", help="Skip coherence check")
+
+    fleet_drift_cmd = sub.add_parser(
+        "fleet-drift",
+        help="Aggregate drift across active, suspended, and recent finished sessions",
+    )
+    fleet_drift_cmd.add_argument(
+        "--stale-hours", type=float, default=48.0, help="Threshold for stale session detection (default: 48)"
+    )
+    fleet_drift_cmd.add_argument(
+        "--include-finished", type=int, default=10, help="Number of recent finished sessions to include (default: 10)"
+    )
+
+    sub.add_parser("metrics", help="Compute governance metrics for dashboards")
 
     coherence_cmd = sub.add_parser(
         "coherence", help="Check semantic coherence: co-update rules and docstring freshness"
@@ -901,6 +936,17 @@ def main(argv: list[str] | None = None) -> int:
                 errors=parsed_errors if parsed_errors else None,
             )
             response = _ok(data)
+        elif cmd == "session-handoff":
+            manager = AgentSessionManager(args.repo, actor=actor)
+            data = manager.handoff(
+                to_actor=args.to_actor,
+                ticket_id=args.ticket_id,
+                summary=args.summary,
+                reason=args.reason,
+                next_steps=args.next_step,
+                release_lock=not bool(args.keep_lock),
+            )
+            response = _ok(data)
         elif cmd == "session-audit":
             manager = AgentSessionManager(args.repo, actor=actor)
             data = manager.start(
@@ -1066,6 +1112,16 @@ def main(argv: list[str] | None = None) -> int:
             targets = args.target if args.target else None
             data = generate_adapters(repo_path, targets=targets, dry_run=bool(args.dry_run))
             response = _ok(data)
+        elif cmd == "sandbox-policy":
+            repo_path = Path(args.repo).resolve()
+            data = derive_sandbox_policy(repo_path)
+            data["_human_summary"] = format_sandbox_policy_human(data)
+            response = _ok(data)
+        elif cmd == "export-traces":
+            repo_path = Path(args.repo).resolve()
+            data = export_traces(repo_path, since=args.since, write=not args.no_write)
+            data["_human_summary"] = format_traces_human(data)
+            response = _ok(data)
         elif cmd == "features":
             repo_path = Path(args.repo).resolve()
             features = load_features(repo_path)
@@ -1136,6 +1192,20 @@ def main(argv: list[str] | None = None) -> int:
             )
             data = drift_to_dict(report)
             data["_human_summary"] = format_drift_human(report)
+            response = _ok(data)
+        elif cmd == "fleet-drift":
+            repo_path = Path(args.repo).resolve()
+            data = fleet_drift(
+                repo_path,
+                stale_hours=float(args.stale_hours),
+                include_finished=int(args.include_finished),
+            )
+            data["_human_summary"] = format_fleet_drift_human(data)
+            response = _ok(data)
+        elif cmd == "metrics":
+            repo_path = Path(args.repo).resolve()
+            data = compute_metrics(repo_path)
+            data["_human_summary"] = format_metrics_human(data)
             response = _ok(data)
         elif cmd == "coherence":
             from exo.stdlib.coherence import check_coherence, coherence_to_dict, format_coherence_human

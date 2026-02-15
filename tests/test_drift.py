@@ -28,7 +28,9 @@ from exo.stdlib.drift import (
     _check_sessions,
     drift,
     drift_to_dict,
+    fleet_drift,
     format_drift_human,
+    format_fleet_drift_human,
 )
 
 
@@ -450,3 +452,114 @@ class TestCLIDrift:
         assert result.returncode == 0
         data = json.loads(result.stdout)
         assert data["ok"]
+
+
+# ── Fleet-Level Drift Aggregation ────────────────────────────────
+
+
+def _write_index_entries(repo: Path, entries: list[dict[str, Any]]) -> None:
+    index_path = repo / ".exo" / "memory" / "sessions" / "index.jsonl"
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(index_path, "w", encoding="utf-8") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+
+
+class TestFleetDrift:
+    def test_empty_repo(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        data = fleet_drift(repo)
+        assert data["agent_count"] == 0
+        assert data["avg_drift"] == 0.0
+
+    def test_with_finished_sessions(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        entries = [
+            {"session_id": "SES-A", "actor": "agent:a", "ticket_id": "T1", "drift_score": 0.2},
+            {"session_id": "SES-B", "actor": "agent:b", "ticket_id": "T2", "drift_score": 0.4},
+        ]
+        _write_index_entries(repo, entries)
+        data = fleet_drift(repo)
+        assert data["finished_count"] == 2
+        assert data["avg_drift"] == 0.3
+        assert data["max_drift"] == 0.4
+
+    def test_high_drift_flagged(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        entries = [
+            {"session_id": "SES-A", "actor": "agent:a", "ticket_id": "T1", "drift_score": 0.85},
+            {"session_id": "SES-B", "actor": "agent:b", "ticket_id": "T2", "drift_score": 0.3},
+        ]
+        _write_index_entries(repo, entries)
+        data = fleet_drift(repo)
+        assert data["high_drift_count"] == 1
+
+    def test_include_finished_limits(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        entries = [
+            {"session_id": f"SES-{i}", "actor": "agent:a", "ticket_id": "T1", "drift_score": 0.1}
+            for i in range(20)
+        ]
+        _write_index_entries(repo, entries)
+        data = fleet_drift(repo, include_finished=5)
+        assert data["finished_count"] == 5
+
+    def test_no_index_file(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        data = fleet_drift(repo)
+        assert data["finished_count"] == 0
+
+    def test_active_session_has_no_drift_score(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        from exo.kernel import tickets as tkt
+
+        tkt.save_ticket(repo, {"id": "TKT-1", "title": "T", "intent": "T", "priority": 2, "labels": [], "type": "feature", "status": "todo"})
+        tkt.acquire_lock(repo, "TKT-1", owner="agent:test", role="developer")
+        from exo.orchestrator.session import AgentSessionManager
+
+        mgr = AgentSessionManager(repo, actor="agent:test")
+        mgr.start(ticket_id="TKT-1")
+
+        data = fleet_drift(repo)
+        assert data["active_count"] == 1
+        active_agents = [a for a in data["agents"] if a["state"] == "active"]
+        assert len(active_agents) == 1
+        assert active_agents[0]["drift_score"] is None
+
+    def test_checked_at_present(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        data = fleet_drift(repo)
+        assert "checked_at" in data
+
+
+class TestFormatFleetDriftHuman:
+    def test_shows_session_count(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        entries = [
+            {"session_id": "SES-A", "actor": "agent:a", "ticket_id": "T1", "drift_score": 0.2},
+        ]
+        _write_index_entries(repo, entries)
+        data = fleet_drift(repo)
+        human = format_fleet_drift_human(data)
+        assert "1 session(s)" in human
+
+    def test_shows_drift_scores(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        entries = [
+            {"session_id": "SES-A", "actor": "agent:a", "ticket_id": "T1", "drift_score": 0.35},
+        ]
+        _write_index_entries(repo, entries)
+        data = fleet_drift(repo)
+        human = format_fleet_drift_human(data)
+        assert "avg drift:" in human
+        assert "0.35" in human
+
+    def test_shows_high_drift_alert(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        entries = [
+            {"session_id": "SES-A", "actor": "agent:a", "ticket_id": "T1", "drift_score": 0.9},
+        ]
+        _write_index_entries(repo, entries)
+        data = fleet_drift(repo)
+        human = format_fleet_drift_human(data)
+        assert "HIGH DRIFT" in human

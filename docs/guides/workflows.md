@@ -57,11 +57,28 @@ ExoProtocol handles coordination:
 
 Keep ticket scopes non-overlapping and you'll rarely hit conflicts.
 
-### Handoff pattern
+### Handoff pattern (explicit)
 
-Agent A finishes a ticket, writes a memento with a summary. Agent B starts the next ticket and sees Agent A's memento as "Prior Session" context. Knowledge transfers automatically through the governance layer.
+For same-ticket handoffs, use `session-handoff` — it atomically finishes Agent A's session, writes a handoff record, releases the lock, and injects context into Agent B's bootstrap:
 
-This works especially well for sequential tasks:
+```bash
+# Agent A builds the feature, then hands off
+EXO_ACTOR=agent:claude-opus exo session-handoff \
+  --to agent:claude-sonnet --ticket-id TICKET-001 \
+  --summary "Built API endpoints, tests not written" \
+  --reason "Needs testing expertise" \
+  --next-step "Write integration tests for /api/users"
+
+# Agent B picks up — handoff context auto-injected into bootstrap
+EXO_ACTOR=agent:claude-sonnet exo session-start \
+  --ticket-id TICKET-001 --vendor anthropic --model claude-sonnet-4-5
+```
+
+Agent B's bootstrap will include a "Handoff Context" section with Agent A's summary, reason, and next steps. The handoff record is consumed on start — no stale context.
+
+### Handoff pattern (implicit)
+
+For cross-ticket handoffs, mementos do the work automatically. Agent A finishes a ticket, writes a memento with a summary. Agent B starts the next ticket and sees Agent A's memento as "Prior Session" context.
 
 ```bash
 # Agent A builds the feature
@@ -73,7 +90,7 @@ exo plan "write tests for CSV export"
 # ... agent sees prior memento, knows what was built ...
 ```
 
-No copy-pasting context between chat windows. The mementos do the work.
+No copy-pasting context between chat windows.
 
 ---
 
@@ -284,6 +301,64 @@ Agents can observe issues and propose changes, but applying governance changes r
 
 ---
 
+## Observability
+
+### Governance metrics
+
+Get aggregate stats for dashboards:
+
+```bash
+exo metrics
+```
+
+Returns verify pass rate, drift distribution, ticket throughput, actor breakdown, and mode counts (work vs audit).
+
+### Fleet drift
+
+See drift across all active agents:
+
+```bash
+exo fleet-drift
+```
+
+Shows per-agent drift scores, stale sessions, and fleet-level averages. Useful for multi-agent teams to spot which agents are drifting.
+
+### Structured traces
+
+Export session history as OTel-compatible JSONL:
+
+```bash
+exo export-traces                          # write to .exo/logs/traces.jsonl
+exo export-traces --since 2026-02-01T00:00:00+00:00  # only recent sessions
+exo export-traces --no-write               # return spans without writing
+```
+
+Each session becomes an OTel span with `exo.*` attributes. Import into Jaeger, Grafana Tempo, or any OTel backend.
+
+---
+
+## SDK integrations
+
+### OpenAI Agents SDK
+
+Wrap governed sessions around agent runs:
+
+```python
+from exo.integrations.openai_agents import ExoRunHooks
+from agents import Runner
+
+hooks = ExoRunHooks(repo=".", ticket_id="TKT-...", actor="agent:openai")
+result = await Runner.run(agent, hooks=hooks)
+```
+
+Install the extra: `pip install exoprotocol[openai-agents]`
+
+### Claude Code hooks
+
+Installed via `exo hook-install`. Automatically starts/finishes governed sessions on Claude Code lifecycle events. No code changes needed.
+
+---
+
 ## Quick reference
 
 | What you want | Command |
@@ -292,10 +367,15 @@ Agents can observe issues and propose changes, but applying governance changes r
 | Start working | `exo next --owner name` |
 | Check health | `exo doctor` |
 | Check drift | `exo drift` |
+| Fleet drift | `exo fleet-drift` |
+| Governance metrics | `exo metrics` |
+| Export traces | `exo export-traces` |
 | Review PR governance | `exo pr-check --base main` |
 | Audit a session | `exo session-audit --ticket-id TID ...` |
+| Hand off to another agent | `exo session-handoff --to agent:x --ticket-id TID --summary "..."` |
 | Record a learning | `exo reflect --pattern "..." --insight "..."` |
 | Find existing tools | `exo tool-search "keywords"` |
+| Preview sandbox policy | `exo sandbox-policy` |
 | Clean up | `exo gc`, `exo gc-locks`, `exo session-cleanup` |
 | Regenerate adapters | `exo adapter-generate` |
 | Validate config | `exo config-validate` |

@@ -25,6 +25,7 @@ All commands support `--format json`.
 | `exo session-finish --summary "..." [--set-status] [--error "tool:msg"]` | Finish session, write memento |
 | `exo session-suspend --reason "..."` | Suspend session, release lock |
 | `exo session-resume` | Resume suspended session |
+| `exo session-handoff --to ACTOR --ticket-id TKT --summary "..."` | Hand off session to another agent |
 | `exo session-audit [--ticket-id] [--pr-base] [--pr-head]` | Start audit session (adversarial review) |
 | `exo session-scan [--stale-hours N]` | Scan for active/stale/orphaned sessions |
 | `exo session-cleanup [--stale-hours N] [--release-lock]` | Clean up stale sessions |
@@ -83,6 +84,7 @@ All commands support `--format json`.
 | Command | Description |
 |---|---|
 | `exo adapter-generate [--target claude\|cursor\|agents\|ci] [--dry-run]` | Generate agent config files from governance |
+| `exo sandbox-policy` | Preview sandbox permissions derived from constitution deny rules |
 | `exo scan` | Preview what init would detect (read-only) |
 
 ## Error reflection and learning
@@ -92,6 +94,14 @@ All commands support `--format json`.
 | `exo reflect --pattern "..." --insight "..."` | Record operational learning |
 | `exo reflections [--status] [--scope] [--severity]` | List stored reflections |
 | `exo reflect-dismiss <REF-ID>` | Dismiss a reflection |
+
+## Observability
+
+| Command | Description |
+|---|---|
+| `exo metrics` | Compute governance metrics for dashboards |
+| `exo fleet-drift [--stale-hours N] [--include-finished N]` | Aggregate drift across active/suspended/finished sessions |
+| `exo export-traces [--since ISO] [--no-write]` | Export governance events as OTel-compatible JSONL traces |
 
 ## Infrastructure
 

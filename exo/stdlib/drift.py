@@ -124,8 +124,9 @@ def _check_governance(repo: Path) -> DriftSection:
         )
 
 
-# Regex to extract governance hash from adapter file header comments
+# Regex to extract governance hash from adapter file header comments or JSON fields
 _GOVERNANCE_HASH_RE = re.compile(r"Governance hash:\s*([a-f0-9]+)")
+_GOVERNANCE_HASH_JSON_RE = re.compile(r'"_exo_governance_hash"\s*:\s*"([a-f0-9]+)"')
 
 
 def _check_adapters(repo: Path) -> DriftSection:
@@ -175,7 +176,7 @@ def _check_adapters(repo: Path) -> DriftSection:
             missing.append(filename)
             continue
 
-        match = _GOVERNANCE_HASH_RE.search(content)
+        match = _GOVERNANCE_HASH_RE.search(content) or _GOVERNANCE_HASH_JSON_RE.search(content)
         if match:
             embedded_hash = match.group(1)
             if current_hash.startswith(embedded_hash):
@@ -523,5 +524,133 @@ def format_drift_human(report: DriftReport) -> str:
             "error": "ERR",
         }.get(section.status, "?")
         lines.append(f"  [{status_icon}] {section.name}: {section.summary}")
+
+    return "\n".join(lines)
+
+
+# ── Fleet-Level Drift Aggregation ────────────────────────────────
+
+
+def fleet_drift(
+    repo: Path,
+    *,
+    stale_hours: float = 48.0,
+    include_finished: int = 10,
+) -> dict[str, Any]:
+    """Aggregate drift across active, suspended, and recent finished sessions.
+
+    Provides a fleet-level view of governance drift for multi-agent teams.
+
+    Args:
+        repo: Repository root.
+        stale_hours: Hours threshold for stale session detection.
+        include_finished: Number of recent finished sessions to include.
+
+    Returns:
+        Dict with per-agent drift, fleet-level summary, and alerts.
+    """
+    import json
+
+    repo = Path(repo).resolve()
+
+    # Gather active/suspended sessions
+    try:
+        from exo.orchestrator import scan_sessions
+
+        scan = scan_sessions(repo, stale_hours=stale_hours)
+    except Exception:
+        scan = {"active_sessions": [], "suspended_sessions": [], "stale_sessions": []}
+
+    active = scan.get("active_sessions", [])
+    suspended = scan.get("suspended_sessions", [])
+    stale = scan.get("stale_sessions", [])
+
+    # Gather recent finished sessions from index
+    index_path = repo / Path(".exo/memory/sessions/index.jsonl")
+    finished: list[dict[str, Any]] = []
+    if index_path.exists():
+        for line in index_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                finished.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    finished = finished[-include_finished:]  # most recent N
+
+    # Build per-agent drift records
+    agents: list[dict[str, Any]] = []
+
+    for session in active:
+        agents.append({
+            "actor": session.get("actor", ""),
+            "session_id": session.get("session_id", ""),
+            "ticket_id": session.get("ticket_id", ""),
+            "state": "active",
+            "drift_score": None,  # drift only computed at finish
+            "stale": session in stale,
+        })
+
+    for session in suspended:
+        agents.append({
+            "actor": session.get("actor", ""),
+            "session_id": session.get("session_id", ""),
+            "ticket_id": session.get("ticket_id", ""),
+            "state": "suspended",
+            "drift_score": None,
+            "stale": session in stale,
+        })
+
+    for entry in finished:
+        agents.append({
+            "actor": entry.get("actor", ""),
+            "session_id": entry.get("session_id", ""),
+            "ticket_id": entry.get("ticket_id", ""),
+            "state": "finished",
+            "drift_score": entry.get("drift_score"),
+            "stale": False,
+        })
+
+    # Compute fleet-level aggregates
+    drift_scores = [a["drift_score"] for a in agents if a["drift_score"] is not None]
+    avg_drift = sum(drift_scores) / len(drift_scores) if drift_scores else 0.0
+    max_drift = max(drift_scores) if drift_scores else 0.0
+    high_drift = [a for a in agents if a["drift_score"] is not None and a["drift_score"] > 0.7]
+    stale_count = sum(1 for a in agents if a["stale"])
+
+    return {
+        "agents": agents,
+        "agent_count": len(agents),
+        "active_count": len(active),
+        "suspended_count": len(suspended),
+        "finished_count": len(finished),
+        "stale_count": stale_count,
+        "drift_scores": drift_scores,
+        "avg_drift": round(avg_drift, 3),
+        "max_drift": round(max_drift, 3),
+        "high_drift_count": len(high_drift),
+        "checked_at": now_iso(),
+    }
+
+
+def format_fleet_drift_human(data: dict[str, Any]) -> str:
+    """Format fleet drift report as human-readable text."""
+    lines: list[str] = []
+    lines.append(f"Fleet Drift: {data['agent_count']} session(s)")
+    lines.append(
+        f"  active: {data['active_count']}, suspended: {data['suspended_count']}, "
+        f"finished: {data['finished_count']}, stale: {data['stale_count']}"
+    )
+    if data["drift_scores"]:
+        lines.append(f"  avg drift: {data['avg_drift']:.3f}, max drift: {data['max_drift']:.3f}")
+    if data["high_drift_count"]:
+        lines.append(f"  HIGH DRIFT: {data['high_drift_count']} session(s) above 0.7 threshold")
+
+    lines.append("")
+    for agent in data.get("agents", []):
+        drift_str = f"drift={agent['drift_score']:.2f}" if agent["drift_score"] is not None else "drift=N/A"
+        stale_str = " [STALE]" if agent["stale"] else ""
+        lines.append(f"  {agent['actor']} [{agent['state']}] {drift_str}{stale_str} ({agent['session_id'][:20]}...)")
 
     return "\n".join(lines)

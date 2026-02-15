@@ -16,10 +16,13 @@ from exo.stdlib.adapters import (
     EXO_MARKER_END,
     TARGET_FILES,
     _count_user_lines,
+    _derive_permission_deny,
     _extract_marker_sections,
     _format_deny_rules,
     _load_governance_lock,
     _wrap_with_markers,
+    derive_sandbox_policy,
+    format_sandbox_policy_human,
     generate_adapters,
 )
 from exo.stdlib.reconcile import reconcile_session
@@ -1133,3 +1136,427 @@ class TestToolReuseProtocolInAdapters:
         assert "a:fn" in content
         assert "b:fn" in content
         assert "c:fn" in content
+
+
+# ── Sandbox Adapter Tests ─────────────────────────────────────────
+
+
+class TestDerivePermissionDeny:
+    """Tests for _derive_permission_deny() helper."""
+
+    def test_filesystem_deny_to_permissions(self) -> None:
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["**/.env*"],
+                "actions": ["read", "write"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        assert "Read(**/.env*)" in result
+        assert "Edit(**/.env*)" in result
+
+    def test_read_only_action(self) -> None:
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["secrets/**"],
+                "actions": ["read"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        assert "Read(secrets/**)" in result
+        assert not any(e.startswith("Edit(") for e in result)
+
+    def test_write_only_action(self) -> None:
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["dist/**"],
+                "actions": ["write"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        assert "Edit(dist/**)" in result
+        assert not any(e.startswith("Read(") for e in result)
+
+    def test_empty_rules(self) -> None:
+        result = _derive_permission_deny([])
+        assert result == []
+
+    def test_skips_non_filesystem_rules(self) -> None:
+        rules = [
+            {"type": "require_lock", "message": "Lock required"},
+        ]
+        result = _derive_permission_deny(rules)
+        assert result == []
+
+    def test_multiple_patterns(self) -> None:
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["**/.env*", "**/credentials.json"],
+                "actions": ["read", "write"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        assert len(result) == 4
+        assert "Read(**/.env*)" in result
+        assert "Edit(**/.env*)" in result
+        assert "Read(**/credentials.json)" in result
+        assert "Edit(**/credentials.json)" in result
+
+    def test_multiple_rules_combined(self) -> None:
+        rules = [
+            {"type": "filesystem_deny", "patterns": ["**/.env*"], "actions": ["read", "write"]},
+            {"type": "filesystem_deny", "patterns": ["dist/**"], "actions": ["write"]},
+        ]
+        result = _derive_permission_deny(rules)
+        assert "Read(**/.env*)" in result
+        assert "Edit(**/.env*)" in result
+        assert "Edit(dist/**)" in result
+
+    def test_feature_locked_deny(self, tmp_path: Path) -> None:
+        from exo.kernel.utils import dump_yaml
+
+        repo = _bootstrap_repo(tmp_path)
+        features_path = repo / ".exo" / "features.yaml"
+        dump_yaml(
+            features_path,
+            {
+                "features": [
+                    {
+                        "id": "locked-feat",
+                        "status": "active",
+                        "allow_agent_edit": False,
+                        "files": ["src/core/**"],
+                    }
+                ]
+            },
+        )
+        rules = [
+            {"type": "filesystem_deny", "patterns": ["**/.env*"], "actions": ["read", "write"]},
+        ]
+        result = _derive_permission_deny(rules, repo=repo)
+        # Should have constitution deny + feature locked deny
+        assert "Read(**/.env*)" in result
+        assert "Edit(**/.env*)" in result
+        # Feature locked paths should appear as Edit deny
+        feature_edits = [e for e in result if e.startswith("Edit(") and ".env" not in e]
+        assert len(feature_edits) > 0
+
+
+class TestSandboxAdapter:
+    """Tests for the sandbox adapter target (.claude/settings.json)."""
+
+    def test_sandbox_in_targets(self) -> None:
+        assert "sandbox" in ADAPTER_TARGETS
+        assert "sandbox" not in AGENT_ADAPTER_TARGETS
+
+    def test_sandbox_target_file(self) -> None:
+        assert TARGET_FILES["sandbox"] == ".claude/settings.json"
+
+    def test_sandbox_generates_settings_json(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        generate_adapters(repo, targets=["sandbox"])
+        settings_path = repo / ".claude" / "settings.json"
+        assert settings_path.exists()
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert "permissions" in settings
+        assert "deny" in settings["permissions"]
+
+    def test_deny_rules_mapped(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        generate_adapters(repo, targets=["sandbox"])
+        settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        deny = settings["permissions"]["deny"]
+        assert "Read(**/.env*)" in deny
+        assert "Edit(**/.env*)" in deny
+
+    def test_governance_hash_embedded(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        generate_adapters(repo, targets=["sandbox"])
+        settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "_exo_governance_hash" in settings
+        assert len(settings["_exo_governance_hash"]) == 16
+
+    def test_merges_with_existing_hooks(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        claude_dir = repo / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        existing = {
+            "hooks": {"SessionStart": [{"matcher": "startup", "hooks": []}]},
+            "customKey": "preserved",
+        }
+        (claude_dir / "settings.json").write_text(
+            json.dumps(existing), encoding="utf-8"
+        )
+        generate_adapters(repo, targets=["sandbox"])
+        settings = json.loads((claude_dir / "settings.json").read_text(encoding="utf-8"))
+        # Hooks and custom keys preserved
+        assert settings["hooks"] == existing["hooks"]
+        assert settings["customKey"] == "preserved"
+        # Permissions added
+        assert "permissions" in settings
+        assert "Read(**/.env*)" in settings["permissions"]["deny"]
+
+    def test_dry_run_no_write(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["sandbox"], dry_run=True)
+        settings_path = repo / ".claude" / "settings.json"
+        assert not settings_path.exists()
+        assert "content" in result["files"]["sandbox"]
+        content = json.loads(result["files"]["sandbox"]["content"])
+        assert "permissions" in content
+
+    def test_multiple_deny_rules(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(
+            tmp_path,
+            extra_deny_rules=[
+                {
+                    "id": "RULE-SEC-002",
+                    "type": "filesystem_deny",
+                    "patterns": ["dist/**"],
+                    "actions": ["write"],
+                    "message": "No dist writes",
+                }
+            ],
+        )
+        generate_adapters(repo, targets=["sandbox"])
+        settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        deny = settings["permissions"]["deny"]
+        assert "Read(**/.env*)" in deny
+        assert "Edit(**/.env*)" in deny
+        assert "Edit(dist/**)" in deny
+
+    def test_idempotent(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        generate_adapters(repo, targets=["sandbox"])
+        first = (repo / ".claude" / "settings.json").read_text(encoding="utf-8")
+        generate_adapters(repo, targets=["sandbox"])
+        second = (repo / ".claude" / "settings.json").read_text(encoding="utf-8")
+        assert first == second
+
+    def test_merged_flag_with_existing(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        claude_dir = repo / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        (claude_dir / "settings.json").write_text(
+            json.dumps({"hooks": {}}), encoding="utf-8"
+        )
+        result = generate_adapters(repo, targets=["sandbox"])
+        assert result["files"]["sandbox"]["merged"] is True
+
+    def test_merged_flag_no_existing(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["sandbox"])
+        assert result["files"]["sandbox"]["merged"] is False
+
+    def test_read_only_deny_rule(self, tmp_path: Path) -> None:
+        """Constitution rule with only read action produces only Read() entries."""
+        repo = _bootstrap_repo(
+            tmp_path,
+            extra_deny_rules=[
+                {
+                    "id": "RULE-SEC-READONLY",
+                    "type": "filesystem_deny",
+                    "patterns": ["audit/**"],
+                    "actions": ["read"],
+                    "message": "Audit logs read-deny",
+                }
+            ],
+        )
+        generate_adapters(repo, targets=["sandbox"])
+        settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        deny = settings["permissions"]["deny"]
+        assert "Read(audit/**)" in deny
+        assert "Edit(audit/**)" not in deny
+
+
+# ── Delete Action + Bash Deny Tests ─────────────────────────────
+
+
+class TestDeleteActionDeny:
+    """Tests for delete action mapping in _derive_permission_deny()."""
+
+    def test_delete_action_produces_edit_and_bash(self) -> None:
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["backups/**"],
+                "actions": ["delete"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        assert "Edit(backups/**)" in result
+        assert "Bash(rm backups/**)" in result
+
+    def test_delete_with_write_no_duplicate_edit(self) -> None:
+        """When both write and delete are present, Edit appears only once."""
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["data/**"],
+                "actions": ["write", "delete"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        edit_count = sum(1 for e in result if e == "Edit(data/**)")
+        assert edit_count == 1  # write produces Edit, delete skips duplicate
+        assert "Bash(rm data/**)" in result
+
+    def test_delete_only_no_read(self) -> None:
+        """Delete-only rule should NOT produce Read entries."""
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["tmp/**"],
+                "actions": ["delete"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        assert not any(e.startswith("Read(") for e in result)
+
+    def test_all_three_actions(self) -> None:
+        """read + write + delete produces Read, Edit (once), and Bash(rm)."""
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["**/.secrets"],
+                "actions": ["read", "write", "delete"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        assert "Read(**/.secrets)" in result
+        assert "Edit(**/.secrets)" in result
+        assert "Bash(rm **/.secrets)" in result
+        # Edit should appear exactly once
+        edit_count = sum(1 for e in result if e == "Edit(**/.secrets)")
+        assert edit_count == 1
+
+    def test_delete_multiple_patterns(self) -> None:
+        rules = [
+            {
+                "type": "filesystem_deny",
+                "patterns": ["logs/**", "*.bak"],
+                "actions": ["delete"],
+            }
+        ]
+        result = _derive_permission_deny(rules)
+        assert "Bash(rm logs/**)" in result
+        assert "Bash(rm *.bak)" in result
+        assert "Edit(logs/**)" in result
+        assert "Edit(*.bak)" in result
+
+    def test_delete_in_sandbox_adapter(self, tmp_path: Path) -> None:
+        """Delete action flows through to .claude/settings.json deny list."""
+        repo = _bootstrap_repo(
+            tmp_path,
+            extra_deny_rules=[
+                {
+                    "id": "RULE-NO-DELETE",
+                    "type": "filesystem_deny",
+                    "patterns": ["archive/**"],
+                    "actions": ["delete"],
+                    "message": "No archive deletion",
+                }
+            ],
+        )
+        generate_adapters(repo, targets=["sandbox"])
+        settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        deny = settings["permissions"]["deny"]
+        assert "Edit(archive/**)" in deny
+        assert "Bash(rm archive/**)" in deny
+
+
+# ── derive_sandbox_policy() Public API Tests ─────────────────────
+
+
+class TestDeriveSandboxPolicy:
+    """Tests for the derive_sandbox_policy() public API."""
+
+    def test_returns_deny_entries(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        assert "deny_entries" in policy
+        assert "Read(**/.env*)" in policy["deny_entries"]
+        assert "Edit(**/.env*)" in policy["deny_entries"]
+
+    def test_returns_source_rules(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        assert "source_rules" in policy
+        assert len(policy["source_rules"]) >= 1
+        assert policy["source_rules"][0]["id"] == "RULE-SEC-001"
+
+    def test_returns_governance_hash(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        assert "governance_hash" in policy
+        assert len(policy["governance_hash"]) == 16
+
+    def test_deny_count_matches(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        assert policy["deny_count"] == len(policy["deny_entries"])
+
+    def test_source_rule_count_matches(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        assert policy["source_rule_count"] == len(policy["source_rules"])
+
+    def test_delete_action_in_policy(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(
+            tmp_path,
+            extra_deny_rules=[
+                {
+                    "id": "RULE-NO-DEL",
+                    "type": "filesystem_deny",
+                    "patterns": ["vault/**"],
+                    "actions": ["delete"],
+                    "message": "No vault deletion",
+                }
+            ],
+        )
+        policy = derive_sandbox_policy(repo)
+        assert "Bash(rm vault/**)" in policy["deny_entries"]
+        assert "Edit(vault/**)" in policy["deny_entries"]
+
+    def test_no_governance_lock_raises(self, tmp_path: Path) -> None:
+        """derive_sandbox_policy raises when no governance lock exists."""
+        import pytest
+
+        with pytest.raises(Exception):
+            derive_sandbox_policy(tmp_path)
+
+
+# ── format_sandbox_policy_human() Tests ──────────────────────────
+
+
+class TestFormatSandboxPolicyHuman:
+    """Tests for human-readable sandbox policy formatting."""
+
+    def test_includes_governance_hash(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        human = format_sandbox_policy_human(policy)
+        assert "Governance hash:" in human
+
+    def test_includes_deny_entries(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        human = format_sandbox_policy_human(policy)
+        assert "Read(**/.env*)" in human
+        assert "Edit(**/.env*)" in human
+
+    def test_includes_source_rules(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        human = format_sandbox_policy_human(policy)
+        assert "RULE-SEC-001" in human
+
+    def test_shows_entry_count(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        policy = derive_sandbox_policy(repo)
+        human = format_sandbox_policy_human(policy)
+        assert f"({policy['deny_count']} entries)" in human

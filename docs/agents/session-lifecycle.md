@@ -9,6 +9,7 @@ Sessions progress through these states:
 ```
 (none) → active → finished
 (none) → active → suspended → active (resume) → finished
+active → handoff → (none) [receiving agent starts new session]
 active → stale (via timeout or dead PID)
 ```
 
@@ -16,6 +17,7 @@ active → stale (via timeout or dead PID)
 - **active**: Agent is working, lock held, bootstrap valid
 - **suspended**: Work paused, lock released, snapshot saved
 - **finished**: Work complete, memento written, lock released
+- **handoff**: Agent A finished and wrote handoff record for Agent B
 - **stale**: Active session exceeded 48h threshold or process died
 
 ## session-start
@@ -457,6 +459,72 @@ Advisory warnings in audit session finish:
 - **Same model as writer**: Audit using same model as writing session (weak independence)
 
 These are advisory only — never block session-finish.
+
+## session-handoff
+
+Governed transfer of work from one agent to another on the same ticket.
+
+### Required Parameters
+
+- `--to`: Target actor identifier (e.g., `agent:claude-sonnet`)
+- `--ticket-id`: Ticket being handed off
+- `--summary`: Summary of work done by the handing-off agent
+
+### Optional Parameters
+
+- `--reason`: Why the handoff is needed
+- `--next-step`: What the receiving agent should do
+- `--keep-lock`: Don't release the ticket lock (default: release)
+
+### Internal Execution Flow
+
+1. **Verify Active Session**: Check that the current agent has an active session on the ticket
+2. **Finish Session**: Close the current session with memento (uses `break_glass_reason="handoff"`)
+3. **Write Handoff Record**: Create `.exo/cache/sessions/handoff-{ticket_id}.json` with from_actor, to_actor, summary, reason, next_steps, scope, branch
+4. **Release Lock**: Release ticket lock (unless `--keep-lock`)
+
+When the receiving agent calls `session-start` on the same ticket:
+
+1. **Detect Handoff**: Load handoff record if present
+2. **Inject Context**: Add "Handoff Context" section to bootstrap with summary, reason, next steps, and source branch
+3. **Consume Record**: Delete handoff file (one-shot — prevents stale context)
+
+### CLI Usage
+
+```bash
+# Agent A hands off
+EXO_ACTOR=agent:claude-opus exo session-handoff \
+  --to agent:claude-sonnet \
+  --ticket-id TICKET-001 \
+  --summary "Built API endpoints, tests not yet written" \
+  --reason "Needs testing expertise" \
+  --next-step "Write integration tests for /api/users"
+
+# Agent B picks up — handoff context auto-injected
+EXO_ACTOR=agent:claude-sonnet exo session-start \
+  --ticket-id TICKET-001 --vendor anthropic --model claude-sonnet-4-5
+```
+
+### MCP Usage
+
+```python
+exo_session_handoff(
+    to_actor="agent:claude-sonnet",
+    ticket_id="TICKET-001",
+    summary="Built API endpoints, tests not yet written",
+    reason="Needs testing expertise",
+    next_steps="Write integration tests for /api/users"
+)
+```
+
+### Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Handoff = finish + record (not suspend) | Clean memento, no dangling suspended state |
+| Record consumed on start | One-shot — prevents stale context |
+| Lock released by default | Receiving agent acquires fresh lock |
+| `to_actor` is advisory | Any agent can pick up if needed |
 
 ## Crash Recovery
 
