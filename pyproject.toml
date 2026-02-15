@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exoprotocol"
-version = "0.1.14"
+version = "0.1.15"
 description = "Repo-native governance kernel for ExoProtocol"
 readme = "README.md"
 license = "MIT"
