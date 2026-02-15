@@ -10,8 +10,9 @@ check at session-finish or in CI.
 
 from __future__ import annotations
 
+import fnmatch
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -90,7 +91,7 @@ class CodeTag:
 class TraceViolation:
     """A traceability violation found by the linter."""
 
-    kind: str  # invalid_tag | deprecated_usage | deleted_usage | unbound_feature | locked_edit
+    kind: str  # invalid_tag | deprecated_usage | deleted_usage | unbound_feature | locked_edit | uncovered_code
     feature_id: str
     file: str  # relative path or "(manifest)"
     line: int | None
@@ -111,6 +112,7 @@ class TraceReport:
     bound_features: list[str]  # feature IDs with at least one code tag
     unbound_features: list[str]  # feature IDs with no code tags
     deprecated_with_code: list[str]  # deprecated features still with code
+    uncovered_files: list[str] = field(default_factory=list)  # source files not covered by any feature
     checked_at: str = ""
 
     @property
@@ -253,11 +255,61 @@ def scan_tags(repo: Path, *, globs: list[str] | None = None) -> list[CodeTag]:
     return tags
 
 
+_UNCOVERED_SKIP_NAMES = frozenset({"__init__.py", "__main__.py", "conftest.py", "setup.py"})
+_UNCOVERED_SKIP_PREFIXES = ("tests/", "test/", "test_")
+
+
+def _find_uncovered_files(
+    features: list[FeatureDef],
+    tagged_files: set[str],
+    scanned_files: set[str],
+) -> list[str]:
+    """Find source files not covered by any feature definition or @feature tag.
+
+    A file is "covered" if:
+    1. It contains at least one @feature: tag, OR
+    2. It matches a glob in any active/experimental feature's ``files`` list.
+
+    Files like __init__.py, test files, and config files are excluded.
+    """
+    # Collect all globs from active/experimental features
+    feature_globs: list[str] = []
+    for feat in features:
+        if feat.status in ("active", "experimental") and feat.files:
+            feature_globs.extend(feat.files)
+
+    # Find files matched by feature globs
+    glob_covered: set[str] = set()
+    for filepath in scanned_files:
+        for pattern in feature_globs:
+            if fnmatch.fnmatch(filepath, pattern):
+                glob_covered.add(filepath)
+                break
+
+    # Uncovered = scanned but not tagged and not glob-covered
+    uncovered: list[str] = []
+    for filepath in sorted(scanned_files):
+        if filepath in tagged_files:
+            continue
+        if filepath in glob_covered:
+            continue
+        # Skip common non-feature files
+        name = filepath.rsplit("/", 1)[-1] if "/" in filepath else filepath
+        if name in _UNCOVERED_SKIP_NAMES:
+            continue
+        if any(filepath.startswith(prefix) for prefix in _UNCOVERED_SKIP_PREFIXES):
+            continue
+        uncovered.append(filepath)
+
+    return uncovered
+
+
 def trace(
     repo: Path,
     *,
     globs: list[str] | None = None,
     check_unbound: bool = True,
+    check_uncovered: bool = True,
 ) -> TraceReport:
     """Run the traceability linter: cross-reference code tags against the feature manifest.
 
@@ -267,11 +319,13 @@ def trace(
     3. Deleted features with code tags produce errors
     4. Features with allow_agent_edit=false flag locked edits
     5. (optional) Features with no code tags are flagged as unbound
+    6. (optional) Source files with no feature coverage are flagged as uncovered
 
     Args:
         repo: Repository root path.
         globs: Optional file globs to scan (default: common source extensions).
         check_unbound: Whether to flag features with no code bindings.
+        check_uncovered: Whether to flag source files with no feature coverage.
 
     Returns:
         TraceReport with violations and coverage data.
@@ -363,6 +417,24 @@ def trace(
         if feat.status == "deprecated" and feat.id in bound_ids:
             deprecated_with_code.append(feat.id)
 
+    # Check for uncovered source files (no @feature: tag and not in any feature's files globs)
+    uncovered: list[str] = []
+    if check_uncovered:
+        tagged_files = {tag.file for tag in tags}
+        scanned_files = {str(f.relative_to(repo)) for f in _scan_files(repo, globs)}
+        uncovered = _find_uncovered_files(features, tagged_files, scanned_files)
+        for filepath in uncovered:
+            violations.append(
+                TraceViolation(
+                    kind="uncovered_code",
+                    feature_id="",
+                    file=filepath,
+                    line=None,
+                    message=f"source file '{filepath}' is not covered by any feature",
+                    severity="warning",
+                )
+            )
+
     return TraceReport(
         features_total=len(features),
         features_active=sum(1 for f in features if f.status == "active"),
@@ -373,6 +445,7 @@ def trace(
         bound_features=sorted(bound_ids),
         unbound_features=sorted(unbound),
         deprecated_with_code=sorted(deprecated_with_code),
+        uncovered_files=sorted(uncovered),
         checked_at=now_iso(),
     )
 
@@ -393,6 +466,7 @@ def trace_to_dict(report: TraceReport) -> dict[str, Any]:
         "bound_features": report.bound_features,
         "unbound_features": report.unbound_features,
         "deprecated_with_code": report.deprecated_with_code,
+        "uncovered_files": report.uncovered_files,
         "checked_at": report.checked_at,
     }
 
@@ -407,6 +481,9 @@ def format_trace_human(report: TraceReport) -> str:
         f"  code tags: {report.tags_total}",
         f"  bound: {len(report.bound_features)}, unbound: {len(report.unbound_features)}",
     ]
+
+    if report.uncovered_files:
+        lines.append(f"  uncovered files: {len(report.uncovered_files)}")
 
     if report.deprecated_with_code:
         lines.append(f"  deprecated with code: {report.deprecated_with_code}")

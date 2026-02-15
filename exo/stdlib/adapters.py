@@ -186,6 +186,30 @@ def _generate_preamble(lock: dict[str, Any], config: dict[str, Any], repo: Path 
         ]
     )
 
+    # Feature Governance Protocol (advisory — skipped if features.yaml missing)
+    if repo is not None:
+        try:
+            features_path = repo / Path(".exo/features.yaml")
+            if features_path.exists():
+                sections.extend(
+                    [
+                        "",
+                        "### Feature Governance Protocol",
+                        "",
+                        "All source code must be governed by the feature manifest (`.exo/features.yaml`).",
+                        "",
+                        "Before writing code:",
+                        "1. Check which feature your work belongs to: `exo features`",
+                        "2. Add `@feature:<feature-id>` / `@endfeature` tags around new code blocks",
+                        "",
+                        "After finishing:",
+                        "- Run `exo trace` to verify no uncovered code",
+                        "- If you built a new subsystem, add it to `.exo/features.yaml` first",
+                    ]
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Advisory — never blocks adapter generation
+
     # Tool Reuse Protocol (advisory — skipped if tools module unavailable)
     if repo is not None:
         try:

@@ -61,8 +61,11 @@ Orchestration and governance subsystems:
 | `recall.py` | Memory search |
 | `scratchpad.py` | Scratch notes and threads |
 | `defaults.py` | Default config and constitution templates |
-| `coherence.py` | Coherence checks |
+| `coherence.py` | Co-update rules and docstring freshness checks |
 | `sidecar.py` | Dual-timeline sidecar worktree management |
+| `tools.py` | Tool registry, search, usage tracking |
+| `suggest.py` | Duplication detection, tool registration suggestions |
+| `follow_up.py` | Chain reaction: auto-create follow-up tickets from governance gaps |
 
 ### Orchestrator (`exo/orchestrator/`)
 
@@ -146,3 +149,56 @@ When a session starts, ExoProtocol detects:
 - **Unmerged work**: flags relevant changes on unmerged branches
 - **Ticket contention**: warns if another agent is actively working on the same ticket
 - **Branch mismatch**: flags if a ticket was previously worked on a different branch
+
+### Tool reuse protocol
+
+Agents must search before building. `.exo/tools.yaml` is the registry of reusable tools — functions, scripts, and utilities that can be shared across sessions.
+
+- `exo tool-register` adds a tool with module path, function name, description, and tags
+- `exo tool-search` finds existing tools by keyword/tag before agents create new ones
+- `exo tool-use` records usage for tracking
+- `exo tool-suggest` detects duplication patterns and suggests registration
+- Session bootstrap injects tool awareness: search prompts and available tool list
+
+### Chain reaction (follow-up tickets)
+
+Session-finish inspects governance results and auto-creates follow-up tickets for detected gaps. This creates a self-sustaining loop: session finishes → gaps detected → tickets created → next session picks them up.
+
+Detection rules:
+- **Uncovered code**: source files with no `@feature:` tags and no feature glob coverage
+- **Unbound features**: features in manifest but no code tags
+- **High drift**: drift score exceeds threshold (default 0.7)
+- **Uncovered requirements**: requirements with no code annotations
+- **Unused tools**: tools created but none of the existing tools used
+
+Configuration in `.exo/config.yaml`:
+
+```yaml
+follow_up:
+  enabled: true
+  max_per_session: 5
+```
+
+Follow-up tickets are linked to the parent ticket, deduplicated by title, and capped per session. Use `exo follow-ups` for dry-run detection without creating tickets.
+
+### Semantic coherence
+
+`exo coherence` detects when agents change code without updating corresponding files or documentation.
+
+Two check types:
+1. **Co-update rules** — config-driven file pairs that must change together
+2. **Docstring freshness** — flags functions whose body changed but docstring didn't
+
+Configuration in `.exo/config.yaml`:
+
+```yaml
+coherence:
+  enabled: true
+  co_update_rules:
+    - files: ["exo/cli.py", "docs/cli-reference.md"]
+      label: "CLI commands changed without updating CLI reference docs"
+    - files: ["exo/cli.py", "exo/mcp_server.py"]
+      label: "CLI commands changed without updating MCP server (1:1 mirror)"
+```
+
+Coherence is also included as a subsystem in the composite `exo drift` check.

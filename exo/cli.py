@@ -497,6 +497,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("tool-suggest", help="Detect duplication patterns and suggest tool registration")
 
+    follow_ups_cmd = sub.add_parser("follow-ups", help="Detect governance gaps that warrant follow-up tickets")
+    follow_ups_cmd.add_argument("--ticket-id", default="", help="Ticket ID to check for follow-ups")
+
     sub.add_parser("scan", help="Scan repo and preview what exo init would detect")
 
     doctor_cmd = sub.add_parser("doctor", help="Run unified governance health check")
@@ -566,6 +569,7 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
             "tools",
             "tool-search",
             "tool-suggest",
+            "follow-ups",
         ):
             data = response.get("data", {})
             human_summary = data.pop("_human_summary", "")
@@ -1268,6 +1272,39 @@ def main(argv: list[str] | None = None) -> int:
                 "count": len(suggestions),
                 "suggestions": suggestions_to_list(suggestions),
                 "_human_summary": format_suggestions_human(suggestions),
+            }
+            response = _ok(data)
+        elif cmd == "follow-ups":
+            repo_path = Path(args.repo).resolve()
+            from exo.stdlib.follow_up import (
+                FollowUpReport,
+                detect_follow_ups,
+                follow_ups_to_list,
+                format_follow_ups_human,
+            )
+
+            ticket_id = args.ticket_id.strip() if args.ticket_id else ""
+
+            # Gather trace data if available
+            fu_trace_report = None
+            try:
+                from exo.stdlib.features import FEATURES_PATH
+
+                if (repo_path / FEATURES_PATH).exists():
+                    fu_trace_report = trace(repo_path)
+            except Exception:
+                pass
+
+            fu_list = detect_follow_ups(
+                repo_path,
+                ticket_id=ticket_id,
+                trace_report=fu_trace_report,
+            )
+            fu_report = FollowUpReport(detected=tuple(fu_list), created_ids=(), skipped=0)
+            data = {
+                "count": len(fu_list),
+                "follow_ups": follow_ups_to_list(fu_list),
+                "_human_summary": format_follow_ups_human(fu_report),
             }
             response = _ok(data)
         elif cmd == "scan":

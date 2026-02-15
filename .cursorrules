@@ -87,6 +87,30 @@ When you complete significant work or the user appears to be wrapping up:
 - Do NOT wait for `session-finish` — many users close the editor without explicit session end
 - Good reflection triggers: bug fixes, CI failures, gotchas, architectural decisions, workflow improvements
 
+### Feature Governance Protocol
+
+All source code must be governed by the feature manifest (`.exo/features.yaml`).
+
+Before writing code:
+1. Check which feature your work belongs to: `exo features`
+2. Add `@feature:<feature-id>` / `@endfeature` tags around new code blocks
+
+After finishing:
+- Run `exo trace` to verify no uncovered code
+- If you built a new subsystem, add it to `.exo/features.yaml` first
+
+### Tool Reuse Protocol
+
+Before writing new utility functions, SEARCH the tool registry:
+  `exo tool-search "<keywords>"`
+
+After building a reusable utility, REGISTER it:
+  `exo tool-register <module> <function> --description "..."`
+
+Mark a tool as used when you import/call it:
+  `exo tool-use <tool_id>`
+
+
 ## Session Lifecycle
 
 Before starting any work:
