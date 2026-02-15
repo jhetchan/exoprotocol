@@ -11,8 +11,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from exo.integrations.openai_agents import ExoRunHooks
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets

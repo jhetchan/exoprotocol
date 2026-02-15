@@ -18,7 +18,7 @@ import pytest
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets
 from exo.kernel.errors import ExoError
-from exo.orchestrator.session import AgentSessionManager, HANDOFF_PREFIX, SESSION_CACHE_DIR, scan_sessions
+from exo.orchestrator.session import HANDOFF_PREFIX, SESSION_CACHE_DIR, AgentSessionManager, scan_sessions
 from exo.stdlib.conflicts import enforce_scope_partition
 
 

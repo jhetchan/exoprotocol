@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +18,7 @@ import pytest
 
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets
-from exo.orchestrator.session import AgentSessionManager, SESSION_CACHE_DIR, SESSION_INDEX_PATH
+from exo.orchestrator.session import SESSION_INDEX_PATH, AgentSessionManager
 from exo.stdlib.hooks import (
     HOOK_ACTOR,
     HOOK_VENDOR,
