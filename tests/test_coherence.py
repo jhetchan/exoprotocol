@@ -683,3 +683,378 @@ class TestUpgradeBackfillsCoherence:
         config_after = load_yaml(tmp_path / ".exo" / "config.yaml")
         assert "coherence" in config_after
         assert config_after["coherence"]["enabled"] is True
+
+
+# ── Coherence wired into exo check ──────────────────────────────
+
+
+def _create_ticket_and_lock(repo: Path, ticket_id: str = "TICKET-001") -> None:
+    from exo.kernel import tickets
+
+    tickets.save_ticket(
+        repo,
+        {
+            "id": ticket_id,
+            "title": "test",
+            "intent": "test",
+            "priority": 1,
+            "type": "feature",
+            "status": "todo",
+            "labels": [],
+            "checks": [],
+        },
+    )
+    tickets.acquire_lock(repo, ticket_id, owner="test")
+
+
+class TestCheckIncludesCoherence:
+    """TKT-2WV0: exo check should run coherence checks automatically."""
+
+    def test_check_returns_coherence_field(self, tmp_path: Path) -> None:
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        _init_git(repo)
+        _create_ticket_and_lock(repo)
+        engine = KernelEngine(str(repo))
+        result = engine.check()
+        data = result.get("data", {})
+        assert "coherence" in data
+
+    def test_check_coherence_passes_when_clean(self, tmp_path: Path) -> None:
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        _init_git(repo)
+        _create_ticket_and_lock(repo)
+        engine = KernelEngine(str(repo))
+        result = engine.check()
+        data = result.get("data", {})
+        assert data["coherence"]["passed"] is True
+        assert data["passed"] is True
+
+    def test_check_coherence_warns_on_co_update_violation(self, tmp_path: Path) -> None:
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        config = load_yaml(repo / ".exo" / "config.yaml")
+        config["coherence"]["co_update_rules"] = [{"files": ["a.py", "b.py"], "label": "pair"}]
+        dump_yaml(repo / ".exo" / "config.yaml", config)
+        _init_git(repo)
+
+        # Create feature branch and change only a.py (so diff main..HEAD shows it)
+        subprocess.run(["git", "checkout", "-b", "feature-test"], cwd=str(repo), capture_output=True)
+        (repo / "a.py").write_text("x = 1\n")
+        subprocess.run(["git", "add", "a.py"], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "add a"], cwd=str(repo), capture_output=True)
+
+        _create_ticket_and_lock(repo)
+        engine = KernelEngine(str(repo))
+        result = engine.check()
+        data = result.get("data", {})
+        coh = data["coherence"]
+        assert coh["warning_count"] >= 1
+        co_update_v = [v for v in coh["violations"] if v["kind"] == "co_update"]
+        assert len(co_update_v) == 1
+
+    def test_check_coherence_disabled_skips(self, tmp_path: Path) -> None:
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        config = load_yaml(repo / ".exo" / "config.yaml")
+        config["coherence"]["enabled"] = False
+        dump_yaml(repo / ".exo" / "config.yaml", config)
+        _init_git(repo)
+        _create_ticket_and_lock(repo)
+        engine = KernelEngine(str(repo))
+        result = engine.check()
+        data = result.get("data", {})
+        # Coherence disabled → None
+        assert data["coherence"] is None
+
+    def test_push_includes_coherence(self, tmp_path: Path) -> None:
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        _init_git(repo)
+        _create_ticket_and_lock(repo)
+        engine = KernelEngine(str(repo))
+        result = engine.push()
+        data = result.get("data", {})
+        checks = data.get("checks", {})
+        assert "coherence" in checks
+
+
+# ── Plan-time co-update advisory ────────────────────────────────
+
+
+class TestPlanCoUpdateAdvisory:
+    """TKT-ZQJH: exo plan should warn about co-update impact."""
+
+    def test_plan_returns_co_update_advisories(self, tmp_path: Path) -> None:
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        config = load_yaml(repo / ".exo" / "config.yaml")
+        config["coherence"]["co_update_rules"] = [
+            {"files": ["exo/cli.py", "docs/cli-reference.md"], "label": "CLI-doc pair"}
+        ]
+        dump_yaml(repo / ".exo" / "config.yaml", config)
+        _init_git(repo)
+
+        engine = KernelEngine(str(repo))
+        # Plan with a ticket whose scope includes cli.py but not docs/cli-reference.md
+        result = engine.plan("Add a new CLI command")
+        data = result.get("data", {})
+        # Script may or may not create tickets; the co_update_advisories field
+        # is present only when violations are found against created ticket scopes.
+        # Since the script is a no-op, no tickets → no advisories
+        assert "co_update_advisories" not in data or data["co_update_advisories"] == []
+
+    def test_plan_co_update_advisory_with_scoped_ticket(self, tmp_path: Path) -> None:
+        """When created tickets have scope overlapping co-update rules, advisory appears."""
+        from exo.kernel import tickets as tmod
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        config = load_yaml(repo / ".exo" / "config.yaml")
+        config["coherence"]["co_update_rules"] = [
+            {"files": ["exo/cli.py", "docs/cli-reference.md"], "label": "CLI-doc pair"}
+        ]
+        dump_yaml(repo / ".exo" / "config.yaml", config)
+        _init_git(repo)
+
+        # Pre-create a ticket whose scope includes cli.py but not docs/cli-reference.md
+        tmod.save_ticket(
+            repo,
+            {
+                "id": "TKT-TEST-001",
+                "title": "Test ticket",
+                "intent": "test",
+                "priority": 1,
+                "type": "feature",
+                "status": "todo",
+                "labels": [],
+                "checks": [],
+                "scope": {"allow": ["exo/cli.py"], "deny": []},
+            },
+        )
+
+        # Mock the plan script to return this ticket
+        engine = KernelEngine(str(repo))
+        from unittest.mock import patch as _patch
+
+        with _patch.object(
+            engine,
+            "_run_script",
+            return_value={
+                "spec_markdown": "# Test Spec\n",
+                "tickets": [
+                    {
+                        "id": "TKT-TEST-002",
+                        "title": "Add CLI command",
+                        "intent": "test",
+                        "priority": 1,
+                        "type": "feature",
+                        "status": "todo",
+                        "labels": [],
+                        "checks": [],
+                        "scope": {"allow": ["exo/cli.py"], "deny": []},
+                    }
+                ],
+            },
+        ):
+            result = engine.plan("Add a new CLI command")
+        data = result.get("data", {})
+        advisories = data.get("co_update_advisories", [])
+        assert len(advisories) >= 1
+        assert advisories[0]["kind"] == "co_update_impact"
+        assert "docs/cli-reference.md" in advisories[0]["missing_file"]
+
+    def test_plan_no_advisory_when_scope_covers_both(self, tmp_path: Path) -> None:
+        """No advisory when ticket scope includes all co-update files."""
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        config = load_yaml(repo / ".exo" / "config.yaml")
+        config["coherence"]["co_update_rules"] = [
+            {"files": ["exo/cli.py", "docs/cli-reference.md"], "label": "CLI-doc pair"}
+        ]
+        dump_yaml(repo / ".exo" / "config.yaml", config)
+        _init_git(repo)
+
+        engine = KernelEngine(str(repo))
+        from unittest.mock import patch as _patch
+
+        with _patch.object(
+            engine,
+            "_run_script",
+            return_value={
+                "spec_markdown": "# Test Spec\n",
+                "tickets": [
+                    {
+                        "id": "TKT-TEST-003",
+                        "title": "Add CLI command with docs",
+                        "intent": "test",
+                        "priority": 1,
+                        "type": "feature",
+                        "status": "todo",
+                        "labels": [],
+                        "checks": [],
+                        "scope": {"allow": ["exo/cli.py", "docs/cli-reference.md"], "deny": []},
+                    }
+                ],
+            },
+        ):
+            result = engine.plan("Add a new CLI command with docs")
+        data = result.get("data", {})
+        assert "co_update_advisories" not in data or data["co_update_advisories"] == []
+
+
+# ── Session-start co-update advisory ────────────────────────────
+
+
+class TestSessionStartCoUpdateAdvisory:
+    """TKT-913A: session-start should warn about co-update impact."""
+
+    def _setup_session_repo(self, tmp_path: Path) -> Path:
+        from exo.kernel import tickets as tmod
+
+        repo = _bootstrap_repo(tmp_path)
+        _init_git(repo)
+        config = load_yaml(repo / ".exo" / "config.yaml")
+        config["coherence"]["co_update_rules"] = [
+            {"files": ["exo/cli.py", "docs/cli-reference.md"], "label": "CLI-doc pair"}
+        ]
+        dump_yaml(repo / ".exo" / "config.yaml", config)
+
+        tmod.save_ticket(
+            repo,
+            {
+                "id": "TKT-COTEST-001",
+                "title": "Test co-update",
+                "intent": "test",
+                "priority": 1,
+                "type": "feature",
+                "status": "todo",
+                "labels": [],
+                "checks": [],
+                "scope": {"allow": ["exo/cli.py", "tests/**"], "deny": []},
+            },
+        )
+        return repo
+
+    def test_session_start_co_update_advisory_in_bootstrap(self, tmp_path: Path) -> None:
+        from exo.orchestrator.session import AgentSessionManager
+
+        repo = self._setup_session_repo(tmp_path)
+        mgr = AgentSessionManager(root=repo, actor="agent:test")
+        result = mgr.start(
+            ticket_id="TKT-COTEST-001",
+            vendor="test",
+            model="test-model",
+            acquire_lock=True,
+        )
+        bootstrap = result.get("bootstrap_prompt", "")
+        assert "Co-update" in bootstrap
+
+    def test_session_start_co_update_advisory_mentions_missing_file(self, tmp_path: Path) -> None:
+        from exo.orchestrator.session import AgentSessionManager
+
+        repo = self._setup_session_repo(tmp_path)
+        mgr = AgentSessionManager(root=repo, actor="agent:test")
+        result = mgr.start(
+            ticket_id="TKT-COTEST-001",
+            vendor="test",
+            model="test-model",
+            acquire_lock=True,
+        )
+        bootstrap = result.get("bootstrap_prompt", "")
+        assert "docs/cli-reference.md" in bootstrap
+
+    def test_session_start_no_advisory_when_scope_covers_all(self, tmp_path: Path) -> None:
+        from exo.kernel import tickets as tmod
+        from exo.orchestrator.session import AgentSessionManager
+
+        repo = _bootstrap_repo(tmp_path)
+        _init_git(repo)
+        config = load_yaml(repo / ".exo" / "config.yaml")
+        config["coherence"]["co_update_rules"] = [
+            {"files": ["exo/cli.py", "docs/cli-reference.md"], "label": "CLI-doc pair"}
+        ]
+        dump_yaml(repo / ".exo" / "config.yaml", config)
+
+        tmod.save_ticket(
+            repo,
+            {
+                "id": "TKT-COTEST-002",
+                "title": "Test co-update full coverage",
+                "intent": "test",
+                "priority": 1,
+                "type": "feature",
+                "status": "todo",
+                "labels": [],
+                "checks": [],
+                "scope": {"allow": ["exo/cli.py", "docs/cli-reference.md"], "deny": []},
+            },
+        )
+
+        mgr = AgentSessionManager(root=repo, actor="agent:test")
+        result = mgr.start(
+            ticket_id="TKT-COTEST-002",
+            vendor="test",
+            model="test-model",
+            acquire_lock=True,
+        )
+        advisories = result.get("start_advisories") or []
+        co_update_adv = [a for a in advisories if a.get("kind") == "co_update_impact"]
+        assert co_update_adv == []
+
+    def test_session_start_advisory_in_advisories_dict(self, tmp_path: Path) -> None:
+        from exo.orchestrator.session import AgentSessionManager
+
+        repo = self._setup_session_repo(tmp_path)
+        mgr = AgentSessionManager(root=repo, actor="agent:test")
+        result = mgr.start(
+            ticket_id="TKT-COTEST-001",
+            vendor="test",
+            model="test-model",
+            acquire_lock=True,
+        )
+        advisories = result.get("start_advisories") or []
+        co_update_adv = [a for a in advisories if a.get("kind") == "co_update_impact"]
+        assert len(co_update_adv) >= 1
+        assert "docs/cli-reference.md" in co_update_adv[0]["message"]
+
+    def test_session_start_no_advisory_without_co_update_rules(self, tmp_path: Path) -> None:
+        from exo.kernel import tickets as tmod
+        from exo.orchestrator.session import AgentSessionManager
+
+        repo = _bootstrap_repo(tmp_path)
+        _init_git(repo)
+
+        tmod.save_ticket(
+            repo,
+            {
+                "id": "TKT-COTEST-003",
+                "title": "No rules",
+                "intent": "test",
+                "priority": 1,
+                "type": "feature",
+                "status": "todo",
+                "labels": [],
+                "checks": [],
+                "scope": {"allow": ["exo/cli.py"], "deny": []},
+            },
+        )
+
+        mgr = AgentSessionManager(root=repo, actor="agent:test")
+        result = mgr.start(
+            ticket_id="TKT-COTEST-003",
+            vendor="test",
+            model="test-model",
+            acquire_lock=True,
+        )
+        advisories = result.get("start_advisories") or []
+        co_update_adv = [a for a in advisories if a.get("kind") == "co_update_impact"]
+        assert co_update_adv == []

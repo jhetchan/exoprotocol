@@ -116,6 +116,52 @@ You can also customize the auditor persona by creating `.exo/audit_persona.md` w
 
 ---
 
+## Enforcement hooks
+
+ExoProtocol can mechanically enforce governance checks at git and agent runtime level.
+
+### Git pre-commit hook
+
+```bash
+exo hook-install --git
+```
+
+This writes `.git/hooks/pre-commit` that runs `exo check` before every commit. If checks fail, the commit is blocked. Use `--no-verify` to bypass in emergencies.
+
+### Claude Code PreToolUse enforcement
+
+```bash
+exo hook-install --enforce
+```
+
+This installs a Claude Code `PreToolUse` hook that intercepts `git commit` and `git push` commands and runs `exo check` first. If checks fail, the tool call is blocked — the agent cannot push unchecked code.
+
+### Governed push
+
+Instead of bare `git push`, use:
+
+```bash
+exo push                         # runs exo check, then git push
+exo push --remote origin         # explicit remote
+exo push --force                 # uses --force-with-lease
+```
+
+This is the recommended way to push code in a governed repo. All adapter files (CLAUDE.md, .cursorrules, AGENTS.md) include a directive telling agents to use `exo push`.
+
+### Promoting learnings to checks
+
+When an agent discovers a pattern worth enforcing mechanically:
+
+```bash
+exo reflect --pattern "Pushing without running ruff" \
+            --insight "Always run ruff before pushing" \
+            --promote-check "ruff check ."
+```
+
+The `--promote-check` flag adds the command to `checks_allowlist` in config, so it's enforced by `exo check`, `exo push`, session-finish, and pre-commit hooks.
+
+---
+
 ## CI integration
 
 Set up PR governance checks in one command:
@@ -399,6 +445,10 @@ Installed via `exo hook-install`. Automatically starts/finishes governed session
 | Audit a session | `exo session-audit --ticket-id TID ...` |
 | Hand off to another agent | `exo session-handoff --to agent:x --ticket-id TID --summary "..."` |
 | Record a learning | `exo reflect --pattern "..." --insight "..."` |
+| Promote learning to check | `exo reflect --pattern "..." --insight "..." --promote-check "cmd"` |
+| Install git enforcement | `exo hook-install --git` |
+| Install Claude Code enforcement | `exo hook-install --enforce` |
+| Governed push | `exo push` |
 | Find existing tools | `exo tool-search "keywords"` |
 | Preview sandbox policy | `exo sandbox-policy` |
 | Fix CI failures | `exo ci-fix [--apply] [--push]` |

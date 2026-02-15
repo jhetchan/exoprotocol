@@ -611,3 +611,70 @@ class TestConstants:
 
     def test_valid_statuses(self) -> None:
         assert {"active", "superseded", "dismissed"} == VALID_STATUSES
+
+
+# ── Check Promotion ──────────────────────────────────────────────
+
+
+class TestPromoteCheck:
+    def test_promotes_command_to_allowlist(self, tmp_path: Path) -> None:
+        from exo.stdlib.reflect import promote_check
+
+        repo = _bootstrap_repo(tmp_path)
+        result = promote_check(repo, command="ruff check .")
+        assert result["promoted"] is True
+        assert result["command"] == "ruff check ."
+        assert "ruff check ." in result["checks_allowlist"]
+
+    def test_persists_to_config(self, tmp_path: Path) -> None:
+        from exo.stdlib.reflect import promote_check
+
+        repo = _bootstrap_repo(tmp_path)
+        promote_check(repo, command="ruff format --check .")
+        config = yaml.safe_load((repo / ".exo" / "config.yaml").read_text(encoding="utf-8"))
+        assert "ruff format --check ." in config["checks_allowlist"]
+
+    def test_idempotent(self, tmp_path: Path) -> None:
+        from exo.stdlib.reflect import promote_check
+
+        repo = _bootstrap_repo(tmp_path)
+        promote_check(repo, command="ruff check .")
+        result = promote_check(repo, command="ruff check .")
+        assert result["promoted"] is False
+        assert result["reason"] == "already_in_allowlist"
+        config = yaml.safe_load((repo / ".exo" / "config.yaml").read_text(encoding="utf-8"))
+        assert config["checks_allowlist"].count("ruff check .") == 1
+
+    def test_preserves_existing_config(self, tmp_path: Path) -> None:
+        from exo.stdlib.reflect import promote_check
+
+        repo = _bootstrap_repo(tmp_path)
+        (repo / ".exo" / "config.yaml").write_text(
+            "scheduler:\n  enabled: true\nchecks_allowlist:\n  - existing_check\n",
+            encoding="utf-8",
+        )
+        result = promote_check(repo, command="new_check")
+        assert result["promoted"] is True
+        config = yaml.safe_load((repo / ".exo" / "config.yaml").read_text(encoding="utf-8"))
+        assert "existing_check" in config["checks_allowlist"]
+        assert "new_check" in config["checks_allowlist"]
+        assert config["scheduler"]["enabled"] is True
+
+    def test_empty_command_raises(self, tmp_path: Path) -> None:
+        from exo.kernel.errors import ExoError
+        from exo.stdlib.reflect import promote_check
+
+        repo = _bootstrap_repo(tmp_path)
+        with __import__("pytest").raises(ExoError, match="PROMOTE_COMMAND_REQUIRED"):
+            promote_check(repo, command="")
+
+    def test_creates_config_if_missing(self, tmp_path: Path) -> None:
+        from exo.stdlib.reflect import promote_check
+
+        repo = _bootstrap_repo(tmp_path)
+        config_path = repo / ".exo" / "config.yaml"
+        if config_path.exists():
+            config_path.unlink()
+        result = promote_check(repo, command="pytest tests/")
+        assert result["promoted"] is True
+        assert config_path.exists()

@@ -12,6 +12,8 @@ from exo.kernel.errors import ExoError
 from exo.kernel.tickets import (
     allocate_intent_id,
     allocate_ticket_id,
+    archive_done_tickets,
+    archive_ticket,
     load_ticket,
     normalize_ticket,
     save_ticket,
@@ -138,6 +140,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     check_cmd = sub.add_parser("check", help="Run allowlisted checks")
     check_cmd.add_argument("ticket_id", nargs="?")
+
+    push_cmd = sub.add_parser("push", help="Run checks then git push (governed push)")
+    push_cmd.add_argument("ticket_id", nargs="?")
+    push_cmd.add_argument("--remote", default="origin", help="Git remote (default: origin)")
+    push_cmd.add_argument("--branch", default="", help="Branch to push (default: current)")
+    push_cmd.add_argument("--force", action="store_true", help="Use --force-with-lease")
 
     sub.add_parser("status", help="Show kernel status")
 
@@ -391,6 +399,9 @@ def _build_parser() -> argparse.ArgumentParser:
     ticket_create_cmd.add_argument("--boundary", default="")
     ticket_create_cmd.add_argument("--success-condition", default="", dest="success_condition")
 
+    archive_cmd = sub.add_parser("ticket-archive", help="Archive done tickets to ARCHIVE/ subdirectory")
+    archive_cmd.add_argument("ticket_id", nargs="?", default="", help="Ticket ID to archive (omit to archive all done)")
+
     pr_check_cmd = sub.add_parser("pr-check", help="Check governance compliance for all commits in a PR range")
     pr_check_cmd.add_argument("--base", default="main", help="Base branch/ref (default: main)")
     pr_check_cmd.add_argument("--head", default="HEAD", help="Head ref (default: HEAD)")
@@ -488,6 +499,7 @@ def _build_parser() -> argparse.ArgumentParser:
     gc_cmd = sub.add_parser("gc", help="Garbage-collect old mementos, cursors, and bootstraps")
     gc_cmd.add_argument("--max-age-days", type=float, default=30.0, help="Age threshold in days (default: 30)")
     gc_cmd.add_argument("--dry-run", action="store_true", help="Preview what would be removed")
+    gc_cmd.add_argument("--archive-done", action="store_true", help="Also archive done tickets to ARCHIVE/")
 
     gc_locks_cmd = sub.add_parser("gc-locks", help="Clean up expired distributed locks on remote")
     gc_locks_cmd.add_argument("--remote", default="origin", help="Git remote name (default: origin)")
@@ -508,6 +520,12 @@ def _build_parser() -> argparse.ArgumentParser:
     reflect_cmd.add_argument("--scope", default="global", help="'global' or a ticket ID")
     reflect_cmd.add_argument("--tag", action="append", default=[], help="Categorization tags")
     reflect_cmd.add_argument("--session-id", default="", help="Session ID (auto-detected if in active session)")
+    reflect_cmd.add_argument(
+        "--promote-check",
+        default="",
+        dest="promote_check",
+        help="Also add this command to checks_allowlist (learning → enforcement)",
+    )
 
     reflections_cmd = sub.add_parser("reflections", help="List stored reflections with optional filters")
     reflections_cmd.add_argument("--status", help="Filter by status (active, superseded, dismissed)")
@@ -554,6 +572,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     upgrade_cmd = sub.add_parser("upgrade", help="Upgrade .exo/ to latest schema version")
     upgrade_cmd.add_argument("--dry-run", action="store_true", help="Preview changes without applying")
+
+    hook_install_cmd = sub.add_parser(
+        "hook-install",
+        help="Install enforcement hooks (git pre-commit, Claude Code PreToolUse, or session lifecycle)",
+    )
+    hook_install_cmd.add_argument("--git", action="store_true", help="Install git pre-commit hook that runs exo check")
+    hook_install_cmd.add_argument(
+        "--enforce",
+        action="store_true",
+        help="Install Claude Code PreToolUse hook that gates git commit/push on exo check",
+    )
+    hook_install_cmd.add_argument("--dry-run", action="store_true", help="Preview without writing files")
 
     worker_poll_cmd = sub.add_parser("worker-poll", help="Poll ledger topic once and execute pending intents")
     worker_poll_cmd.add_argument("--topic", dest="topic_id")
@@ -724,6 +754,13 @@ def main(argv: list[str] | None = None) -> int:
             response = engine.do(args.ticket_id, patch_file=args.patch_file, mark_done=not bool(args.no_mark_done))
         elif cmd == "check":
             response = engine.check(args.ticket_id)
+        elif cmd == "push":
+            response = engine.push(
+                args.ticket_id,
+                remote=args.remote,
+                branch=args.branch,
+                force=bool(args.force),
+            )
         elif cmd == "status":
             response = engine.status()
         elif cmd == "jot":
@@ -1118,6 +1155,20 @@ def main(argv: list[str] | None = None) -> int:
                     "ticket": saved_ticket,
                 }
             )
+        elif cmd == "ticket-archive":
+            repo_path = Path(args.repo).resolve()
+            tid = str(args.ticket_id).strip()
+            if tid:
+                dest = archive_ticket(repo_path, tid)
+                response = _ok(
+                    {
+                        "archived": [{"id": tid, "archived_path": str(dest.relative_to(repo_path))}],
+                        "count": 1,
+                    }
+                )
+            else:
+                archived = archive_done_tickets(repo_path)
+                response = _ok({"archived": archived, "count": len(archived)})
         elif cmd == "pr-check":
             repo_path = Path(args.repo).resolve()
             report = pr_check(
@@ -1248,6 +1299,7 @@ def main(argv: list[str] | None = None) -> int:
                 repo_path,
                 max_age_days=float(args.max_age_days),
                 dry_run=bool(args.dry_run),
+                archive_done=bool(args.archive_done),
             )
             data = gc_to_dict(report)
             data["_human_summary"] = format_gc_human(report)
@@ -1307,7 +1359,13 @@ def main(argv: list[str] | None = None) -> int:
                 session_id=session_id,
                 tags=args.tag,
             )
-            response = _ok(reflect_to_dict(reflection))
+            data = reflect_to_dict(reflection)
+            if args.promote_check:
+                from exo.stdlib.reflect import promote_check as do_promote
+
+                promo = do_promote(repo_path, command=args.promote_check)
+                data["promoted"] = promo
+            response = _ok(data)
         elif cmd == "reflections":
             repo_path = Path(args.repo).resolve()
             refs = load_reflections(
@@ -1451,6 +1509,23 @@ def main(argv: list[str] | None = None) -> int:
             data = run_upgrade(repo_path, dry_run=bool(args.dry_run))
             data["_human_summary"] = format_upgrade_human(data)
             response = _ok(data)
+        elif cmd == "hook-install":
+            repo_path = Path(args.repo).resolve()
+            from exo.stdlib.hooks import install_enforce_hooks, install_git_hook, install_hooks
+
+            results: list[dict[str, Any]] = []
+            use_git = bool(args.git)
+            use_enforce = bool(args.enforce)
+            use_session = not use_git and not use_enforce  # default: session lifecycle hooks
+
+            if use_git:
+                results.append({"target": "git", **install_git_hook(repo_path, dry_run=bool(args.dry_run))})
+            if use_enforce:
+                results.append({"target": "enforce", **install_enforce_hooks(repo_path, dry_run=bool(args.dry_run))})
+            if use_session:
+                results.append({"target": "session", **install_hooks(repo_path, dry_run=bool(args.dry_run))})
+
+            response = _ok({"hooks": results})
         elif cmd == "worker-poll":
             worker = DistributedWorker(
                 args.repo,

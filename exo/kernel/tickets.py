@@ -20,6 +20,7 @@ from .types import INTENT_RISKS, TICKET_KINDS, Governance, Session, Ticket, Tick
 from .utils import default_topic_id, dump_json, dump_yaml, gen_timestamp_id, load_json, load_yaml, now_iso
 
 TICKETS_DIR = Path(".exo/tickets")
+ARCHIVE_DIR = TICKETS_DIR / "ARCHIVE"
 LOCK_FILE = Path(".exo/locks/ticket.lock.json")
 LOCK_GUARD_FILE = Path(".exo/locks/.ticket.lock.guard")
 ID_GUARD_FILE = Path(".exo/locks/.id.guard")
@@ -503,6 +504,52 @@ def blockers_resolved(ticket: dict[str, Any], index: dict[str, dict[str, Any]]) 
         if blocker.get("status") not in {"done", "archived"}:
             return False
     return True
+
+
+def archive_ticket(repo: Path, ticket_id: str) -> Path:
+    """Move a done ticket to the ARCHIVE/ subdirectory.
+
+    Returns the new path inside ARCHIVE/.
+    Raises ExoError if the ticket doesn't exist or isn't done.
+    """
+    src = ticket_path(repo, ticket_id)
+    if not src.exists():
+        raise ExoError(
+            code="TICKET_NOT_FOUND",
+            message=f"Ticket not found: {ticket_id}",
+        )
+    data = load_yaml(src)
+    data = normalize_ticket(data)
+    status = str(data.get("status", "")).strip()
+    if status != "done":
+        raise ExoError(
+            code="TICKET_NOT_DONE",
+            message=f"Cannot archive ticket {ticket_id}: status is '{status}', not 'done'",
+        )
+    archive_dir = repo / ARCHIVE_DIR
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    dest = archive_dir / ticket_file_name(ticket_id)
+    src.rename(dest)
+    return dest
+
+
+def archive_done_tickets(repo: Path) -> list[dict[str, str]]:
+    """Archive all tickets with status 'done'.
+
+    Returns a list of dicts with id and archived_path for each moved ticket.
+    """
+    archived: list[dict[str, str]] = []
+    for path in list_ticket_paths(repo):
+        raw = load_yaml(path)
+        raw = normalize_ticket(raw)
+        tid = str(raw.get("id", path.stem)).strip()
+        if str(raw.get("status", "")).strip() == "done":
+            try:
+                dest = archive_ticket(repo, tid)
+                archived.append({"id": tid, "archived_path": str(dest.relative_to(repo))})
+            except ExoError:
+                pass
+    return archived
 
 
 def _normalize_scope(scope: dict[str, Any] | None) -> dict[str, list[str]]:

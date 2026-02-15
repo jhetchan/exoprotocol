@@ -68,7 +68,7 @@ Orchestration and governance subsystems:
 | `follow_up.py` | Chain reaction: auto-create follow-up tickets from governance gaps |
 | `metrics.py` | Governance metrics API for dashboards |
 | `traces.py` | OTel-compatible JSONL trace export |
-| `hooks.py` | Claude Code lifecycle hooks and tool auto-discovery |
+| `hooks.py` | Claude Code lifecycle hooks, git pre-commit enforcement, PreToolUse gating, tool auto-discovery |
 | `ci_fix.py` | CI failure detection, auto-fix, and push |
 
 ### Orchestrator (`exo/orchestrator/`)

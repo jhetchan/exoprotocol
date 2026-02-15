@@ -157,6 +157,17 @@ if FastMCP:
         return _run(repo, "check", ticket_id=ticket_id)
 
     @mcp.tool()
+    def exo_push(
+        ticket_id: str | None = None,
+        repo: str = ".",
+        remote: str = "origin",
+        branch: str = "",
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Run governed checks then git push. Blocks push if checks fail."""
+        return _run(repo, "push", ticket_id=ticket_id, remote=remote, branch=branch, force=force)
+
+    @mcp.tool()
     def exo_jot(content: str, repo: str = ".") -> dict[str, Any]:
         return _run(repo, "jot", line=content)
 
@@ -1356,22 +1367,55 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_ticket_archive(
+        repo: str = ".",
+        ticket_id: str = "",
+    ) -> dict[str, Any]:
+        """Archive done tickets to the ARCHIVE/ subdirectory.
+
+        If ticket_id is provided, archives that single ticket (must have status 'done').
+        If omitted, archives ALL tickets with status 'done'.
+        """
+        try:
+            from exo.kernel.tickets import archive_done_tickets, archive_ticket
+
+            repo_path = Path(repo).resolve()
+            if ticket_id.strip():
+                dest = archive_ticket(repo_path, ticket_id.strip())
+                archived = [{"id": ticket_id.strip(), "archived_path": str(dest.relative_to(repo_path))}]
+            else:
+                archived = archive_done_tickets(repo_path)
+            return {"ok": True, "data": {"archived": archived, "count": len(archived)}, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_gc(
         repo: str = ".",
         max_age_days: float = 30.0,
         dry_run: bool = False,
+        archive_done: bool = False,
     ) -> dict[str, Any]:
         """Garbage-collect old mementos, cursors, and bootstraps.
 
         Scans .exo/memory/sessions/ for old memento files, .exo/cache/orchestrator/
         for orphaned cursors, and .exo/cache/sessions/ for leftover bootstraps.
-        Also compacts the session index JSONL.
+        Also compacts the session index JSONL. Use archive_done=True to also
+        archive done tickets to ARCHIVE/.
         """
         try:
             report = run_gc(
                 Path(repo).resolve(),
                 max_age_days=max_age_days,
                 dry_run=dry_run,
+                archive_done=archive_done,
             )
             return {"ok": True, "data": gc_to_dict(report), "events": [], "blocked": False}
         except ExoError as err:
@@ -1481,12 +1525,16 @@ if FastMCP:
         scope: str = "global",
         tags: list[str] | None = None,
         session_id: str = "",
+        promote_check: str = "",
     ) -> dict[str, Any]:
         """Record an operational learning from session experience.
 
         Agents call this when they encounter repeated failures or discover
         an insight worth persisting. The reflection is stored and automatically
         injected into future session bootstraps as 'Operational Learnings'.
+
+        With promote_check set, the command is also added to checks_allowlist
+        so it becomes mechanically enforced on exo check / exo push.
         """
         try:
             repo_path = Path(repo).resolve()
@@ -1506,7 +1554,13 @@ if FastMCP:
                 session_id=sid,
                 tags=tags or [],
             )
-            return {"ok": True, "data": reflect_to_dict(reflection), "events": [], "blocked": False}
+            data = reflect_to_dict(reflection)
+            if promote_check:
+                from exo.stdlib.reflect import promote_check as do_promote
+
+                promo = do_promote(repo_path, command=promote_check)
+                data["promoted"] = promo
+            return {"ok": True, "data": data, "events": [], "blocked": False}
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
         except Exception as exc:  # noqa: BLE001
@@ -1893,6 +1947,37 @@ if FastMCP:
                 "events": [],
                 "blocked": False,
             }
+
+    @mcp.tool()
+    def exo_hook_install(
+        repo: str = ".",
+        git: bool = False,
+        enforce: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Install enforcement hooks for ExoProtocol governance.
+
+        - git=True: Install git pre-commit hook that runs ``exo check``
+        - enforce=True: Install Claude Code PreToolUse hook gating git commit/push
+        - Neither: Install session lifecycle hooks (SessionStart/SessionEnd)
+        """
+        try:
+            from exo.stdlib.hooks import install_enforce_hooks, install_git_hook, install_hooks
+
+            repo_path = Path(repo).resolve()
+            results: list[dict[str, Any]] = []
+            use_session = not git and not enforce
+
+            if git:
+                results.append({"target": "git", **install_git_hook(repo_path, dry_run=dry_run)})
+            if enforce:
+                results.append({"target": "enforce", **install_enforce_hooks(repo_path, dry_run=dry_run)})
+            if use_session:
+                results.append({"target": "session", **install_hooks(repo_path, dry_run=dry_run)})
+
+            return {"ok": True, "data": {"hooks": results}, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
 
 
 def main() -> int:
