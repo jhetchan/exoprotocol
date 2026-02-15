@@ -3,6 +3,7 @@
 Generates CLAUDE.md, .cursorrules, and AGENTS.md that agent runtimes auto-read,
 bridging ExoProtocol governance into the agent's native config format.
 """
+# @feature:adapter-generation
 
 from __future__ import annotations
 

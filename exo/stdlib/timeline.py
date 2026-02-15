@@ -1,4 +1,5 @@
 """Intent timeline: trace every ticket back to its declared intent."""
+# @feature:intent-timeline
 
 from __future__ import annotations
 

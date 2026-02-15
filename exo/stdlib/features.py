@@ -7,6 +7,7 @@ against the manifest to detect orphan code, invalid tags, and deprecated usage.
 This is deterministic (regex-based, no LLM) and designed to run as a governed
 check at session-finish or in CI.
 """
+# @feature:feature-traceability
 
 from __future__ import annotations
 

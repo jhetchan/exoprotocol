@@ -9,6 +9,7 @@ Missing file means empty registry (no error).
 
 Deterministic (no LLM). Called from CLI and MCP.
 """
+# @feature:tool-awareness
 
 from __future__ import annotations
 

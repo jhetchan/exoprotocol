@@ -7,6 +7,7 @@ feature traceability, requirement traceability, and session health.
 This is designed to run as a single health-check command (`exo drift`)
 that aggregates results from all governance subsystems.
 """
+# @feature:drift-detection
 
 from __future__ import annotations
 
