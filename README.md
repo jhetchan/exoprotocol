@@ -88,13 +88,24 @@ Works with Claude Code, Cursor, and any MCP-compatible client. Every CLI command
 
 ## Documentation
 
-- [Agent Quickstart](docs/agent-quickstart.md) — zero to first governed session
-- [Session Lifecycle](docs/session-lifecycle.md) — state machine, bootstrap anatomy, audit mode
-- [Governance Rules](docs/governance-rules.md) — rule types, budgets, scope, traceability
-- [Config Reference](docs/config-reference.md) — complete `.exo/config.yaml` schema
-- [Error Reference](docs/error-reference.md) — every ExoError code with resolution steps
+### Guides (for humans)
+
+- [Getting Started](docs/guides/quickstart.md) — install, init, connect your agents
+- [Workflow Patterns](docs/guides/workflows.md) — solo, multi-agent, code review, CI
+- [FAQ](docs/guides/faq.md) — common questions and quick fixes
+
+### Agent Reference
+
+- [Agent Quickstart](docs/agents/quickstart.md) — zero to first governed session
+- [Session Lifecycle](docs/agents/session-lifecycle.md) — state machine, bootstrap anatomy, audit mode
+- [Governance Rules](docs/agents/governance-rules.md) — rule types, budgets, scope, traceability
+- [Config Reference](docs/agents/config-reference.md) — complete `.exo/config.yaml` schema
+- [Error Reference](docs/agents/error-reference.md) — every ExoError code with resolution steps
+- [MCP Tool Reference](docs/agents/mcp-tool-reference.md) — all 64 MCP tool signatures
+
+### Shared
+
 - [CLI Reference](docs/cli-reference.md) — all commands at a glance
-- [MCP Tool Reference](docs/mcp-tool-reference.md) — all 64 MCP tool signatures
 - [Architecture](docs/architecture.md) — layer model, key concepts, module map
 - [exoprotocol.dev](https://exoprotocol.dev/) — project site
 

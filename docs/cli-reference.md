@@ -2,7 +2,9 @@
 
 All commands support `--format json`.
 
-**See also**: [Agent Quickstart](agent-quickstart.md) | [Session Lifecycle](session-lifecycle.md) | [Governance Rules](governance-rules.md) | [Config Reference](config-reference.md) | [Error Reference](error-reference.md) | [MCP Tool Reference](mcp-tool-reference.md)
+**Guides**: [Getting Started](guides/quickstart.md) | [Workflows](guides/workflows.md) | [FAQ](guides/faq.md)
+
+**Agent Reference**: [Agent Quickstart](agents/quickstart.md) | [Session Lifecycle](agents/session-lifecycle.md) | [Governance Rules](agents/governance-rules.md) | [Config Reference](agents/config-reference.md) | [Error Reference](agents/error-reference.md) | [MCP Tool Reference](agents/mcp-tool-reference.md)
 
 ## Core lifecycle
 
