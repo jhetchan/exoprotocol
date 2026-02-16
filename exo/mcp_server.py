@@ -1974,18 +1974,30 @@ if FastMCP:
         repo: str = ".",
         git: bool = False,
         enforce: bool = False,
+        install_all: bool = False,
         dry_run: bool = False,
     ) -> dict[str, Any]:
         """Install enforcement hooks for ExoProtocol governance.
 
+        - install_all=True: Install ALL hooks (session lifecycle + enforcement + git)
         - git=True: Install git pre-commit hook that runs ``exo check``
-        - enforce=True: Install Claude Code PreToolUse hook gating git commit/push
-        - Neither: Install session lifecycle hooks (SessionStart/SessionEnd)
+        - enforce=True: Install Claude Code enforcement hooks (PreToolUse + PostToolUse + scope)
+        - Neither: Install session lifecycle hooks (SessionStart/SessionEnd/Stop/Notification)
         """
         try:
-            from exo.stdlib.hooks import install_enforce_hooks, install_git_hook, install_hooks
+            from exo.stdlib.hooks import (
+                install_all_hooks,
+                install_enforce_hooks,
+                install_git_hook,
+                install_hooks,
+            )
 
             repo_path = Path(repo).resolve()
+
+            if install_all:
+                data = install_all_hooks(repo_path, dry_run=dry_run)
+                return {"ok": True, "data": data, "events": [], "blocked": False}
+
             results: list[dict[str, Any]] = []
             use_session = not git and not enforce
 

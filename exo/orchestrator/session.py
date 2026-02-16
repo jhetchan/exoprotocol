@@ -58,6 +58,54 @@ def _current_git_branch(repo: Path) -> str:
     return ""
 
 
+def _auto_create_ticket_branch(repo: Path, ticket_id: str) -> str:
+    """Create and checkout a per-ticket branch if git_controls.auto_create_lock_branch is enabled.
+
+    Branch name: ``exo/<ticket_id>``.  If already on it, no-op.
+    Returns the branch name on success, empty string on skip/failure.
+    Advisory — never raises.
+    """
+    try:
+        config = load_yaml(repo / ".exo" / "config.yaml") if (repo / ".exo" / "config.yaml").exists() else {}
+        git_controls = config.get("git_controls", {})
+        if not git_controls.get("auto_create_lock_branch"):
+            return ""
+
+        branch_name = f"exo/{ticket_id}"
+        current = _current_git_branch(repo)
+        if current == branch_name:
+            return branch_name  # already on it
+
+        # Check if branch exists
+        check = subprocess.run(
+            ["git", "rev-parse", "--verify", branch_name],
+            capture_output=True,
+            text=True,
+            cwd=str(repo),
+            timeout=10,
+        )
+        if check.returncode == 0:
+            # Branch exists — switch to it
+            subprocess.run(
+                ["git", "checkout", branch_name],
+                capture_output=True,
+                cwd=str(repo),
+                timeout=10,
+            )
+        else:
+            # Create from base branch
+            base = git_controls.get("base_branch_fallback", "main")
+            subprocess.run(
+                ["git", "checkout", "-b", branch_name, base],
+                capture_output=True,
+                cwd=str(repo),
+                timeout=10,
+            )
+        return branch_name
+    except Exception:
+        return ""  # Advisory — never block session-start
+
+
 def _git_commits_since(repo: Path, since_iso: str, branch: str = "") -> list[str]:
     """Get commit SHAs created since a given ISO timestamp on the current branch."""
     try:
@@ -422,13 +470,20 @@ class AgentSessionManager:
 
             lock = tickets.ensure_lock(self.root, ticket_id=chosen_ticket)
             lock_owner = str(lock.get("owner", "")).strip()
-            if lock_owner and lock_owner != self.actor:
+            # Allow instance-unique actors that extend the lock owner
+            # e.g. lock owner "agent:claude-code", actor "agent:claude-code:abc12345"
+            if lock_owner and lock_owner != self.actor and not self.actor.startswith(lock_owner + ":"):
                 raise ExoError(
                     code="SESSION_LOCK_OWNER_MISMATCH",
                     message=f"Active lock owner is {lock_owner}; session actor is {self.actor}",
                     details={"ticket_id": chosen_ticket, "lock_owner": lock_owner, "actor": self.actor},
                     blocked=True,
                 )
+
+        # Auto-branch: create per-ticket branch if configured (advisory)
+        auto_branch = ""
+        if not concurrent and mode != "audit":
+            auto_branch = _auto_create_ticket_branch(self.root, chosen_ticket)
 
         started_at = now_iso()
         session_id = _session_id()
@@ -913,7 +968,7 @@ class AgentSessionManager:
             self.root,
             f"chore(exo): session-start {session_id} [{chosen_ticket}]",
         )
-        return {
+        result: dict[str, Any] = {
             "session": session_payload,
             "bootstrap_path": str(relative_posix(self.bootstrap_path, self.root)),
             "bootstrap_prompt": bootstrap_text,
@@ -922,6 +977,9 @@ class AgentSessionManager:
             "start_advisories": start_advisories if start_advisories else None,
             "sidecar_commit": sidecar_commit,
         }
+        if auto_branch:
+            result["auto_branch"] = auto_branch
+        return result
 
     def finish(
         self,

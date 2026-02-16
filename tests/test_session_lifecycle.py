@@ -397,3 +397,106 @@ def test_stale_session_evicted_on_start(tmp_path: Path) -> None:
 
     assert out["reused"] is False
     assert out["session"]["status"] == "active"
+
+
+# ── Auto-Branch on Session-Start ─────────────────────────────────
+
+
+class TestAutoBranchOnSessionStart:
+    """Test that session-start auto-creates and checks out per-ticket branches."""
+
+    def _setup_git_repo(self, tmp_path: Path) -> Path:
+        """Create a git repo with governance and auto_create_lock_branch config."""
+        import subprocess
+
+        repo = _bootstrap_repo(tmp_path)
+        subprocess.run(["git", "init", "-b", "main"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init", "--no-verify"],
+            cwd=str(repo),
+            capture_output=True,
+            check=True,
+            env={
+                **__import__("os").environ,
+                "GIT_AUTHOR_NAME": "test",
+                "GIT_COMMITTER_NAME": "test",
+                "GIT_AUTHOR_EMAIL": "t@t",
+                "GIT_COMMITTER_EMAIL": "t@t",
+            },
+        )
+
+        # Enable auto-branch via config
+        config = {
+            "version": 1,
+            "git_controls": {
+                "enabled": True,
+                "auto_create_lock_branch": True,
+                "base_branch_fallback": "main",
+            },
+        }
+        (repo / ".exo" / "config.yaml").write_text(json.dumps(config, indent=2), encoding="utf-8")
+        return repo
+
+    def test_creates_ticket_branch(self, tmp_path: Path) -> None:
+        import subprocess
+
+        repo = self._setup_git_repo(tmp_path)
+        _seed_ticket(repo)
+        tickets_mod.acquire_lock(repo, "TICKET-111", owner="agent:test", role="developer")
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(vendor="test", model="test")
+        assert result.get("auto_branch") == "exo/TICKET-111"
+        # Verify we're on the branch
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert branch == "exo/TICKET-111"
+
+    def test_reuses_existing_ticket_branch(self, tmp_path: Path) -> None:
+        import subprocess
+
+        repo = self._setup_git_repo(tmp_path)
+        # Create the branch manually
+        subprocess.run(
+            ["git", "checkout", "-b", "exo/TICKET-111"],
+            cwd=str(repo),
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(["git", "checkout", "main"], cwd=str(repo), capture_output=True, check=True)
+        _seed_ticket(repo)
+        tickets_mod.acquire_lock(repo, "TICKET-111", owner="agent:test", role="developer")
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(vendor="test", model="test")
+        assert result.get("auto_branch") == "exo/TICKET-111"
+
+    def test_skips_without_config(self, tmp_path: Path) -> None:
+        """Auto-branch skipped when auto_create_lock_branch is not enabled."""
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo)
+        tickets_mod.acquire_lock(repo, "TICKET-111", owner="agent:test", role="developer")
+        manager = AgentSessionManager(repo, actor="agent:test")
+        result = manager.start(vendor="test", model="test")
+        assert "auto_branch" not in result
+
+    def test_skips_in_audit_mode(self, tmp_path: Path) -> None:
+        """Auto-branch skipped in audit mode."""
+        import subprocess
+
+        repo = self._setup_git_repo(tmp_path)
+        _seed_ticket(repo)
+        tickets_mod.acquire_lock(repo, "TICKET-111", owner="agent:test", role="developer")
+        manager = AgentSessionManager(repo, actor="agent:test")
+        manager.start(vendor="test", model="test", mode="audit")
+        # Should stay on main
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert branch == "main"

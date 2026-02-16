@@ -585,7 +585,13 @@ def _build_parser() -> argparse.ArgumentParser:
     hook_install_cmd.add_argument(
         "--enforce",
         action="store_true",
-        help="Install Claude Code PreToolUse hook that gates git commit/push on exo check",
+        help="Install Claude Code enforcement hooks (PreToolUse + PostToolUse + scope)",
+    )
+    hook_install_cmd.add_argument(
+        "--all",
+        action="store_true",
+        dest="install_all",
+        help="Install ALL hooks: session lifecycle + enforcement + git pre-commit",
     )
     hook_install_cmd.add_argument("--dry-run", action="store_true", help="Preview without writing files")
 
@@ -1523,21 +1529,32 @@ def main(argv: list[str] | None = None) -> int:
             response = _ok(data)
         elif cmd == "hook-install":
             repo_path = Path(args.repo).resolve()
-            from exo.stdlib.hooks import install_enforce_hooks, install_git_hook, install_hooks
+            from exo.stdlib.hooks import (
+                install_all_hooks,
+                install_enforce_hooks,
+                install_git_hook,
+                install_hooks,
+            )
 
-            results: list[dict[str, Any]] = []
-            use_git = bool(args.git)
-            use_enforce = bool(args.enforce)
-            use_session = not use_git and not use_enforce  # default: session lifecycle hooks
+            if bool(args.install_all):
+                data = install_all_hooks(repo_path, dry_run=bool(args.dry_run))
+                response = _ok(data)
+            else:
+                results: list[dict[str, Any]] = []
+                use_git = bool(args.git)
+                use_enforce = bool(args.enforce)
+                use_session = not use_git and not use_enforce  # default: session lifecycle hooks
 
-            if use_git:
-                results.append({"target": "git", **install_git_hook(repo_path, dry_run=bool(args.dry_run))})
-            if use_enforce:
-                results.append({"target": "enforce", **install_enforce_hooks(repo_path, dry_run=bool(args.dry_run))})
-            if use_session:
-                results.append({"target": "session", **install_hooks(repo_path, dry_run=bool(args.dry_run))})
+                if use_git:
+                    results.append({"target": "git", **install_git_hook(repo_path, dry_run=bool(args.dry_run))})
+                if use_enforce:
+                    results.append(
+                        {"target": "enforce", **install_enforce_hooks(repo_path, dry_run=bool(args.dry_run))}
+                    )
+                if use_session:
+                    results.append({"target": "session", **install_hooks(repo_path, dry_run=bool(args.dry_run))})
 
-            response = _ok({"hooks": results})
+                response = _ok({"hooks": results})
         elif cmd == "worker-poll":
             worker = DistributedWorker(
                 args.repo,

@@ -3,6 +3,7 @@
 Also provides self-healing enforcement:
 - Hook integrity verification against sealed policy
 - Scope-gated Write/Edit blocking via PreToolUse
+- PostToolUse auto-format + budget tracking
 - Auto-reinstall on tamper detection
 """
 
@@ -11,12 +12,27 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
 HOOK_ACTOR = "agent:claude-code"
 HOOK_VENDOR = "anthropic"
+
+
+def _hook_actor() -> str:
+    """Return instance-unique actor for this Claude Code session.
+
+    Uses EXO_INSTANCE_ID env var (written by SessionStart) to distinguish
+    parallel Claude Code instances working on different tickets.
+    Falls back to default HOOK_ACTOR when not in a Claude Code session.
+    """
+    instance_id = os.environ.get("EXO_INSTANCE_ID", "").strip()
+    if instance_id:
+        return f"{HOOK_ACTOR}:{instance_id}"
+    return HOOK_ACTOR
 
 
 def _write_env_vars(env_vars: dict[str, str]) -> None:
@@ -54,9 +70,21 @@ def handle_session_start(hook_input: dict[str, Any]) -> dict[str, Any]:
 
         model = str(hook_input.get("model", "unknown")).strip() or "unknown"
 
+        # Generate instance-unique actor for parallel support.
+        # Only generate a new ID when running inside Claude Code (CLAUDE_ENV_FILE set)
+        # so that env propagation works.  Outside Claude Code, use plain HOOK_ACTOR.
+        instance_id = os.environ.get("EXO_INSTANCE_ID", "").strip()
+        if instance_id:
+            actor = f"{HOOK_ACTOR}:{instance_id}"
+        elif os.environ.get("CLAUDE_ENV_FILE"):
+            instance_id = uuid.uuid4().hex[:8]
+            actor = f"{HOOK_ACTOR}:{instance_id}"
+        else:
+            actor = HOOK_ACTOR
+
         from exo.orchestrator.session import AgentSessionManager
 
-        manager = AgentSessionManager(repo, actor=HOOK_ACTOR)
+        manager = AgentSessionManager(repo, actor=actor)
         result = manager.start(vendor=HOOK_VENDOR, model=model)
 
         reused = bool(result.get("reused"))
@@ -70,11 +98,13 @@ def handle_session_start(hook_input: dict[str, Any]) -> dict[str, Any]:
             if bootstrap_path.exists():
                 bootstrap_prompt = bootstrap_path.read_text(encoding="utf-8")
 
-        env_vars = {
+        env_vars: dict[str, str] = {
             "EXO_SESSION_ID": session_id,
             "EXO_TICKET_ID": ticket_id,
-            "EXO_ACTOR": HOOK_ACTOR,
+            "EXO_ACTOR": actor,
         }
+        if instance_id:
+            env_vars["EXO_INSTANCE_ID"] = instance_id
         _write_env_vars(env_vars)
 
         return {
@@ -104,7 +134,8 @@ def handle_session_end(hook_input: dict[str, Any]) -> dict[str, Any]:
 
         from exo.orchestrator.session import AgentSessionManager
 
-        manager = AgentSessionManager(repo, actor=HOOK_ACTOR)
+        actor = _hook_actor()
+        manager = AgentSessionManager(repo, actor=actor)
         active = manager.get_active()
         if not active:
             return {"skipped": True, "reason": "no_active_session"}
@@ -131,8 +162,139 @@ def handle_session_end(hook_input: dict[str, Any]) -> dict[str, Any]:
         return {"skipped": True, "reason": "error", "error": str(exc)}
 
 
+def handle_notification(hook_input: dict[str, Any]) -> dict[str, Any]:
+    """Handle Claude Code Notification hook event.
+
+    Logs notification events (permission prompts, idle prompts, etc.)
+    to ``.exo/audit/notifications.jsonl`` for audit trail purposes.
+    """
+    try:
+        cwd = hook_input.get("cwd") or os.getcwd()
+        repo = Path(cwd).resolve()
+
+        if not (repo / ".exo").is_dir():
+            return {"skipped": True, "reason": "no_exo_dir"}
+
+        from exo.kernel.utils import now_iso
+
+        notification_type = str(hook_input.get("notification_type", "")).strip()
+        message = str(hook_input.get("message", "")).strip()
+        title = str(hook_input.get("title", "")).strip()
+        session_id = str(hook_input.get("session_id", "")).strip()
+
+        entry = {
+            "event": "notification",
+            "notification_type": notification_type,
+            "message": message,
+            "title": title,
+            "session_id": session_id,
+            "timestamp": now_iso(),
+        }
+
+        audit_dir = repo / ".exo" / "audit"
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        audit_file = audit_dir / "notifications.jsonl"
+        with audit_file.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=True) + "\n")
+
+        return {
+            "logged": True,
+            "notification_type": notification_type,
+            "session_id": session_id,
+        }
+    except Exception as exc:
+        return {"skipped": True, "reason": "error", "error": str(exc)}
+
+
+def handle_stop(hook_input: dict[str, Any]) -> dict[str, Any]:
+    """Handle Claude Code Stop hook event.
+
+    Checks for an active ExoProtocol session and emits a hygiene warning
+    if the session has not been properly finished.  The warning is written
+    to stdout so the model receives it before stopping, giving it a chance
+    to call ``session-finish`` with a real summary.
+
+    Does NOT auto-close the session (that is SessionEnd's job).
+    """
+    try:
+        cwd = hook_input.get("cwd") or os.getcwd()
+        repo = Path(cwd).resolve()
+
+        if not (repo / ".exo").is_dir():
+            return {"skipped": True, "reason": "no_exo_dir"}
+
+        from exo.orchestrator.session import AgentSessionManager
+
+        actor = _hook_actor()
+        manager = AgentSessionManager(repo, actor=actor)
+        active = manager.get_active()
+        if not active:
+            return {"has_active_session": False}
+
+        ticket_id = str(active.get("ticket_id", "")).strip()
+        session_id = str(active.get("session_id", "")).strip()
+
+        warning = (
+            "[ExoProtocol] Active governed session detected.\n"
+            f"  session: {session_id}\n"
+            f"  ticket:  {ticket_id}\n"
+            "Please run `exo session-finish` with a meaningful summary "
+            "before stopping.  If you stop without finishing, the session "
+            "will be auto-closed with a generic summary by the SessionEnd hook."
+        )
+
+        return {
+            "has_active_session": True,
+            "session_id": session_id,
+            "ticket_id": ticket_id,
+            "warning": warning,
+        }
+    except Exception as exc:
+        return {"skipped": True, "reason": "error", "error": str(exc)}
+
+
+def generate_stop_config() -> dict[str, Any]:
+    """Generate Claude Code Stop hook config for session close hygiene."""
+    return {
+        "hooks": {
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "python3 -m exo.stdlib.hooks stop",
+                            "timeout": 10,
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+
+
+def generate_notification_config() -> dict[str, Any]:
+    """Generate Claude Code Notification hook config for audit trail logging."""
+    return {
+        "hooks": {
+            "Notification": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "python3 -m exo.stdlib.hooks notification",
+                            "timeout": 10,
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+
+
 def generate_hook_config() -> dict[str, Any]:
     """Generate Claude Code hook configuration for ExoProtocol governance."""
+    notification_config = generate_notification_config()
+    stop_config = generate_stop_config()
     return {
         "hooks": {
             "SessionStart": [
@@ -158,6 +320,8 @@ def generate_hook_config() -> dict[str, Any]:
                     ],
                 }
             ],
+            "Stop": stop_config["hooks"]["Stop"],
+            "Notification": notification_config["hooks"]["Notification"],
         }
     }
 
@@ -194,11 +358,13 @@ GIT_HOOK_SCRIPT = """\
 # ExoProtocol pre-commit hook — runs composed governance checks before commit.
 # Installed by: exo hook-install --git
 
-# Find the exo CLI
+# Find the exo CLI — prefer venv python with full dependencies
 EXO_CMD=""
 if command -v exo >/dev/null 2>&1; then
     EXO_CMD="exo --format human"
-elif command -v python3 >/dev/null 2>&1 && python3 -c "import exo" 2>/dev/null; then
+elif [ -n "$VIRTUAL_ENV" ] && "$VIRTUAL_ENV/bin/python3" -c "import exo, yaml" 2>/dev/null; then
+    EXO_CMD="$VIRTUAL_ENV/bin/python3 -m exo.cli --format human"
+elif command -v python3 >/dev/null 2>&1 && python3 -c "import exo, yaml" 2>/dev/null; then
     EXO_CMD="python3 -m exo.cli --format human"
 fi
 
@@ -300,22 +466,37 @@ def generate_enforce_config() -> dict[str, Any]:
 
 
 def install_enforce_hooks(repo: Path | str, *, dry_run: bool = False) -> dict[str, Any]:
-    """Install Claude Code PreToolUse enforcement hooks.
+    """Install all Claude Code enforcement hooks.
 
-    Merges a ``PreToolUse`` entry into ``.claude/settings.json`` that
-    intercepts ``git commit``/``git push`` bash commands and gates them
-    on ``exo check`` passing.  Existing session lifecycle hooks and other
-    settings are preserved.
+    Merges into ``.claude/settings.json``:
+    - ``PreToolUse`` (Bash): gates ``git commit``/``git push`` on ``exo check``
+    - ``PreToolUse`` (Write|Edit): scope-gated blocking from ticket scope
+    - ``PostToolUse`` (Write|Edit): auto-format + budget tracking
+
+    Existing session lifecycle hooks and other settings are preserved.
     """
     repo = Path(repo).resolve()
     settings_path = repo / ".claude" / "settings.json"
-    config = generate_enforce_config()
+
+    # Merge all enforcement configs
+    bash_enforce = generate_enforce_config()
+    scope_enforce = generate_scope_enforce_config()
+    post_tool = generate_post_tool_config()
+
+    # Combine all PreToolUse entries
+    all_pre_tool = bash_enforce["hooks"]["PreToolUse"] + scope_enforce["hooks"]["PreToolUse"]
+    combined_config: dict[str, Any] = {
+        "hooks": {
+            "PreToolUse": all_pre_tool,
+            "PostToolUse": post_tool["hooks"]["PostToolUse"],
+        }
+    }
 
     if dry_run:
         return {
             "installed": False,
             "dry_run": True,
-            "config": config,
+            "config": combined_config,
             "path": str(settings_path),
         }
 
@@ -325,8 +506,9 @@ def install_enforce_hooks(repo: Path | str, *, dry_run: bool = False) -> dict[st
 
     hooks = existing.setdefault("hooks", {})
 
-    # Merge: keep existing SessionStart/SessionEnd, add/replace PreToolUse
-    hooks["PreToolUse"] = config["hooks"]["PreToolUse"]
+    # Merge: keep existing SessionStart/SessionEnd/Stop/Notification, add/replace enforcement
+    hooks["PreToolUse"] = combined_config["hooks"]["PreToolUse"]
+    hooks["PostToolUse"] = combined_config["hooks"]["PostToolUse"]
 
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(
@@ -337,9 +519,27 @@ def install_enforce_hooks(repo: Path | str, *, dry_run: bool = False) -> dict[st
     return {
         "installed": True,
         "dry_run": False,
-        "config": config,
+        "config": combined_config,
         "path": str(settings_path),
     }
+
+
+def install_all_hooks(repo: Path | str, *, dry_run: bool = False) -> dict[str, Any]:
+    """Install ALL ExoProtocol hooks: session lifecycle + enforcement + git.
+
+    Convenience function that installs everything in one call:
+    - SessionStart/SessionEnd/Stop/Notification (lifecycle)
+    - PreToolUse Bash (git commit/push gating)
+    - PreToolUse Write|Edit (scope enforcement)
+    - PostToolUse Write|Edit (auto-format + budget)
+    - Git pre-commit hook (exo check)
+    """
+    repo = Path(repo).resolve()
+    results: list[dict[str, Any]] = []
+    results.append({"target": "session", **install_hooks(repo, dry_run=dry_run)})
+    results.append({"target": "enforce", **install_enforce_hooks(repo, dry_run=dry_run)})
+    results.append({"target": "git", **install_git_hook(repo, dry_run=dry_run)})
+    return {"hooks": results, "dry_run": dry_run}
 
 
 # ── Self-healing enforcement ─────────────────────────────────────
@@ -502,6 +702,192 @@ def handle_scope_check(hook_input: dict[str, Any]) -> dict[str, Any]:
         return {"allowed": True, "reason": "error"}
 
 
+# ── PostToolUse: auto-format + budget tracking ────────────────────
+
+BUDGET_WARNING_THRESHOLD = 0.8
+
+
+def _budget_tracker_path(repo: Path) -> Path:
+    """Return path to budget tracker for the active hook actor."""
+    actor_token = HOOK_ACTOR.replace(":", "-")
+    return repo / ".exo" / "cache" / "sessions" / f"{actor_token}.budget.json"
+
+
+def _load_budget_tracker(repo: Path) -> dict[str, Any]:
+    """Load budget tracker JSON, returning empty tracker if missing/corrupt."""
+    path = _budget_tracker_path(repo)
+    if not path.exists():
+        return {"files": [], "loc": 0, "session_id": ""}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {"files": [], "loc": 0, "session_id": ""}
+    except (json.JSONDecodeError, OSError):
+        return {"files": [], "loc": 0, "session_id": ""}
+
+
+def _save_budget_tracker(repo: Path, tracker: dict[str, Any]) -> None:
+    """Persist budget tracker to disk."""
+    path = _budget_tracker_path(repo)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(tracker, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _auto_format_python(file_path: str) -> dict[str, Any]:
+    """Run ruff format on a Python file. Fail-open: never raises."""
+    result: dict[str, Any] = {"formatted": False, "file": file_path}
+    if not file_path.endswith(".py"):
+        result["reason"] = "not_python"
+        return result
+    try:
+        proc = subprocess.run(
+            ["ruff", "format", file_path],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        result["formatted"] = proc.returncode == 0
+        result["returncode"] = proc.returncode
+        if proc.returncode != 0:
+            result["stderr"] = proc.stderr[:200]
+    except FileNotFoundError:
+        result["reason"] = "ruff_not_found"
+    except subprocess.TimeoutExpired:
+        result["reason"] = "timeout"
+    except OSError as exc:
+        result["reason"] = f"os_error: {exc}"
+    return result
+
+
+def _track_budget(repo: Path, file_path: str, content: str) -> dict[str, Any]:
+    """Track file + LOC budget usage. Returns status + warnings."""
+    result: dict[str, Any] = {"tracked": False}
+    try:
+        from exo.orchestrator.session import scan_sessions
+
+        scan = scan_sessions(repo, stale_hours=9999)
+        active_list = scan.get("active_sessions", [])
+        active = active_list[0] if active_list else None
+        if not active:
+            result["reason"] = "no_active_session"
+            return result
+
+        session_id = str(active.get("session_id", ""))
+        ticket_id = str(active.get("ticket_id", "")).strip()
+        if not ticket_id:
+            result["reason"] = "no_ticket"
+            return result
+
+        from exo.kernel.tickets import load_ticket
+
+        ticket = load_ticket(repo, ticket_id)
+        budgets = ticket.get("budgets") or {}
+        max_files = int(budgets.get("max_files_changed", 12))
+        max_loc = int(budgets.get("max_loc_changed", 400))
+
+        tracker = _load_budget_tracker(repo)
+        if tracker.get("session_id") != session_id:
+            tracker = {"files": [], "loc": 0, "session_id": session_id}
+
+        # Make path relative
+        try:
+            abs_path = Path(file_path).resolve()
+            rel_path = str(abs_path.relative_to(repo))
+        except (ValueError, OSError):
+            rel_path = file_path
+
+        loc_delta = len(content.splitlines()) if content else 0
+
+        if rel_path not in tracker["files"]:
+            tracker["files"].append(rel_path)
+        tracker["loc"] = tracker.get("loc", 0) + loc_delta
+
+        _save_budget_tracker(repo, tracker)
+
+        files_used = len(tracker["files"])
+        loc_used = tracker["loc"]
+        files_ratio = files_used / max_files if max_files > 0 else 0.0
+        loc_ratio = loc_used / max_loc if max_loc > 0 else 0.0
+
+        result["tracked"] = True
+        result["files_used"] = files_used
+        result["max_files"] = max_files
+        result["files_ratio"] = round(files_ratio, 3)
+        result["loc_used"] = loc_used
+        result["max_loc"] = max_loc
+        result["loc_ratio"] = round(loc_ratio, 3)
+
+        warnings: list[str] = []
+        if files_ratio >= 1.0:
+            warnings.append(f"BUDGET EXCEEDED: files {files_used}/{max_files}")
+        elif files_ratio >= BUDGET_WARNING_THRESHOLD:
+            warnings.append(f"Budget warning: files {files_used}/{max_files} ({int(files_ratio * 100)}%)")
+        if loc_ratio >= 1.0:
+            warnings.append(f"BUDGET EXCEEDED: LOC {loc_used}/{max_loc}")
+        elif loc_ratio >= BUDGET_WARNING_THRESHOLD:
+            warnings.append(f"Budget warning: LOC {loc_used}/{max_loc} ({int(loc_ratio * 100)}%)")
+        if warnings:
+            result["warnings"] = warnings
+    except Exception as exc:
+        result["reason"] = f"error: {exc}"
+    return result
+
+
+def handle_post_tool_use(hook_input: dict[str, Any]) -> dict[str, Any]:
+    """Handle Claude Code PostToolUse hook event for Write/Edit.
+
+    1. Auto-format: run ruff format on Python files
+    2. Budget tracking: track files touched + LOC against ticket budgets
+
+    Fail-open: never raises, always returns 0 from CLI.
+    """
+    try:
+        cwd = hook_input.get("cwd") or os.getcwd()
+        repo = Path(cwd).resolve()
+
+        if not (repo / ".exo").is_dir():
+            return {"skipped": True, "reason": "no_exo_dir"}
+
+        tool_input = hook_input.get("input", {})
+        file_path = str(tool_input.get("file_path", "")).strip()
+        content = str(tool_input.get("content", ""))
+
+        if not file_path:
+            return {"skipped": True, "reason": "no_file_path"}
+
+        tool_name = str(hook_input.get("tool_name", "")).strip()
+        result: dict[str, Any] = {"file_path": file_path, "tool": tool_name}
+
+        result["format"] = _auto_format_python(file_path)
+        result["budget"] = _track_budget(repo, file_path, content)
+
+        return result
+    except Exception as exc:
+        return {"skipped": True, "reason": "error", "error": str(exc)}
+
+
+def generate_post_tool_config() -> dict[str, Any]:
+    """Generate PostToolUse hook config for auto-format + budget tracking."""
+    return {
+        "hooks": {
+            "PostToolUse": [
+                {
+                    "matcher": "Write|Edit",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "python3 -m exo.stdlib.hooks post-tool",
+                            "timeout": 20,
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+
+
 def generate_scope_enforce_config() -> dict[str, Any]:
     """Generate PreToolUse config that blocks Write/Edit outside scope."""
     return {
@@ -656,6 +1042,20 @@ def main(argv: list[str] | None = None) -> int:
                 sys.stdout.write(bootstrap)
         elif command == "session-end":
             handle_session_end(hook_input)
+        elif command == "stop":
+            result = handle_stop(hook_input)
+            warning = result.get("warning", "")
+            if warning:
+                sys.stdout.write(warning + "\n")
+        elif command == "notification":
+            handle_notification(hook_input)
+        elif command == "post-tool":
+            result = handle_post_tool_use(hook_input)
+            fmt = result.get("format", {})
+            if fmt.get("formatted"):
+                sys.stderr.write(f"[exo] auto-formatted {Path(fmt.get('file', '')).name}\n")
+            for w in (result.get("budget") or {}).get("warnings", []):
+                sys.stderr.write(f"[exo] {w}\n")
         elif command == "scope-check":
             result = handle_scope_check(hook_input)
             if not result.get("allowed"):

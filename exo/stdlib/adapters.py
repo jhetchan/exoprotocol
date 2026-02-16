@@ -25,8 +25,8 @@ CONFIG_PATH = Path(".exo/config.yaml")
 EXO_MARKER_BEGIN = "<!-- exo:governance:begin -->"
 EXO_MARKER_END = "<!-- exo:governance:end -->"
 
-ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents", "ci", "sandbox"})
-AGENT_ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents"})  # targets with governance preamble
+ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents", "ci", "sandbox", "codex"})
+AGENT_ADAPTER_TARGETS = frozenset({"claude", "cursor", "agents", "codex"})  # targets with governance preamble
 
 # Map target name → output file
 TARGET_FILES: dict[str, str] = {
@@ -35,6 +35,7 @@ TARGET_FILES: dict[str, str] = {
     "agents": "AGENTS.md",
     "ci": ".github/workflows/exo-governance.yml",
     "sandbox": ".claude/settings.json",
+    "codex": "codex.md",
 }
 
 
@@ -377,6 +378,83 @@ If checks fail, fix the issues before pushing.
 """
 
 
+def generate_codex(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str:
+    """Generate codex.md for OpenAI Codex CLI.
+
+    Includes governance preamble, session lifecycle commands, sandbox policy
+    derived from constitution deny rules, and approval mode recommendation.
+    """
+    preamble = _generate_preamble(lock, config, repo=repo)
+    rules = lock.get("rules", [])
+
+    # Derive sandbox policy: extract deny patterns for Codex filesystem restrictions
+    deny_patterns: list[str] = []
+    for rule in rules:
+        if rule.get("type") == "filesystem_deny":
+            deny_patterns.extend(rule.get("patterns", []))
+
+    sandbox_section = ""
+    if deny_patterns:
+        deny_list = "\n".join(f"- `{p}`" for p in deny_patterns)
+        sandbox_section = f"""
+## Sandbox Policy
+
+The following paths are denied by governance and MUST NOT be read, written, or deleted:
+
+{deny_list}
+
+When running Codex with `--full-auto`, these paths should be added to your
+sandbox deny list. Use `exo sandbox-policy` for the machine-readable version.
+"""
+
+    # Determine approval mode recommendation based on enforcement level
+    checks_allowlist = config.get("checks_allowlist", [])
+    has_checks = bool(checks_allowlist)
+    approval_mode = "suggest" if has_checks else "auto-edit"
+
+    return f"""\
+# ExoProtocol — Codex Operating Instructions
+
+This repository is governed by ExoProtocol. All AI agent work must follow the session lifecycle.
+
+{preamble}
+
+## Session Lifecycle
+
+1. `exo session-start --ticket-id <TICKET> --vendor openai --model <MODEL> --task "<TASK>"`
+2. Read `.exo/cache/sessions/<actor>.bootstrap.md`
+3. Execute work within ticket scope
+4. `exo session-finish --ticket-id <TICKET> --summary "<SUMMARY>" --set-status review`
+
+## Approval Mode
+
+Recommended Codex approval mode for this repo: **{approval_mode}**
+
+- `suggest` (recommended when checks are configured): Codex proposes changes, human approves
+- `auto-edit`: Codex applies changes automatically (use only in governed sessions)
+- `full-auto`: Full autonomy (requires active governed session + sandbox enforcement)
+
+Run with: `codex --approval-mode {approval_mode}`
+{sandbox_section}
+## Governed Push
+
+Before pushing code, ALWAYS run checks first:
+
+```
+exo push                      # runs exo check, then git push (recommended)
+exo check && git push         # manual equivalent
+```
+
+## Non-Negotiables
+
+- No governed execution without active session
+- Respect lock ownership and ticket scope
+- Verification is default at finish; break-glass must be explicit
+- All configurable values must be loaded from their source of truth at runtime
+- Read `.exo/LEARNINGS.md` for operational learnings from prior sessions
+"""
+
+
 def generate_ci(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str:
     """Generate GitHub Action workflow for PR governance checks.
 
@@ -520,6 +598,7 @@ _GENERATORS: dict[str, Any] = {
     "claude": generate_claude,
     "cursor": generate_cursor,
     "agents": generate_agents,
+    "codex": generate_codex,
     "ci": generate_ci,
     "sandbox": generate_sandbox,
 }
