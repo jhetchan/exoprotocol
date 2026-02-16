@@ -125,9 +125,7 @@ class TestCompose:
                 }
             ]
         }
-        (repo / ".exo" / "features.yaml").write_text(
-            yaml.dump(features_data), encoding="utf-8"
-        )
+        (repo / ".exo" / "features.yaml").write_text(yaml.dump(features_data), encoding="utf-8")
         result = compose(repo)
         feature_deny = result["policy"]["scope_deny_from_features"]
         assert "exo/kernel/**" in feature_deny
@@ -157,9 +155,7 @@ class TestCompose:
         claude_dir = repo / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
         hooks_config = {"hooks": {"SessionStart": [{"matcher": "startup"}]}}
-        (claude_dir / "settings.json").write_text(
-            json.dumps(hooks_config), encoding="utf-8"
-        )
+        (claude_dir / "settings.json").write_text(json.dumps(hooks_config), encoding="utf-8")
         result = compose(repo)
         assert result["policy"]["hooks_hash"] != ""
         assert len(result["policy"]["hooks_hash"]) == 64
@@ -215,7 +211,16 @@ class TestCLICompose:
     def test_cli_compose(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "compose"],
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "compose",
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -228,7 +233,17 @@ class TestCLICompose:
     def test_cli_compose_dry_run(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path)
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "json", "--repo", str(repo), "compose", "--dry-run"],
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "compose",
+                "--dry-run",
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -251,7 +266,11 @@ class TestComposeConfig:
             "checks_allowlist": ["pytest tests/", "npm test"],
             "coherence": {
                 "co_update_rules": [
-                    {"trigger": ["exo/cli.py"], "requires": ["tests/**"], "label": "CLI needs tests"}
+                    {
+                        "trigger": ["exo/cli.py"],
+                        "requires": ["tests/**"],
+                        "label": "CLI needs tests",
+                    }
                 ]
             },
         }
@@ -460,15 +479,23 @@ class TestAutoHeal:
 
 def _full_bootstrap(tmp_path: Path) -> Path:
     """Bootstrap with DEFAULT_CONFIG for engine tests."""
-    from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION
     from exo.kernel.utils import dump_yaml
+    from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION
 
     repo = tmp_path
     exo_dir = repo / ".exo"
     exo_dir.mkdir(parents=True, exist_ok=True)
     (exo_dir / "CONSTITUTION.md").write_text(DEFAULT_CONSTITUTION, encoding="utf-8")
     dump_yaml(exo_dir / "config.yaml", DEFAULT_CONFIG)
-    for d in ["tickets", "locks", "logs", "memory", "memory/sessions", "cache", "cache/sessions"]:
+    for d in [
+        "tickets",
+        "locks",
+        "logs",
+        "memory",
+        "memory/sessions",
+        "cache",
+        "cache/sessions",
+    ]:
         (exo_dir / d).mkdir(parents=True, exist_ok=True)
     governance_mod.compile_constitution(repo)
     return repo
@@ -590,12 +617,18 @@ class TestComposedCheck:
 
     def test_check_features_reports_when_manifest_exists(self, tmp_path: Path) -> None:
         import yaml
+
         from exo.stdlib.engine import KernelEngine
 
         repo = _full_bootstrap(tmp_path)
         features_data = {
             "features": [
-                {"id": "core", "status": "active", "files": ["src/**"], "description": "Core"}
+                {
+                    "id": "core",
+                    "status": "active",
+                    "files": ["src/**"],
+                    "description": "Core",
+                }
             ]
         }
         (repo / ".exo" / "features.yaml").write_text(yaml.dump(features_data), encoding="utf-8")
@@ -609,12 +642,18 @@ class TestComposedCheck:
 
     def test_check_requirements_reports_when_manifest_exists(self, tmp_path: Path) -> None:
         import yaml
+
         from exo.stdlib.engine import KernelEngine
 
         repo = _full_bootstrap(tmp_path)
         reqs_data = {
             "requirements": [
-                {"id": "REQ-001", "title": "Must work", "status": "active", "priority": "high"}
+                {
+                    "id": "REQ-001",
+                    "title": "Must work",
+                    "status": "active",
+                    "priority": "high",
+                }
             ]
         }
         (repo / ".exo" / "requirements.yaml").write_text(yaml.dump(reqs_data), encoding="utf-8")
@@ -649,7 +688,7 @@ class TestComposedCheck:
 
 class TestCheckHumanSummary:
     def test_human_summary_shows_pass(self, tmp_path: Path) -> None:
-        from exo.stdlib.engine import format_check_human, KernelEngine
+        from exo.stdlib.engine import KernelEngine, format_check_human
 
         repo = _full_bootstrap(tmp_path)
         _init_git(repo)
@@ -662,7 +701,7 @@ class TestCheckHumanSummary:
         assert "Governance Check: PASS" in text
 
     def test_human_summary_shows_governance(self, tmp_path: Path) -> None:
-        from exo.stdlib.engine import format_check_human, KernelEngine
+        from exo.stdlib.engine import KernelEngine, format_check_human
 
         repo = _full_bootstrap(tmp_path)
         _init_git(repo)
@@ -675,7 +714,7 @@ class TestCheckHumanSummary:
         assert "PASS" in text
 
     def test_human_summary_shows_sealed_policy(self, tmp_path: Path) -> None:
-        from exo.stdlib.engine import format_check_human, KernelEngine
+        from exo.stdlib.engine import KernelEngine, format_check_human
 
         repo = _full_bootstrap(tmp_path)
         _init_git(repo)
@@ -688,7 +727,7 @@ class TestCheckHumanSummary:
         assert "sealed policy: OK" in text
 
     def test_human_summary_missing_sealed_policy(self, tmp_path: Path) -> None:
-        from exo.stdlib.engine import format_check_human, KernelEngine
+        from exo.stdlib.engine import KernelEngine, format_check_human
 
         repo = _full_bootstrap(tmp_path)
         _init_git(repo)
@@ -704,7 +743,16 @@ class TestCheckHumanSummary:
         _init_git(repo)
         _create_ticket_and_lock(repo)
         result = subprocess.run(
-            ["python3", "-m", "exo.cli", "--format", "human", "--repo", str(repo), "check"],
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "human",
+                "--repo",
+                str(repo),
+                "check",
+            ],
             capture_output=True,
             text=True,
             timeout=30,

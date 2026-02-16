@@ -23,7 +23,7 @@ from exo.kernel.tickets import (
     normalize_ticket,
     save_ticket,
 )
-from exo.stdlib.gc import gc, gc_to_dict, format_gc_human
+from exo.stdlib.gc import format_gc_human, gc, gc_to_dict
 
 
 def _policy_block(rule: dict[str, Any]) -> str:
@@ -85,7 +85,7 @@ class TestArchiveTicket:
         _create_ticket(repo, "TKT-002", status="todo")
         try:
             archive_ticket(repo, "TKT-002")
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "TICKET_NOT_DONE" in str(e)
 
@@ -93,7 +93,7 @@ class TestArchiveTicket:
         repo = _bootstrap_repo(tmp_path)
         try:
             archive_ticket(repo, "TKT-NONEXIST")
-            assert False, "Should have raised ExoError"
+            raise AssertionError("Should have raised ExoError")
         except Exception as e:
             assert "TICKET_NOT_FOUND" in str(e)
 
@@ -252,7 +252,7 @@ class TestGitSHATraceability:
         from exo.orchestrator.session import AgentSessionManager
 
         mgr = AgentSessionManager(repo, actor="agent:test")
-        start_result = mgr.start(vendor="test", model="test")
+        mgr.start(vendor="test", model="test")
 
         # Create a commit during the session
         (repo / "work.py").write_text("print('hello')\n")

@@ -649,7 +649,8 @@ class AgentSessionManager:
 
         # Auto-recompose sealed policy if stale or missing
         try:
-            from exo.stdlib.compose import compose as _compose_policy, verify_sealed_policy
+            from exo.stdlib.compose import compose as _compose_policy
+            from exo.stdlib.compose import verify_sealed_policy
 
             _seal_check = verify_sealed_policy(self.root)
             if not _seal_check.get("valid"):
@@ -1157,7 +1158,8 @@ class AgentSessionManager:
         composed_policy_section: str = ""
         composed_policy_valid: bool | None = None
         try:
-            from exo.stdlib.compose import compose as _compose_policy, verify_sealed_policy
+            from exo.stdlib.compose import compose as _compose_policy
+            from exo.stdlib.compose import verify_sealed_policy
 
             seal_check = verify_sealed_policy(self.root)
             composed_policy_valid = seal_check.get("valid", False)

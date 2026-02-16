@@ -22,7 +22,7 @@ from exo.kernel.tickets import (
 from exo.kernel.utils import default_topic_id
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
 from exo.stdlib.adapters import ADAPTER_TARGETS, derive_sandbox_policy, format_sandbox_policy_human, generate_adapters
-from exo.stdlib.compose import compose as compose_policy, verify_sealed_policy
+from exo.stdlib.compose import compose as compose_policy
 from exo.stdlib.drift import drift as run_drift
 from exo.stdlib.drift import drift_to_dict, fleet_drift, format_drift_human, format_fleet_drift_human
 from exo.stdlib.engine import KernelEngine, format_check_human
