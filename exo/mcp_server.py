@@ -1117,6 +1117,27 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_compose(
+        repo: str = ".",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Compile all governance subsystems into a single sealed policy artifact (.exo/policy.sealed.json)."""
+        try:
+            from exo.stdlib.compose import compose as compose_policy
+
+            data = compose_policy(Path(repo).resolve(), dry_run=dry_run)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_features(
         repo: str = ".",
         status: str | None = None,

@@ -647,6 +647,16 @@ class AgentSessionManager:
         except Exception:
             pass  # Advisory — never blocks start
 
+        # Auto-recompose sealed policy if stale or missing
+        try:
+            from exo.stdlib.compose import compose as _compose_policy, verify_sealed_policy
+
+            _seal_check = verify_sealed_policy(self.root)
+            if not _seal_check.get("valid"):
+                _compose_policy(self.root)
+        except Exception:
+            pass  # Advisory — never block session-start
+
         banner_mode = "concurrent" if concurrent else mode
         start_banner = _exo_banner(
             event="start",
@@ -1143,6 +1153,26 @@ class AgentSessionManager:
             except Exception:
                 pass  # Advisory — never blocks session-finish
 
+        # --- Composed policy verification + auto-recompose ---
+        composed_policy_section: str = ""
+        composed_policy_valid: bool | None = None
+        try:
+            from exo.stdlib.compose import compose as _compose_policy, verify_sealed_policy
+
+            seal_check = verify_sealed_policy(self.root)
+            composed_policy_valid = seal_check.get("valid", False)
+            reason = seal_check.get("reason", "")
+            status = "VALID" if composed_policy_valid else reason.upper()
+            composed_policy_section = f"## Composed Policy: {status}"
+            if not composed_policy_valid:
+                stale = seal_check.get("stale_sources", [])
+                if stale:
+                    composed_policy_section += f"\nStale sources: {', '.join(stale)}"
+            # Auto-recompose to keep sealed policy fresh for next session
+            _compose_policy(self.root)
+        except Exception:
+            pass  # Advisory — never blocks session-finish
+
         ticket_status = None
         if set_status != "keep":
             ticket_data = tickets.load_ticket(self.root, target_ticket)
@@ -1236,6 +1266,9 @@ class AgentSessionManager:
         if follow_up_section:
             memento_sections.append("")
             memento_sections.append(follow_up_section)
+        if composed_policy_section:
+            memento_sections.append("")
+            memento_sections.append(composed_policy_section)
         memento_sections.extend(
             [
                 "",
@@ -1319,6 +1352,7 @@ class AgentSessionManager:
             "tools_used": tools_summary["tools_used"] if tools_summary else None,
             "follow_ups_detected": follow_up_data["detected_count"] if follow_up_data else None,
             "follow_ups_created": follow_up_data["created_count"] if follow_up_data else None,
+            "composed_policy_valid": composed_policy_valid,
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
             "commits": session_commits if session_commits else None,
@@ -1394,6 +1428,7 @@ class AgentSessionManager:
             "coherence": coherence_data,
             "tools": tools_summary,
             "follow_ups": follow_up_data,
+            "composed_policy_valid": composed_policy_valid,
             "git_branch": finish_branch,
             "branch_drifted": branch_drifted,
             "commits": session_commits if session_commits else None,
