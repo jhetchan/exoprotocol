@@ -193,24 +193,22 @@ GIT_HOOK_SCRIPT = """\
 #!/usr/bin/env bash
 # ExoProtocol pre-commit hook — runs composed governance checks before commit.
 # Installed by: exo hook-install --git
-set -euo pipefail
 
 # Find the exo CLI
 EXO_CMD=""
 if command -v exo >/dev/null 2>&1; then
-    EXO_CMD="exo"
+    EXO_CMD="exo --format human"
 elif command -v python3 >/dev/null 2>&1 && python3 -c "import exo" 2>/dev/null; then
-    EXO_CMD="python3 -m exo.cli"
+    EXO_CMD="python3 -m exo.cli --format human"
 fi
 
 if [ -n "$EXO_CMD" ] && [ -d ".exo" ]; then
-    $EXO_CMD check --format human 2>/dev/null
-    EXIT_CODE=$?
-    if [ $EXIT_CODE -ne 0 ]; then
+    $EXO_CMD check 2>/dev/null || {
+        EXIT_CODE=$?
         echo ""
-        echo "exo pre-commit: governance checks failed. Fix issues or use --no-verify to bypass."
+        echo "exo pre-commit: governance checks failed (exit $EXIT_CODE). Fix issues or use --no-verify to bypass."
         exit 1
-    fi
+    }
 fi
 """
 

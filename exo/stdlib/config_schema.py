@@ -192,7 +192,7 @@ def validate_config(repo: Path) -> ConfigValidation:
         _check_keys(coherence, _REQUIRED_COHERENCE_KEYS, "coherence", result.issues)
 
     # Check list items are strings
-    for list_key in ("checks_allowlist", "do_allowlist", "recall_paths"):
+    for list_key in ("checks_allowlist", "do_allowlist", "recall_paths", "global_checks"):
         val = data.get(list_key)
         if isinstance(val, list):
             for i, item in enumerate(val):

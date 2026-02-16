@@ -370,7 +370,8 @@ class TestInstallGitHook:
         install_git_hook(tmp_path)
         hook = tmp_path / ".git" / "hooks" / "pre-commit"
         content = hook.read_text(encoding="utf-8")
-        assert "check --format human" in content
+        assert "--format human" in content
+        assert "check" in content
 
     def test_dry_run(self, tmp_path: Path) -> None:
         from exo.stdlib.hooks import install_git_hook

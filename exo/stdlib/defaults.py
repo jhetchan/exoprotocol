@@ -98,6 +98,7 @@ DEFAULT_CONFIG = {
         "python -m pytest",
         "python3 -m pytest",
     ],
+    "global_checks": [],
     "do_allowlist": [
         "npm run build",
     ],
