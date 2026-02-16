@@ -113,7 +113,11 @@ DEFAULT_CONFIG = {
     "scheduler": {
         "enabled": False,
         "global_concurrency_limit": None,
-        "lanes": [],
+        "lanes": [
+            {"name": "feature", "allowed_types": ["feature"], "count": 3},
+            {"name": "bug", "allowed_types": ["bug"], "count": 2},
+            {"name": "chore", "allowed_types": ["chore", "docs"], "count": 1},
+        ],
     },
     "control_caps": {
         "decide_override": ["cap:override"],

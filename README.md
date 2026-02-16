@@ -56,6 +56,34 @@ EXO_ACTOR=agent:claude-opus exo session-handoff \
 EXO_ACTOR=agent:claude-sonnet exo session-start --ticket-id TICKET-001 ...
 ```
 
+## Claude Code hooks
+
+```bash
+exo hook-install --all   # session lifecycle + enforcement + git pre-commit
+```
+
+Installs all six hook types:
+- **SessionStart/SessionEnd** — auto-start/finish governed sessions with bootstrap injection
+- **PreToolUse (Bash)** — gate `git commit`/`git push` on `exo check`
+- **PreToolUse (Write|Edit)** — block writes outside ticket scope (real enforcement, not advisory)
+- **PostToolUse (Write|Edit)** — auto-format Python files + budget tracking with warnings
+- **Notification** — audit trail logging to `.exo/audit/notifications.jsonl`
+- **Stop** — session hygiene warning before agent stops
+- **Git pre-commit** — runs `exo check` before every commit
+
+Parallel instances get unique actor IDs via `CLAUDE_ENV_FILE`, so multiple Claude Code windows can work on different tickets without session clashes. Auto-branch creates `exo/<ticket-id>` branches on session-start.
+
+## Agent adapters
+
+```bash
+exo adapter-generate                    # all targets
+exo adapter-generate --target codex     # OpenAI Codex
+exo adapter-generate --target claude    # CLAUDE.md
+exo adapter-generate --target ci        # GitHub Actions workflow
+```
+
+Generates governance-aware config for Claude Code (`CLAUDE.md`), Cursor (`.cursorrules`), `AGENTS.md`, OpenAI Codex (`codex.md`), and CI (`.github/workflows/exo-governance.yml`). All adapters reflect the current governance state — deny patterns, budgets, checks, lifecycle commands.
+
 ## SDK integrations
 
 ```python

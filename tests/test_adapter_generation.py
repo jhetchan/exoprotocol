@@ -1558,3 +1558,78 @@ class TestFormatSandboxPolicyHuman:
         policy = derive_sandbox_policy(repo)
         human = format_sandbox_policy_human(policy)
         assert f"({policy['deny_count']} entries)" in human
+
+
+# ── Codex Adapter Target ─────────────────────────────────────────
+
+
+class TestCodexAdapter:
+    def test_codex_in_adapter_targets(self) -> None:
+        assert "codex" in ADAPTER_TARGETS
+
+    def test_codex_in_agent_adapter_targets(self) -> None:
+        assert "codex" in AGENT_ADAPTER_TARGETS
+
+    def test_codex_target_file_mapping(self) -> None:
+        assert TARGET_FILES["codex"] == "codex.md"
+
+    def test_generate_codex_file(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["codex"])
+        assert "codex.md" in result["written"]
+        assert (repo / "codex.md").exists()
+
+    def test_codex_includes_governance_preamble(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["codex"], dry_run=True)
+        content = result["files"]["codex"]["content"]
+        assert "ExoProtocol Governance" in content
+        assert "Filesystem Deny Rules" in content
+
+    def test_codex_has_session_lifecycle(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["codex"], dry_run=True)
+        content = result["files"]["codex"]["content"]
+        assert "session-start" in content
+        assert "session-finish" in content
+        assert "openai" in content  # vendor should be openai
+
+    def test_codex_has_approval_mode(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["codex"], dry_run=True)
+        content = result["files"]["codex"]["content"]
+        assert "Approval Mode" in content
+        assert "suggest" in content or "auto-edit" in content
+
+    def test_codex_has_sandbox_policy(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["codex"], dry_run=True)
+        content = result["files"]["codex"]["content"]
+        assert "Sandbox Policy" in content
+        assert ".env" in content  # from deny rules
+
+    def test_codex_budgets_from_config(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path, max_files=42, max_loc=777)
+        result = generate_adapters(repo, targets=["codex"], dry_run=True)
+        content = result["files"]["codex"]["content"]
+        assert "42" in content
+        assert "777" in content
+
+    def test_codex_checks_from_config(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path, checks=["ruff check", "pytest"])
+        result = generate_adapters(repo, targets=["codex"], dry_run=True)
+        content = result["files"]["codex"]["content"]
+        assert "ruff check" in content
+        assert "pytest" in content
+
+    def test_codex_brownfield_merge(self, tmp_path: Path) -> None:
+        """Codex adapter should use brownfield merge like other agent targets."""
+        repo = _bootstrap_repo(tmp_path)
+        # Write existing user content
+        (repo / "codex.md").write_text("# My Codex Config\n\nCustom instructions here.\n")
+        result = generate_adapters(repo, targets=["codex"])
+        content = (repo / "codex.md").read_text(encoding="utf-8")
+        # User content preserved, governance section added
+        assert "My Codex Config" in content
+        assert "ExoProtocol" in content
+        assert result["files"]["codex"]["merged"] is True
