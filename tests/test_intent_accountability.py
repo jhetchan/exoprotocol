@@ -389,7 +389,7 @@ class TestDriftDetection:
     def test_reconcile_session_with_git(self, tmp_path: Path) -> None:
         """Full reconciliation against a git repo with actual changes."""
         repo = tmp_path
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "init", "-b", "main"], cwd=str(repo), capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(repo), capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=str(repo), capture_output=True)
 

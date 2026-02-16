@@ -59,7 +59,7 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
     (exo_dir / "CONSTITUTION.md").write_text(constitution, encoding="utf-8")
 
     # Initialize git repo
-    subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, text=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=str(repo), capture_output=True, text=True)
     subprocess.run(["git", "config", "user.email", "test@exo"], cwd=str(repo), capture_output=True, text=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(repo), capture_output=True, text=True)
 
