@@ -110,6 +110,45 @@ def _manage_gitignore(repo: Path, config_path: Path) -> bool:
     return True
 
 
+def format_check_human(data: dict[str, Any]) -> str:
+    """Format exo check results as human-readable text."""
+    passed = data.get("passed", False)
+    icon = "PASS" if passed else "FAIL"
+    lines = [f"Governance Check: {icon}"]
+
+    # Ticket checks
+    results = data.get("results", [])
+    if results:
+        ok_count = sum(1 for r in results if r.get("ok"))
+        lines.append(f"  ticket checks: {ok_count}/{len(results)} passed")
+    else:
+        lines.append("  ticket checks: none")
+
+    # Governance subsystems
+    for key in ("governance", "sealed_policy", "features", "requirements", "coherence"):
+        section = data.get(key)
+        if section is None:
+            continue
+        if key == "sealed_policy":
+            valid = section.get("valid", False)
+            reason = section.get("reason", "")
+            status = "OK" if valid else reason.upper()
+            lines.append(f"  sealed policy: {status}")
+        elif key == "coherence":
+            coh_passed = section.get("passed", True)
+            status = "OK" if coh_passed else "FAIL"
+            warnings = section.get("warning_count", 0)
+            if warnings:
+                status += f" ({warnings} warnings)"
+            lines.append(f"  coherence: {status}")
+        else:
+            status = section.get("status", "?").upper()
+            summary = section.get("summary", "")
+            lines.append(f"  {key}: [{status}] {summary}")
+
+    return "\n".join(lines)
+
+
 class KernelEngine:
     def __init__(self, repo: Path | str = ".", *, actor: str = "human", no_llm: bool = False) -> None:
         self.repo = Path(repo).resolve()
@@ -1235,12 +1274,84 @@ class KernelEngine:
         except Exception:  # noqa: BLE001
             pass  # Coherence is advisory — never breaks check pipeline
 
+        # ── Composed governance checks ──────────────────────────────
+        # Run all governance subsystem checks by default.
+        # These are advisory — included in output for visibility but do NOT
+        # affect the `passed` verdict (which gates session-finish).
+        # Features/requirements violations are already handled advisory in
+        # drift detection at session-finish time.
+
+        governance_result: dict[str, Any] | None = None
+        try:
+            from exo.stdlib.drift import _check_governance
+
+            section = _check_governance(self.repo)
+            governance_result = {
+                "name": section.name,
+                "status": section.status,
+                "summary": section.summary,
+                "errors": section.errors,
+                "warnings": section.warnings,
+            }
+        except Exception:  # noqa: BLE001
+            pass
+
+        sealed_policy_result: dict[str, Any] | None = None
+        try:
+            from exo.stdlib.compose import verify_sealed_policy
+
+            seal_check = verify_sealed_policy(self.repo)
+            sealed_policy_result = {
+                "valid": seal_check.get("valid", False),
+                "reason": seal_check.get("reason", ""),
+            }
+            if "stale_sources" in seal_check:
+                sealed_policy_result["stale_sources"] = seal_check["stale_sources"]
+        except Exception:  # noqa: BLE001
+            pass
+
+        features_result: dict[str, Any] | None = None
+        try:
+            from exo.stdlib.drift import _check_features
+
+            section = _check_features(self.repo)
+            if section.status != "skip":
+                features_result = {
+                    "name": section.name,
+                    "status": section.status,
+                    "summary": section.summary,
+                    "errors": section.errors,
+                    "warnings": section.warnings,
+                }
+        except Exception:  # noqa: BLE001
+            pass
+
+        requirements_result: dict[str, Any] | None = None
+        try:
+            from exo.stdlib.drift import _check_requirements
+
+            section = _check_requirements(self.repo)
+            if section.status != "skip":
+                requirements_result = {
+                    "name": section.name,
+                    "status": section.status,
+                    "summary": section.summary,
+                    "errors": section.errors,
+                    "warnings": section.warnings,
+                }
+        except Exception:  # noqa: BLE001
+            pass
+
         return {
             "checks": checks,
             "allowlist": allowlist,
             "results": results,
             "passed": passed,
             "coherence": coherence_result,
+            "governance": governance_result,
+            "sealed_policy": sealed_policy_result,
+            "features": features_result,
+            "requirements": requirements_result,
             "script": script_out.get("_script_source"),
         }
 

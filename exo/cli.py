@@ -22,9 +22,10 @@ from exo.kernel.tickets import (
 from exo.kernel.utils import default_topic_id
 from exo.orchestrator import AgentSessionManager, DistributedWorker, cleanup_sessions, scan_sessions
 from exo.stdlib.adapters import ADAPTER_TARGETS, derive_sandbox_policy, format_sandbox_policy_human, generate_adapters
+from exo.stdlib.compose import compose as compose_policy, verify_sealed_policy
 from exo.stdlib.drift import drift as run_drift
 from exo.stdlib.drift import drift_to_dict, fleet_drift, format_drift_human, format_fleet_drift_human
-from exo.stdlib.engine import KernelEngine
+from exo.stdlib.engine import KernelEngine, format_check_human
 from exo.stdlib.features import (
     features_to_list,
     format_prune_human,
@@ -419,6 +420,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     adapter_cmd.add_argument("--dry-run", action="store_true", help="Preview output without writing files")
 
+    compose_cmd = sub.add_parser("compose", help="Compile all governance subsystems into sealed policy artifact")
+    compose_cmd.add_argument("--dry-run", action="store_true", help="Preview policy without writing file")
+
     sub.add_parser(
         "sandbox-policy",
         help="Preview sandbox permissions derived from constitution deny rules",
@@ -627,6 +631,7 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
 
         # Special rendering for pr-check, trace, and prune commands
         if command in (
+            "check",
             "pr-check",
             "trace",
             "prune",
@@ -754,6 +759,9 @@ def main(argv: list[str] | None = None) -> int:
             response = engine.do(args.ticket_id, patch_file=args.patch_file, mark_done=not bool(args.no_mark_done))
         elif cmd == "check":
             response = engine.check(args.ticket_id)
+            if response.get("ok"):
+                check_data = response.get("data", {})
+                check_data["_human_summary"] = format_check_human(check_data)
         elif cmd == "push":
             response = engine.push(
                 args.ticket_id,
@@ -1184,6 +1192,10 @@ def main(argv: list[str] | None = None) -> int:
             repo_path = Path(args.repo).resolve()
             targets = args.target if args.target else None
             data = generate_adapters(repo_path, targets=targets, dry_run=bool(args.dry_run))
+            response = _ok(data)
+        elif cmd == "compose":
+            repo_path = Path(args.repo).resolve()
+            data = compose_policy(repo_path, dry_run=bool(args.dry_run))
             response = _ok(data)
         elif cmd == "sandbox-policy":
             repo_path = Path(args.repo).resolve()
