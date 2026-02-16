@@ -1257,7 +1257,13 @@ class KernelEngine:
             raise ExoError(code="CHECK_SCRIPT_INVALID", message="check script must return checks list")
 
         allowlist = list(config.get("checks_allowlist", []))
-        results = [self._run_allowlisted_command(str(cmd), allowlist, "run_check") for cmd in checks]
+
+        # Global checks: always run regardless of ticket context.
+        # These are project-wide quality gates (e.g. ruff format, ruff check).
+        global_checks = list(config.get("global_checks", []))
+        all_checks = list(checks) + [gc for gc in global_checks if gc not in checks]
+
+        results = [self._run_allowlisted_command(str(cmd), allowlist, "run_check") for cmd in all_checks]
         passed = all(item["ok"] for item in results)
 
         # Advisory coherence check — co-update rules + docstring freshness
