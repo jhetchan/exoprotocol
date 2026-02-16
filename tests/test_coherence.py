@@ -39,7 +39,7 @@ def _bootstrap_repo(tmp_path: Path) -> Path:
 
 def _init_git(repo: Path) -> None:
     """Initialize a git repo with an initial commit."""
-    subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=str(repo), capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(repo), capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(repo), capture_output=True)
     subprocess.run(["git", "add", "-A"], cwd=str(repo), capture_output=True)
