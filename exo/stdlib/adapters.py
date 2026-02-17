@@ -83,6 +83,55 @@ def _format_structural_rules(rules: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _format_provenance(repo: Path) -> list[str]:
+    """Build provenance lines from active intents and their child tickets."""
+    from exo.kernel.tickets import load_all_tickets
+
+    tickets = load_all_tickets(repo)
+    if not tickets:
+        return []
+
+    # Find active intents (kind=intent, status not done/archived)
+    intents = [
+        t for t in tickets
+        if t.get("kind") == "intent"
+        and t.get("status", "") not in ("done", "archived")
+    ]
+    if not intents:
+        return []
+
+    lines: list[str] = []
+    ticket_by_id = {t["id"]: t for t in tickets}
+
+    for intent in intents:
+        iid = intent["id"]
+        title = intent.get("title", "")
+        boundary = intent.get("boundary", "")
+        line = f"- **{iid}**: {title}"
+        if boundary:
+            line += f" — boundary: *{boundary}*"
+        lines.append(line)
+
+        # Show child tickets with scope constraints
+        children = intent.get("children", [])
+        for child_id in children:
+            child = ticket_by_id.get(child_id)
+            if not child or child.get("status", "") in ("done", "archived"):
+                continue
+            scope = child.get("scope") or {}
+            deny = scope.get("deny", [])
+            allow = scope.get("allow", [])
+            scope_parts: list[str] = []
+            if allow and allow != ["**"]:
+                scope_parts.append(f"allow: {', '.join(allow)}")
+            if deny:
+                scope_parts.append(f"deny: {', '.join(deny)}")
+            scope_str = f" [{'; '.join(scope_parts)}]" if scope_parts else ""
+            lines.append(f"  - {child_id}: {child.get('title', '')}{scope_str}")
+
+    return lines
+
+
 def _generate_preamble(lock: dict[str, Any], config: dict[str, Any], repo: Path | None = None) -> str:
     """Shared governance preamble used by all adapter targets."""
     kernel = lock.get("kernel", {})
@@ -121,7 +170,6 @@ def _generate_preamble(lock: dict[str, Any], config: dict[str, Any], repo: Path 
                 "### Default Budgets",
                 "",
                 f"- max files changed: {budgets.get('max_files_changed', 12)}",
-                f"- max LOC changed: {budgets.get('max_loc_changed', 400)}",
             ]
         )
 
@@ -135,6 +183,16 @@ def _generate_preamble(lock: dict[str, Any], config: dict[str, Any], repo: Path 
         )
         for cmd in checks_allowlist:
             sections.append(f"- `{cmd}`")
+
+    # Ticket/intent provenance (advisory — skipped if tickets dir missing)
+    if repo is not None:
+        try:
+            provenance_lines = _format_provenance(repo)
+            if provenance_lines:
+                sections.extend(["", "### Active Intents", ""])
+                sections.extend(provenance_lines)
+        except Exception:  # noqa: BLE001
+            pass  # Advisory — never blocks adapter generation
 
     # Manifest-driven workflow directive
     sections.extend(

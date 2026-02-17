@@ -42,7 +42,7 @@ EXO_ACTOR=agent:claude exo session-finish \
   --set-status review
 ```
 
-Session start generates a bootstrap prompt with governance rules, scope constraints, sibling awareness, and operational learnings from prior sessions. Session finish runs drift detection, feature tracing, and writes a closeout memento.
+Session start generates a bootstrap prompt with governance rules, scope constraints, sibling awareness, and operational learnings from prior sessions. Session finish runs drift detection (scope compliance, file budget, boundary violations), feature tracing, and writes a closeout memento.
 
 ## Agent handoff
 
@@ -82,7 +82,7 @@ exo adapter-generate --target claude    # CLAUDE.md
 exo adapter-generate --target ci        # GitHub Actions workflow
 ```
 
-Generates governance-aware config for Claude Code (`CLAUDE.md`), Cursor (`.cursorrules`), `AGENTS.md`, OpenAI Codex (`codex.md`), and CI (`.github/workflows/exo-governance.yml`). All adapters reflect the current governance state — deny patterns, budgets, checks, lifecycle commands.
+Generates governance-aware config for Claude Code (`CLAUDE.md`), Cursor (`.cursorrules`), `AGENTS.md`, OpenAI Codex (`codex.md`), and CI (`.github/workflows/exo-governance.yml`). All adapters reflect the current governance state — deny patterns, budgets, checks, lifecycle commands, and active intent provenance with scope boundaries.
 
 ## SDK integrations
 

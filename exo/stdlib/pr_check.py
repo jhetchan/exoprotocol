@@ -53,6 +53,8 @@ class SessionVerdict:
     started_at: str
     finished_at: str
     commit_count: int
+    intent_id: str = ""
+    intent_boundary: str = ""
 
 
 @dataclass
@@ -339,15 +341,31 @@ def pr_check(
         if cv.session_id:
             session_commit_counts[cv.session_id] = session_commit_counts.get(cv.session_id, 0) + 1
 
+    from exo.kernel.tickets import load_ticket, resolve_intent_root
+
     for entry in matched_sessions:
         sid = entry.get("session_id", "")
         drift = entry.get("drift_score")
         verify = entry.get("verify", "")
 
+        # Resolve intent root for this session's ticket
+        intent_id = ""
+        intent_boundary = ""
+        ticket_id = entry.get("ticket_id", "")
+        if ticket_id:
+            try:
+                ticket = load_ticket(repo, ticket_id)
+                intent = resolve_intent_root(repo, ticket)
+                if intent:
+                    intent_id = str(intent.get("id", ""))
+                    intent_boundary = str(intent.get("boundary", ""))
+            except Exception:
+                pass  # Advisory — missing ticket doesn't block PR check
+
         session_verdicts.append(
             SessionVerdict(
                 session_id=sid,
-                ticket_id=entry.get("ticket_id", ""),
+                ticket_id=ticket_id,
                 actor=entry.get("actor", ""),
                 vendor=entry.get("vendor", ""),
                 model=entry.get("model", ""),
@@ -357,6 +375,8 @@ def pr_check(
                 started_at=entry.get("started_at", ""),
                 finished_at=entry.get("finished_at", ""),
                 commit_count=session_commit_counts.get(sid, 0),
+                intent_id=intent_id,
+                intent_boundary=intent_boundary,
             )
         )
 
@@ -433,11 +453,21 @@ def format_pr_check_human(report: PRCheckReport) -> str:
         lines.append("  sessions:")
         for sv in report.sessions:
             drift_str = f", drift={sv.drift_score:.2f}" if sv.drift_score is not None else ""
+            intent_str = f" intent={sv.intent_id}" if sv.intent_id else ""
             lines.append(
                 f"    - {sv.session_id} ({sv.actor}@{sv.vendor}/{sv.model}) "
-                f"ticket={sv.ticket_id} verify={sv.verify}{drift_str} "
+                f"ticket={sv.ticket_id}{intent_str} verify={sv.verify}{drift_str} "
                 f"commits={sv.commit_count}"
             )
+        # Show intent boundaries if any sessions have them
+        intent_boundaries: dict[str, str] = {}
+        for sv in report.sessions:
+            if sv.intent_id and sv.intent_boundary and sv.intent_id not in intent_boundaries:
+                intent_boundaries[sv.intent_id] = sv.intent_boundary
+        if intent_boundaries:
+            lines.append("  intent boundaries:")
+            for iid, boundary in intent_boundaries.items():
+                lines.append(f"    - {iid}: {boundary}")
 
     if report.scope_violations:
         lines.append(f"  scope violations: {report.scope_violations}")

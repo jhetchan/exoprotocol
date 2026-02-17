@@ -884,3 +884,201 @@ class TestEdgeCases:
         assert report.checked_at
         # Should be valid ISO timestamp
         datetime.fromisoformat(report.checked_at)
+
+
+# ---------------------------------------------------------------------------
+# Intent context in PR check (TKT-20260217-220656-MAYA)
+# ---------------------------------------------------------------------------
+
+
+class TestIntentContext:
+    def test_session_with_intent_resolves(self, tmp_path: Path) -> None:
+        """Session linked to a task under an intent shows intent_id."""
+        repo = _bootstrap_repo(tmp_path)
+
+        # Create intent and task
+        intent = {
+            "id": "INTENT-001",
+            "title": "Auth redesign",
+            "kind": "intent",
+            "status": "active",
+            "boundary": "No kernel changes allowed",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 10},
+            "children": ["TICKET-101"],
+        }
+        tickets_mod.save_ticket(repo, intent)
+        _seed_ticket(
+            repo,
+            "TICKET-101",
+            parent_id="INTENT-001",
+            kind="task",
+        )
+
+        base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        sha = _make_commit(repo, "auth.py", "x", "auth work")
+
+        dt = _parse_iso(_get_author_date(repo, sha))
+        _write_session_index(repo, [
+            _make_session_entry(
+                ticket_id="TICKET-101",
+                started_at=(dt - timedelta(minutes=5)).isoformat(),
+                finished_at=(dt + timedelta(minutes=5)).isoformat(),
+            ),
+        ])
+
+        report = pr_check(repo, base_ref=base, head_ref="HEAD")
+        assert len(report.sessions) == 1
+        sv = report.sessions[0]
+        assert sv.intent_id == "INTENT-001"
+        assert sv.intent_boundary == "No kernel changes allowed"
+
+    def test_session_without_intent_has_empty_fields(self, tmp_path: Path) -> None:
+        """Task with no parent intent has empty intent fields."""
+        repo = _bootstrap_repo(tmp_path)
+        _seed_ticket(repo, "TICKET-102", kind="task")
+
+        base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        sha = _make_commit(repo, "solo.py", "x", "solo work")
+
+        dt = _parse_iso(_get_author_date(repo, sha))
+        _write_session_index(repo, [
+            _make_session_entry(
+                ticket_id="TICKET-102",
+                started_at=(dt - timedelta(minutes=5)).isoformat(),
+                finished_at=(dt + timedelta(minutes=5)).isoformat(),
+            ),
+        ])
+
+        report = pr_check(repo, base_ref=base, head_ref="HEAD")
+        sv = report.sessions[0]
+        assert sv.intent_id == ""
+        assert sv.intent_boundary == ""
+
+    def test_multiple_sessions_same_intent(self, tmp_path: Path) -> None:
+        """Two sessions under the same intent both resolve intent_id."""
+        repo = _bootstrap_repo(tmp_path)
+
+        intent = {
+            "id": "INTENT-002",
+            "title": "Shared intent",
+            "kind": "intent",
+            "status": "active",
+            "boundary": "Only touch stdlib",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 20},
+            "children": ["TICKET-103", "TICKET-104"],
+        }
+        tickets_mod.save_ticket(repo, intent)
+        _seed_ticket(repo, "TICKET-103", parent_id="INTENT-002", kind="task")
+        _seed_ticket(repo, "TICKET-104", parent_id="INTENT-002", kind="task")
+
+        base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        c1_date = (now - timedelta(minutes=10)).isoformat()
+        _git(repo, "commit", "--allow-empty", "-m", "work-a", "--date", c1_date)
+        c1_actual = _get_author_date(repo, "HEAD")
+
+        c2_date = (now - timedelta(minutes=2)).isoformat()
+        _git(repo, "commit", "--allow-empty", "-m", "work-b", "--date", c2_date)
+        c2_actual = _get_author_date(repo, "HEAD")
+
+        dt1 = _parse_iso(c1_actual)
+        dt2 = _parse_iso(c2_actual)
+
+        _write_session_index(repo, [
+            _make_session_entry(
+                session_id="sess-a",
+                ticket_id="TICKET-103",
+                started_at=(dt1 - timedelta(minutes=3)).isoformat(),
+                finished_at=(dt1 + timedelta(minutes=2)).isoformat(),
+            ),
+            _make_session_entry(
+                session_id="sess-b",
+                ticket_id="TICKET-104",
+                started_at=(dt2 - timedelta(minutes=3)).isoformat(),
+                finished_at=(dt2 + timedelta(minutes=3)).isoformat(),
+            ),
+        ])
+
+        report = pr_check(repo, base_ref=base, head_ref="HEAD")
+        assert len(report.sessions) == 2
+        for sv in report.sessions:
+            assert sv.intent_id == "INTENT-002"
+
+    def test_intent_appears_in_human_output(self, tmp_path: Path) -> None:
+        """Human-readable format includes intent_id and boundary."""
+        repo = _bootstrap_repo(tmp_path)
+
+        intent = {
+            "id": "INTENT-003",
+            "title": "Format test",
+            "kind": "intent",
+            "status": "active",
+            "boundary": "No DB changes",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 5},
+            "children": ["TICKET-105"],
+        }
+        tickets_mod.save_ticket(repo, intent)
+        _seed_ticket(repo, "TICKET-105", parent_id="INTENT-003", kind="task")
+
+        base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        sha = _make_commit(repo, "fmt.py", "x", "format work")
+
+        dt = _parse_iso(_get_author_date(repo, sha))
+        _write_session_index(repo, [
+            _make_session_entry(
+                ticket_id="TICKET-105",
+                started_at=(dt - timedelta(minutes=5)).isoformat(),
+                finished_at=(dt + timedelta(minutes=5)).isoformat(),
+            ),
+        ])
+
+        report = pr_check(repo, base_ref=base, head_ref="HEAD")
+        text = format_pr_check_human(report)
+        assert "intent=INTENT-003" in text
+        assert "intent boundaries:" in text
+        assert "INTENT-003: No DB changes" in text
+
+    def test_intent_in_dict_roundtrip(self, tmp_path: Path) -> None:
+        """Intent fields survive dict serialization."""
+        sv = SessionVerdict(
+            session_id="s1", ticket_id="T-1", actor="a", vendor="v",
+            model="m", mode="work", verify="passed", drift_score=0.1,
+            started_at="", finished_at="", commit_count=1,
+            intent_id="INT-001", intent_boundary="No kernel",
+        )
+        d = pr_check_to_dict(
+            PRCheckReport(
+                base_ref="main", head_ref="HEAD", total_commits=1,
+                governed_commits=1, ungoverned_commits=0,
+                sessions=[sv], commits=[], ungoverned_shas=[],
+                governance_intact=True, governance_hash="abc",
+                changed_files=[], scope_violations=[],
+                verdict="pass", reasons=[], checked_at="now",
+            )
+        )
+        assert d["sessions"][0]["intent_id"] == "INT-001"
+        assert d["sessions"][0]["intent_boundary"] == "No kernel"
+
+    def test_missing_ticket_doesnt_break_check(self, tmp_path: Path) -> None:
+        """Session referencing a nonexistent ticket still produces a verdict."""
+        repo = _bootstrap_repo(tmp_path)
+        base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        sha = _make_commit(repo, "x.py", "x", "work")
+
+        dt = _parse_iso(_get_author_date(repo, sha))
+        _write_session_index(repo, [
+            _make_session_entry(
+                ticket_id="NONEXISTENT-999",
+                started_at=(dt - timedelta(minutes=5)).isoformat(),
+                finished_at=(dt + timedelta(minutes=5)).isoformat(),
+            ),
+        ])
+
+        report = pr_check(repo, base_ref=base, head_ref="HEAD")
+        assert len(report.sessions) == 1
+        assert report.sessions[0].intent_id == ""
+        assert report.sessions[0].intent_boundary == ""

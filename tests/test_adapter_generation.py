@@ -168,7 +168,6 @@ class TestAdapterGeneration:
         generate_adapters(repo, targets=["claude"])
         content = (repo / "CLAUDE.md").read_text()
         assert "max files changed: 10" in content
-        assert "max LOC changed: 300" in content
 
     def test_claude_md_contains_checks_allowlist(self, tmp_path: Path) -> None:
         """Generated CLAUDE.md includes approved checks from config."""
@@ -330,10 +329,8 @@ class TestManifestConformance:
         result = generate_adapters(repo, targets=["claude"], dry_run=True)
         content = result["files"]["claude"]["content"]
         assert "max files changed: 42" in content
-        assert "max LOC changed: 777" in content
         # Must NOT contain the old defaults
         assert "max files changed: 10" not in content
-        assert "max LOC changed: 300" not in content
 
     def test_changing_config_changes_output(self, tmp_path: Path) -> None:
         """Regenerating after config change produces different output."""
@@ -358,7 +355,6 @@ checks_allowlist:
 
         assert content1 != content2
         assert "max files changed: 99" in content2
-        assert "max LOC changed: 1500" in content2
         assert "max files changed: 10" not in content2
 
     def test_all_targets_reflect_same_config_values(self, tmp_path: Path) -> None:
@@ -369,7 +365,6 @@ checks_allowlist:
         for target in AGENT_ADAPTER_TARGETS:
             content = result["files"][target]["content"]
             assert "max files changed: 37" in content, f"{target} adapter missing config budget max_files=37"
-            assert "max LOC changed: 891" in content, f"{target} adapter missing config budget max_loc=891"
 
     def test_checks_allowlist_comes_from_config(self, tmp_path: Path) -> None:
         """Custom checks in config must appear; default checks must NOT."""
@@ -1613,7 +1608,6 @@ class TestCodexAdapter:
         result = generate_adapters(repo, targets=["codex"], dry_run=True)
         content = result["files"]["codex"]["content"]
         assert "42" in content
-        assert "777" in content
 
     def test_codex_checks_from_config(self, tmp_path: Path) -> None:
         repo = _bootstrap_repo(tmp_path, checks=["ruff check", "pytest"])
@@ -1633,3 +1627,162 @@ class TestCodexAdapter:
         assert "My Codex Config" in content
         assert "ExoProtocol" in content
         assert result["files"]["codex"]["merged"] is True
+
+
+# ---------------------------------------------------------------------------
+# Provenance: intent/ticket context in adapter output (TKT-20260217-220659-KSCJ)
+# ---------------------------------------------------------------------------
+
+
+class TestProvenance:
+    def test_active_intent_appears_in_adapter(self, tmp_path: Path) -> None:
+        """Active intents with boundaries appear in generated adapters."""
+        repo = _bootstrap_repo(tmp_path)
+
+        from exo.kernel.tickets import save_ticket
+
+        intent = {
+            "id": "INTENT-001",
+            "title": "Auth system redesign",
+            "kind": "intent",
+            "status": "active",
+            "boundary": "No kernel changes",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 10},
+            "children": [],
+        }
+        save_ticket(repo, intent)
+
+        result = generate_adapters(repo, targets=["claude"], dry_run=True)
+        content = result["files"]["claude"]["content"]
+        assert "Active Intents" in content
+        assert "INTENT-001" in content
+        assert "Auth system redesign" in content
+        assert "No kernel changes" in content
+
+    def test_child_tickets_with_scope_shown(self, tmp_path: Path) -> None:
+        """Child tickets show scope constraints under their parent intent."""
+        repo = _bootstrap_repo(tmp_path)
+
+        from exo.kernel.tickets import save_ticket
+
+        intent = {
+            "id": "INTENT-002",
+            "title": "Scoped intent",
+            "kind": "intent",
+            "status": "active",
+            "boundary": "",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 10},
+            "children": ["TICKET-001"],
+        }
+        save_ticket(repo, intent)
+
+        child = {
+            "id": "TICKET-001",
+            "title": "Implement auth endpoint",
+            "kind": "task",
+            "status": "active",
+            "parent_id": "INTENT-002",
+            "scope": {"allow": ["src/auth/**"], "deny": ["src/auth/secrets/**"]},
+            "budgets": {"max_files_changed": 3},
+        }
+        save_ticket(repo, child)
+
+        result = generate_adapters(repo, targets=["claude"], dry_run=True)
+        content = result["files"]["claude"]["content"]
+        assert "TICKET-001" in content
+        assert "Implement auth endpoint" in content
+        assert "src/auth/**" in content
+        assert "src/auth/secrets/**" in content
+
+    def test_done_intents_excluded(self, tmp_path: Path) -> None:
+        """Intents with status=done are not shown."""
+        repo = _bootstrap_repo(tmp_path)
+
+        from exo.kernel.tickets import save_ticket
+
+        intent = {
+            "id": "INTENT-003",
+            "title": "Finished work",
+            "kind": "intent",
+            "status": "done",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 10},
+            "children": [],
+        }
+        save_ticket(repo, intent)
+
+        result = generate_adapters(repo, targets=["claude"], dry_run=True)
+        content = result["files"]["claude"]["content"]
+        assert "INTENT-003" not in content
+
+    def test_provenance_in_all_agent_targets(self, tmp_path: Path) -> None:
+        """Provenance appears in all agent adapter targets."""
+        repo = _bootstrap_repo(tmp_path)
+
+        from exo.kernel.tickets import save_ticket
+
+        intent = {
+            "id": "INTENT-004",
+            "title": "Universal intent",
+            "kind": "intent",
+            "status": "active",
+            "boundary": "Stay in stdlib",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 5},
+            "children": [],
+        }
+        save_ticket(repo, intent)
+
+        result = generate_adapters(repo, dry_run=True)
+        for target in AGENT_ADAPTER_TARGETS:
+            content = result["files"][target]["content"]
+            assert "INTENT-004" in content, f"{target} adapter missing provenance"
+
+    def test_no_tickets_no_provenance_section(self, tmp_path: Path) -> None:
+        """Without tickets, no Active Intents section appears."""
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["claude"], dry_run=True)
+        content = result["files"]["claude"]["content"]
+        assert "Active Intents" not in content
+
+    def test_done_child_tickets_excluded(self, tmp_path: Path) -> None:
+        """Child tickets with status=done are not shown under their intent."""
+        repo = _bootstrap_repo(tmp_path)
+
+        from exo.kernel.tickets import save_ticket
+
+        intent = {
+            "id": "INTENT-005",
+            "title": "Mixed children",
+            "kind": "intent",
+            "status": "active",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 10},
+            "children": ["TICKET-010", "TICKET-011"],
+        }
+        save_ticket(repo, intent)
+        save_ticket(repo, {
+            "id": "TICKET-010",
+            "title": "Still working",
+            "kind": "task",
+            "status": "active",
+            "parent_id": "INTENT-005",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 5},
+        })
+        save_ticket(repo, {
+            "id": "TICKET-011",
+            "title": "Already finished",
+            "kind": "task",
+            "status": "done",
+            "parent_id": "INTENT-005",
+            "scope": {"allow": ["**"], "deny": []},
+            "budgets": {"max_files_changed": 5},
+        })
+
+        result = generate_adapters(repo, targets=["claude"], dry_run=True)
+        content = result["files"]["claude"]["content"]
+        assert "TICKET-010" in content
+        assert "TICKET-011" not in content
