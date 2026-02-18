@@ -1336,7 +1336,7 @@ class KernelEngine:
         try:
             from exo.stdlib.drift import _check_requirements
 
-            section = _check_requirements(self.repo)
+            section = _check_requirements(self.repo, check_tests=True)
             if section.status != "skip":
                 requirements_result = {
                     "name": section.name,
@@ -1345,6 +1345,8 @@ class KernelEngine:
                     "errors": section.errors,
                     "warnings": section.warnings,
                 }
+                if section.status == "fail":
+                    passed = False
         except Exception:  # noqa: BLE001
             pass
 

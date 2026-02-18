@@ -233,6 +233,43 @@ class TestCheckRequirements:
         assert section.status == "fail"
         assert section.errors >= 1
 
+    def test_check_tests_pass_when_all_acc_covered(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [{"id": "REQ-001", "title": "Auth", "acceptance": ["ACC-LOGIN"]}],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\ndef login(): pass\n")
+        _write_source_file(repo, "tests/test_auth.py", "# @acc: ACC-LOGIN\ndef test_login(): pass\n")
+        section = _check_requirements(repo, check_tests=True)
+        assert section.status == "pass"
+        assert "1/1 acc tested" in section.summary
+
+    def test_check_tests_fail_when_acc_untested(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [{"id": "REQ-001", "title": "Auth", "acceptance": ["ACC-LOGIN", "ACC-LOCKOUT"]}],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\ndef login(): pass\n")
+        _write_source_file(repo, "tests/test_auth.py", "# @acc: ACC-LOGIN\ndef test_login(): pass\n")
+        section = _check_requirements(repo, check_tests=True)
+        assert section.status == "fail"
+        assert section.errors >= 1
+        assert "1/2 acc tested" in section.summary
+
+    def test_check_tests_false_skips_acc(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [{"id": "REQ-001", "title": "Auth", "acceptance": ["ACC-LOGIN"]}],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\ndef login(): pass\n")
+        # No @acc: annotation — but check_tests=False so it should pass
+        section = _check_requirements(repo, check_tests=False)
+        assert section.status == "pass"
+        assert "acc tested" not in section.summary
+
 
 # ── Session Health ───────────────────────────────────────────────────
 

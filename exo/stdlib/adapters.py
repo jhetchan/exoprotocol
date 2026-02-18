@@ -564,6 +564,10 @@ jobs:
       - name: Install ExoProtocol
         run: {install_cmd}
 
+      - name: Requirement + acceptance criteria traceability
+        if: hashFiles('.exo/requirements.yaml') != ''
+        run: python3 -m exo.cli trace-reqs --check-tests
+
       - name: PR governance check
         run: |
           python3 -m exo.cli pr-check \\

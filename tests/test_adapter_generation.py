@@ -681,6 +681,14 @@ class TestCIAdapterGeneration:
         assert (repo / ".github" / "workflows" / "exo-governance.yml").exists()
         assert ".github/workflows/exo-governance.yml" in result["written"]
 
+    def test_ci_workflow_includes_trace_reqs_step(self, tmp_path: Path) -> None:
+        """Workflow must include trace-reqs --check-tests step."""
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert "trace-reqs --check-tests" in content
+        assert "acceptance criteria" in content.lower()
+
     def test_ci_idempotent_regeneration(self, tmp_path: Path) -> None:
         """Running ci generate twice produces identical output."""
         repo = _bootstrap_repo(tmp_path)

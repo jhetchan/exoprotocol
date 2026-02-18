@@ -261,7 +261,7 @@ def _check_features(repo: Path) -> DriftSection:
         )
 
 
-def _check_requirements(repo: Path) -> DriftSection:
+def _check_requirements(repo: Path, *, check_tests: bool = False) -> DriftSection:
     """Run requirement traceability check if requirements.yaml exists."""
     if not (repo / REQUIREMENTS_PATH).exists():
         return DriftSection(
@@ -273,15 +273,19 @@ def _check_requirements(repo: Path) -> DriftSection:
     try:
         from exo.stdlib.requirements import req_trace_to_dict, trace_requirements
 
-        report = trace_requirements(repo)
+        report = trace_requirements(repo, check_tests=check_tests)
         errors = sum(1 for v in report.violations if v.severity == "error")
         warnings = sum(1 for v in report.violations if v.severity == "warning")
+
+        acc_suffix = ""
+        if check_tests and report.acc_total > 0:
+            acc_suffix = f", {report.acc_tested}/{report.acc_total} acc tested"
 
         if report.passed:
             return DriftSection(
                 name="requirements",
                 status="pass",
-                summary=f"{report.reqs_total} requirements, {report.refs_total} refs, {len(report.covered_reqs)} covered",
+                summary=f"{report.reqs_total} requirements, {report.refs_total} refs, {len(report.covered_reqs)} covered{acc_suffix}",
                 warnings=warnings,
                 details=req_trace_to_dict(report),
             )
@@ -289,7 +293,7 @@ def _check_requirements(repo: Path) -> DriftSection:
             return DriftSection(
                 name="requirements",
                 status="fail",
-                summary=f"{errors} error(s), {warnings} warning(s) in requirement traceability",
+                summary=f"{errors} error(s), {warnings} warning(s) in requirement traceability{acc_suffix}",
                 errors=errors,
                 warnings=warnings,
                 details=req_trace_to_dict(report),
@@ -425,6 +429,7 @@ def drift(
     skip_requirements: bool = False,
     skip_sessions: bool = False,
     skip_coherence: bool = False,
+    check_tests: bool = False,
 ) -> DriftReport:
     """Run all governance drift checks and produce a composite report.
 
@@ -464,7 +469,7 @@ def drift(
 
     # 4. Requirement traceability
     if not skip_requirements:
-        sections.append(_check_requirements(repo))
+        sections.append(_check_requirements(repo, check_tests=check_tests))
 
     # 5. Coherence
     if not skip_coherence:

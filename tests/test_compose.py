@@ -665,6 +665,41 @@ class TestComposedCheck:
         assert data["requirements"] is not None
         assert data["requirements"]["name"] == "requirements"
 
+    def test_check_fails_on_untested_acceptance_criteria(self, tmp_path: Path) -> None:
+        """exo check must fail when acceptance criteria have no @acc: test annotations."""
+        import yaml
+
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _full_bootstrap(tmp_path)
+        reqs_data = {
+            "requirements": [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "status": "active",
+                    "priority": "high",
+                    "acceptance": ["ACC-LOGIN", "ACC-LOCKOUT"],
+                }
+            ]
+        }
+        (repo / ".exo" / "requirements.yaml").write_text(yaml.dump(reqs_data), encoding="utf-8")
+        # Add @req: ref but no @acc: annotations
+        src_dir = repo / "src"
+        src_dir.mkdir(exist_ok=True)
+        (src_dir / "auth.py").write_text("# @req: REQ-001\ndef login(): pass\n", encoding="utf-8")
+        _init_git(repo)
+        _create_ticket_and_lock(repo)
+        engine = KernelEngine(str(repo))
+        result = engine.check()
+        data = result.get("data", {})
+        # Requirements section must report failure
+        assert data["requirements"] is not None
+        assert data["requirements"]["status"] == "fail"
+        assert data["requirements"]["errors"] >= 1
+        # Overall check must fail
+        assert data["passed"] is False
+
     def test_check_passed_includes_all_subsystems(self, tmp_path: Path) -> None:
         from exo.stdlib.engine import KernelEngine
 
