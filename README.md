@@ -20,23 +20,20 @@ pip install exoprotocol
 ## Quickstart
 
 ```bash
-# 1. Initialize governance (scans your repo, generates rules + adapters)
-exo init
+# 1. One-shot setup (init + compile + adapters + hooks + gitignore)
+exo install
 
-# 2. Health check
-exo doctor
-
-# 3. Dispatch a ticket
+# 2. Dispatch a ticket
 exo next --owner your-name
 
-# 4. Start a governed session
+# 3. Start a governed session
 EXO_ACTOR=agent:claude exo session-start \
   --ticket-id TICKET-001 \
   --vendor anthropic --model claude-code \
   --context-window 200000 \
   --task "implement the feature described in the ticket"
 
-# 5. Finish the session
+# 4. Finish the session
 EXO_ACTOR=agent:claude exo session-finish \
   --summary "implemented feature, added tests" \
   --set-status review
@@ -155,7 +152,7 @@ Works with Claude Code, Cursor, and any MCP-compatible client. Every CLI command
 - [Governance Rules](docs/agents/governance-rules.md) — rule types, budgets, scope, traceability
 - [Config Reference](docs/agents/config-reference.md) — complete `.exo/config.yaml` schema
 - [Error Reference](docs/agents/error-reference.md) — every ExoError code with resolution steps
-- [MCP Tool Reference](docs/agents/mcp-tool-reference.md) — all 68 MCP tool signatures
+- [MCP Tool Reference](docs/agents/mcp-tool-reference.md) — all 70 MCP tool signatures
 
 ### Shared
 

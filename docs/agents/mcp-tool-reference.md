@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-Signatures and parameters for all 69 ExoProtocol MCP tools.
+Signatures and parameters for all 70 ExoProtocol MCP tools.
 
 ## Conventions
 
@@ -558,6 +558,30 @@ exo_reflect_dismiss(
 ) -> dict[str, Any]
 ```
 Dismiss a reflection so it stops appearing in future bootstraps.
+
+---
+
+## Setup
+
+### exo_install
+```python
+exo_install(
+    repo: str = ".",
+    dry_run: bool = False,
+    skip_init: bool = False,
+    skip_hooks: bool = False,
+    skip_adapters: bool = False,
+    scan: bool = True,
+) -> dict[str, Any]
+```
+One-shot ExoProtocol setup: init + compile + adapters + hooks + gitignore. Collapses the full setup sequence into a single idempotent command. Each step is isolated — errors in one don't block the others. Safe to run on both greenfield and brownfield repos.
+- `dry_run`: Preview without writing files
+- `skip_init`: Skip scaffold initialization
+- `skip_hooks`: Skip hook installation
+- `skip_adapters`: Skip adapter generation
+- `scan`: Scan repo for project-aware init (default: true)
+
+Returns: `overall` ("ok" | "partial" | "error"), `succeeded`, `dry_run`, `installed_at`, `error_count`, `step_count`, `steps` (array of {name, status, summary, details})
 
 ---
 

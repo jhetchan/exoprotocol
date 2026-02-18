@@ -110,6 +110,12 @@ All commands support `--format json`.
 |---|---|
 | `exo ci-fix [--run-id ID] [--apply] [--push]` | Fetch failed CI run, parse errors, auto-fix and push |
 
+## Setup
+
+| Command | Description |
+|---|---|
+| `exo install [--dry-run] [--skip-init] [--skip-hooks] [--skip-adapters] [--no-scan]` | One-shot setup: init + compile + adapters + hooks + gitignore |
+
 ## Enforcement hooks
 
 | Command | Description |

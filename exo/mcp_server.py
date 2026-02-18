@@ -2012,6 +2012,43 @@ if FastMCP:
         except ExoError as err:
             return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
 
+    @mcp.tool()
+    def exo_install(
+        repo: str = ".",
+        dry_run: bool = False,
+        skip_init: bool = False,
+        skip_hooks: bool = False,
+        skip_adapters: bool = False,
+        scan: bool = True,
+    ) -> dict[str, Any]:
+        """One-shot ExoProtocol setup: init + compile + adapters + hooks + gitignore.
+
+        Collapses the full setup sequence into a single idempotent command.
+        Each step is isolated — errors in one don't block the others.
+        Safe to run on both greenfield and brownfield repos.
+        """
+        try:
+            from exo.stdlib.install import install, install_to_dict
+
+            report = install(
+                Path(repo).resolve(),
+                dry_run=dry_run,
+                skip_init=skip_init,
+                skip_hooks=skip_hooks,
+                skip_adapters=skip_adapters,
+                scan=scan,
+            )
+            return {"ok": True, "data": install_to_dict(report), "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
 
 def main() -> int:
     if not FastMCP:

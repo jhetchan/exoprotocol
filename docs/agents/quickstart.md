@@ -10,22 +10,22 @@ A step-by-step guide for AI agents operating in ExoProtocol-governed repositorie
   pip install exoprotocol
   ```
 
-## Step 1: Initialize governance
+## Step 1: Install governance
 
-Run initialization to scan the repository and generate governance artifacts:
+Run the one-shot setup to scan the repository and generate all governance artifacts:
 
 ```bash
-exo init
+exo install
 ```
 
-This creates:
-- `.exo/` — governance directory (constitution, config, features, requirements)
-- `CLAUDE.md` — Claude-specific governance preamble
-- `AGENTS.md` — Generic agent governance preamble
-- `.cursorrules` — Cursor-specific governance preamble
-- `.github/workflows/exo-governance.yml` — CI enforcement workflow
+This runs 5 steps in one command:
+- **Init** — creates `.exo/` directory (constitution, config, features, requirements)
+- **Compile** — compiles constitution into governance lock
+- **Adapters** — generates `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/workflows/exo-governance.yml`
+- **Hooks** — installs Claude Code hooks (session lifecycle, scope enforcement, git pre-commit)
+- **Gitignore** — creates `.exo/.gitignore` for ephemeral data
 
-The scanner detects your language, build system, and sensitive files to generate project-aware rules.
+The scanner detects your language, build system, and sensitive files to generate project-aware rules. Idempotent — safe to run again anytime.
 
 ## Step 2: Configure MCP
 

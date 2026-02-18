@@ -30,20 +30,23 @@ exo scan
 
 This is read-only -- it just prints what it finds (languages, sensitive files, CI systems, source directories) without creating anything.
 
-When you're ready:
+When you're ready, the fastest path is the one-shot setup:
 
 ```bash
-exo init
+exo install
 ```
 
-Here's what happens:
+This runs the full setup pipeline in one command:
 
-- **Scans your repo** -- detects whether you're working in Python, Node, Go, Rust, Java, or Ruby, and tailors the config accordingly.
-- **Creates the `.exo/` directory** -- this is the governance root. It contains a constitution (the rules), a config file (budgets, checks, settings), and a compiled governance lock.
-- **Generates agent config files** -- `CLAUDE.md`, `.cursorrules`, and `AGENTS.md` are created at your repo root. Each one tells its respective agent about the governance rules, lifecycle commands, and file boundaries. If these files already exist, ExoProtocol merges its governance section in without clobbering your content.
-- **Sets up CI** -- a GitHub Actions workflow (`.github/workflows/exo-governance.yml`) that runs `exo pr-check` on pull requests, verifying that every commit traces to a governed session.
+1. **Init** -- creates the `.exo/` directory with a constitution, config, and compiled governance lock. Scans your repo to detect languages, sensitive files, and CI systems.
+2. **Compile** -- compiles the constitution into a tamper-evident governance lock.
+3. **Adapters** -- generates `CLAUDE.md`, `.cursorrules`, `AGENTS.md`, and CI workflow. If these files already exist, ExoProtocol merges its governance section in without clobbering your content.
+4. **Hooks** -- installs Claude Code hooks (session lifecycle, scope enforcement, git pre-commit).
+5. **Gitignore** -- creates `.exo/.gitignore` to exclude ephemeral data (caches, logs, locks) while keeping governance state committed.
 
-The whole thing is idempotent. Running `exo init` again refreshes governance state without overwriting your customizations.
+The whole thing is idempotent. Running `exo install` again refreshes governance state without overwriting your customizations. Use `--skip-init`, `--skip-hooks`, or `--skip-adapters` to skip individual steps.
+
+> **Tip:** If you prefer step-by-step control, you can still run `exo init`, `exo build-governance`, `exo adapter-generate`, and `exo hook-install` individually.
 
 ## Health check
 

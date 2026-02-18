@@ -595,6 +595,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     hook_install_cmd.add_argument("--dry-run", action="store_true", help="Preview without writing files")
 
+    install_cmd = sub.add_parser(
+        "install",
+        help="One-shot ExoProtocol setup: init + compile + adapters + hooks + gitignore",
+    )
+    install_cmd.add_argument("--dry-run", action="store_true", help="Preview without writing files")
+    install_cmd.add_argument("--skip-init", action="store_true", help="Skip scaffold initialization")
+    install_cmd.add_argument("--skip-hooks", action="store_true", help="Skip hook installation")
+    install_cmd.add_argument("--skip-adapters", action="store_true", help="Skip adapter generation")
+    install_cmd.add_argument("--no-scan", action="store_true", help="Skip repo scanning (use generic defaults)")
+
     worker_poll_cmd = sub.add_parser("worker-poll", help="Poll ledger topic once and execute pending intents")
     worker_poll_cmd.add_argument("--topic", dest="topic_id")
     worker_poll_cmd.add_argument("--since", dest="since_cursor")
@@ -655,6 +665,7 @@ def _render_human(response: dict[str, Any], *, command: str = "") -> None:
             "tool-suggest",
             "follow-ups",
             "ci-fix",
+            "install",
         ):
             data = response.get("data", {})
             human_summary = data.pop("_human_summary", "")
@@ -1526,6 +1537,21 @@ def main(argv: list[str] | None = None) -> int:
 
             data = run_upgrade(repo_path, dry_run=bool(args.dry_run))
             data["_human_summary"] = format_upgrade_human(data)
+            response = _ok(data)
+        elif cmd == "install":
+            from exo.stdlib.install import format_install_human, install, install_to_dict
+
+            repo_path = Path(args.repo).resolve()
+            report = install(
+                repo_path,
+                dry_run=bool(args.dry_run),
+                skip_init=bool(args.skip_init),
+                skip_hooks=bool(args.skip_hooks),
+                skip_adapters=bool(args.skip_adapters),
+                scan=not bool(args.no_scan),
+            )
+            data = install_to_dict(report)
+            data["_human_summary"] = format_install_human(report)
             response = _ok(data)
         elif cmd == "hook-install":
             repo_path = Path(args.repo).resolve()
