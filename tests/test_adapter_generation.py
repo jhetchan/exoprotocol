@@ -1763,24 +1763,30 @@ class TestProvenance:
             "children": ["TICKET-010", "TICKET-011"],
         }
         save_ticket(repo, intent)
-        save_ticket(repo, {
-            "id": "TICKET-010",
-            "title": "Still working",
-            "kind": "task",
-            "status": "active",
-            "parent_id": "INTENT-005",
-            "scope": {"allow": ["**"], "deny": []},
-            "budgets": {"max_files_changed": 5},
-        })
-        save_ticket(repo, {
-            "id": "TICKET-011",
-            "title": "Already finished",
-            "kind": "task",
-            "status": "done",
-            "parent_id": "INTENT-005",
-            "scope": {"allow": ["**"], "deny": []},
-            "budgets": {"max_files_changed": 5},
-        })
+        save_ticket(
+            repo,
+            {
+                "id": "TICKET-010",
+                "title": "Still working",
+                "kind": "task",
+                "status": "active",
+                "parent_id": "INTENT-005",
+                "scope": {"allow": ["**"], "deny": []},
+                "budgets": {"max_files_changed": 5},
+            },
+        )
+        save_ticket(
+            repo,
+            {
+                "id": "TICKET-011",
+                "title": "Already finished",
+                "kind": "task",
+                "status": "done",
+                "parent_id": "INTENT-005",
+                "scope": {"allow": ["**"], "deny": []},
+                "budgets": {"max_files_changed": 5},
+            },
+        )
 
         result = generate_adapters(repo, targets=["claude"], dry_run=True)
         content = result["files"]["claude"]["content"]

@@ -444,17 +444,18 @@ def generate_enforce_config() -> dict[str, Any]:
                         {
                             "type": "command",
                             "command": (
-                                "bash -c '"
-                                "INPUT=$(cat); "
-                                'CMD=$(echo "$INPUT" | python3 -c "import sys,json; '
+                                'python3 -c "'
+                                "import sys,json,subprocess; "
                                 "d=json.load(sys.stdin); "
-                                "print(d.get('input',{}).get('command',''))"
-                                '"); '
-                                'case "$CMD" in '
-                                "*git commit*|*git push*) "
-                                f"{ENFORCE_HOOK_COMMAND} || "
-                                "exit 2;; "
-                                "esac'"
+                                "cmd=d.get('input',{}).get('command',''); "
+                                "sys.exit("
+                                "subprocess.call("
+                                f"'{ENFORCE_HOOK_COMMAND}'.split()"
+                                ") "
+                                "if 'git commit' in cmd "
+                                "or 'git push' in cmd "
+                                "else 0)"
+                                '"'
                             ),
                             "timeout": 30,
                         }

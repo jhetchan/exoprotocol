@@ -218,9 +218,7 @@ def reconcile_session(
     # 50% scope violations, 35% file budget, 15% boundary violations
     # (LOC budget removed — poor proxy for scope; kept as advisory in DriftReport)
     drift_score = (
-        0.5 * (1.0 - scope_compliance)
-        + 0.35 * min(files_ratio, 1.0)
-        + 0.15 * (1.0 if boundary_violations else 0.0)
+        0.5 * (1.0 - scope_compliance) + 0.35 * min(files_ratio, 1.0) + 0.15 * (1.0 if boundary_violations else 0.0)
     )
     drift_score = round(min(max(drift_score, 0.0), 1.0), 3)
 

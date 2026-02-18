@@ -63,3 +63,5 @@ jobs:
           python -m pytest
           python3 -m compileall exo
           python3 -m pytest
+          ruff format --check exo/ tests/
+          ruff check exo/ tests/

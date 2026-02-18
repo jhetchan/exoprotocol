@@ -92,11 +92,7 @@ def _format_provenance(repo: Path) -> list[str]:
         return []
 
     # Find active intents (kind=intent, status not done/archived)
-    intents = [
-        t for t in tickets
-        if t.get("kind") == "intent"
-        and t.get("status", "") not in ("done", "archived")
-    ]
+    intents = [t for t in tickets if t.get("kind") == "intent" and t.get("status", "") not in ("done", "archived")]
     if not intents:
         return []
 

@@ -519,6 +519,26 @@ class TestInstallEnforceHooks:
         hook = config["hooks"]["PreToolUse"][0]["hooks"][0]
         assert hook["timeout"] == 30
 
+    def test_enforce_command_valid_shell(self) -> None:
+        """Regression: nested single quotes broke bash -c parsing."""
+        import subprocess
+
+        from exo.stdlib.hooks import generate_enforce_config
+
+        config = generate_enforce_config()
+        cmd = config["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        # Feed a benign JSON payload; command must parse without syntax error
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            input='{"input":{"command":"echo hello"}}',
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        # exit 0 means the command parsed and ran (no git commit/push → passthrough)
+        assert result.returncode == 0, f"Shell syntax error: {result.stderr}"
+
 
 # ── Governed Push (exo push) ─────────────────────────────────────
 

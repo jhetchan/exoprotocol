@@ -1,16 +1,114 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m exo.stdlib.hooks session-start",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m exo.stdlib.hooks session-end",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m exo.stdlib.hooks stop",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m exo.stdlib.hooks notification",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c \"import sys,json,subprocess; d=json.load(sys.stdin); cmd=d.get('input',{}).get('command',''); sys.exit(subprocess.run(['exo','check','--format','json']).returncode) if 'git commit' in cmd or 'git push' in cmd else None\"",
+            "command": "python3 -c \"import sys,json,subprocess; d=json.load(sys.stdin); cmd=d.get('input',{}).get('command',''); sys.exit(subprocess.call(['exo','check','--format','json']) if 'git commit' in cmd or 'git push' in cmd else 0)\"",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m exo.stdlib.hooks scope-check",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m exo.stdlib.hooks post-tool",
+            "timeout": 20
           }
         ]
       }
     ]
-  }
+  },
+  "permissions": {
+    "deny": [
+      "Read(~/.aws/**)",
+      "Edit(~/.aws/**)",
+      "Read(~/.ssh/**)",
+      "Edit(~/.ssh/**)",
+      "Read(**/.env*)",
+      "Edit(**/.env*)",
+      "Read(.git/**)",
+      "Edit(.git/**)",
+      "Bash(rm .git/**)",
+      "Edit(exo/kernel/**)",
+      "Bash(rm exo/kernel/**)",
+      "Edit(src/**)",
+      "Bash(rm src/**)",
+      "Edit(exo/control/*.py)",
+      "Edit(exo/kernel/audit.py)",
+      "Edit(exo/kernel/engine.py)",
+      "Edit(exo/kernel/errors.py)",
+      "Edit(exo/kernel/governance.py)",
+      "Edit(exo/kernel/ledger.py)",
+      "Edit(exo/kernel/receipts.py)",
+      "Edit(exo/kernel/syscalls.py)",
+      "Edit(exo/kernel/tickets.py)",
+      "Edit(exo/kernel/types.py)",
+      "Edit(exo/kernel/utils.py)",
+      "Edit(exo/kernel/version.py)",
+      "Edit(exo/scripts/compile_constitution.py)"
+    ]
+  },
+  "_exo_governance_hash": "88fe490d86f8c193"
 }

@@ -919,13 +919,16 @@ class TestIntentContext:
         sha = _make_commit(repo, "auth.py", "x", "auth work")
 
         dt = _parse_iso(_get_author_date(repo, sha))
-        _write_session_index(repo, [
-            _make_session_entry(
-                ticket_id="TICKET-101",
-                started_at=(dt - timedelta(minutes=5)).isoformat(),
-                finished_at=(dt + timedelta(minutes=5)).isoformat(),
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    ticket_id="TICKET-101",
+                    started_at=(dt - timedelta(minutes=5)).isoformat(),
+                    finished_at=(dt + timedelta(minutes=5)).isoformat(),
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert len(report.sessions) == 1
@@ -942,13 +945,16 @@ class TestIntentContext:
         sha = _make_commit(repo, "solo.py", "x", "solo work")
 
         dt = _parse_iso(_get_author_date(repo, sha))
-        _write_session_index(repo, [
-            _make_session_entry(
-                ticket_id="TICKET-102",
-                started_at=(dt - timedelta(minutes=5)).isoformat(),
-                finished_at=(dt + timedelta(minutes=5)).isoformat(),
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    ticket_id="TICKET-102",
+                    started_at=(dt - timedelta(minutes=5)).isoformat(),
+                    finished_at=(dt + timedelta(minutes=5)).isoformat(),
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         sv = report.sessions[0]
@@ -987,20 +993,23 @@ class TestIntentContext:
         dt1 = _parse_iso(c1_actual)
         dt2 = _parse_iso(c2_actual)
 
-        _write_session_index(repo, [
-            _make_session_entry(
-                session_id="sess-a",
-                ticket_id="TICKET-103",
-                started_at=(dt1 - timedelta(minutes=3)).isoformat(),
-                finished_at=(dt1 + timedelta(minutes=2)).isoformat(),
-            ),
-            _make_session_entry(
-                session_id="sess-b",
-                ticket_id="TICKET-104",
-                started_at=(dt2 - timedelta(minutes=3)).isoformat(),
-                finished_at=(dt2 + timedelta(minutes=3)).isoformat(),
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    session_id="sess-a",
+                    ticket_id="TICKET-103",
+                    started_at=(dt1 - timedelta(minutes=3)).isoformat(),
+                    finished_at=(dt1 + timedelta(minutes=2)).isoformat(),
+                ),
+                _make_session_entry(
+                    session_id="sess-b",
+                    ticket_id="TICKET-104",
+                    started_at=(dt2 - timedelta(minutes=3)).isoformat(),
+                    finished_at=(dt2 + timedelta(minutes=3)).isoformat(),
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert len(report.sessions) == 2
@@ -1028,13 +1037,16 @@ class TestIntentContext:
         sha = _make_commit(repo, "fmt.py", "x", "format work")
 
         dt = _parse_iso(_get_author_date(repo, sha))
-        _write_session_index(repo, [
-            _make_session_entry(
-                ticket_id="TICKET-105",
-                started_at=(dt - timedelta(minutes=5)).isoformat(),
-                finished_at=(dt + timedelta(minutes=5)).isoformat(),
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    ticket_id="TICKET-105",
+                    started_at=(dt - timedelta(minutes=5)).isoformat(),
+                    finished_at=(dt + timedelta(minutes=5)).isoformat(),
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         text = format_pr_check_human(report)
@@ -1045,19 +1057,37 @@ class TestIntentContext:
     def test_intent_in_dict_roundtrip(self, tmp_path: Path) -> None:
         """Intent fields survive dict serialization."""
         sv = SessionVerdict(
-            session_id="s1", ticket_id="T-1", actor="a", vendor="v",
-            model="m", mode="work", verify="passed", drift_score=0.1,
-            started_at="", finished_at="", commit_count=1,
-            intent_id="INT-001", intent_boundary="No kernel",
+            session_id="s1",
+            ticket_id="T-1",
+            actor="a",
+            vendor="v",
+            model="m",
+            mode="work",
+            verify="passed",
+            drift_score=0.1,
+            started_at="",
+            finished_at="",
+            commit_count=1,
+            intent_id="INT-001",
+            intent_boundary="No kernel",
         )
         d = pr_check_to_dict(
             PRCheckReport(
-                base_ref="main", head_ref="HEAD", total_commits=1,
-                governed_commits=1, ungoverned_commits=0,
-                sessions=[sv], commits=[], ungoverned_shas=[],
-                governance_intact=True, governance_hash="abc",
-                changed_files=[], scope_violations=[],
-                verdict="pass", reasons=[], checked_at="now",
+                base_ref="main",
+                head_ref="HEAD",
+                total_commits=1,
+                governed_commits=1,
+                ungoverned_commits=0,
+                sessions=[sv],
+                commits=[],
+                ungoverned_shas=[],
+                governance_intact=True,
+                governance_hash="abc",
+                changed_files=[],
+                scope_violations=[],
+                verdict="pass",
+                reasons=[],
+                checked_at="now",
             )
         )
         assert d["sessions"][0]["intent_id"] == "INT-001"
@@ -1070,13 +1100,16 @@ class TestIntentContext:
         sha = _make_commit(repo, "x.py", "x", "work")
 
         dt = _parse_iso(_get_author_date(repo, sha))
-        _write_session_index(repo, [
-            _make_session_entry(
-                ticket_id="NONEXISTENT-999",
-                started_at=(dt - timedelta(minutes=5)).isoformat(),
-                finished_at=(dt + timedelta(minutes=5)).isoformat(),
-            ),
-        ])
+        _write_session_index(
+            repo,
+            [
+                _make_session_entry(
+                    ticket_id="NONEXISTENT-999",
+                    started_at=(dt - timedelta(minutes=5)).isoformat(),
+                    finished_at=(dt + timedelta(minutes=5)).isoformat(),
+                ),
+            ],
+        )
 
         report = pr_check(repo, base_ref=base, head_ref="HEAD")
         assert len(report.sessions) == 1

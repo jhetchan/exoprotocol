@@ -1,28 +1,24 @@
 # @feature:install-command
 """Tests for ``exo install`` — one-shot setup pipeline."""
+
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from exo.kernel import governance as governance_mod
 from exo.kernel.utils import dump_yaml
 from exo.stdlib.defaults import DEFAULT_CONFIG, DEFAULT_CONSTITUTION
 from exo.stdlib.install import (
+    _EXO_GITIGNORE_ENTRIES,
     InstallReport,
     InstallStep,
-    _EXO_GITIGNORE_ENTRIES,
-    _GITIGNORE_SENTINEL,
     format_install_human,
     install,
     install_to_dict,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────────
 
@@ -325,11 +321,13 @@ class TestInstallDataclasses:
         assert r.succeeded is False
 
     def test_report_error_count(self) -> None:
-        r = InstallReport(steps=[
-            InstallStep(name="a", status="created", summary="ok"),
-            InstallStep(name="b", status="error", summary="fail"),
-            InstallStep(name="c", status="error", summary="fail2"),
-        ])
+        r = InstallReport(
+            steps=[
+                InstallStep(name="a", status="created", summary="ok"),
+                InstallStep(name="b", status="error", summary="fail"),
+                InstallStep(name="c", status="error", summary="fail2"),
+            ]
+        )
         assert r.error_count == 2
 
     def test_step_defaults(self) -> None:

@@ -28,7 +28,7 @@ This repository is governed by ExoProtocol. All AI agent work must follow the se
 
 - kernel: exo-kernel 0.1.0
 - lock hash: `88fe490d86f8c193...`
-- generated: 2026-02-14T21:39:08+08:00
+- generated: 2026-02-18T11:30:03+08:00
 
 ### Filesystem Deny Rules
 
@@ -47,7 +47,6 @@ This repository is governed by ExoProtocol. All AI agent work must follow the se
 ### Default Budgets
 
 - max files changed: 12
-- max LOC changed: 400
 
 ### Approved Checks
 
@@ -57,6 +56,17 @@ This repository is governed by ExoProtocol. All AI agent work must follow the se
 - `python -m pytest`
 - `python3 -m compileall exo`
 - `python3 -m pytest`
+- `ruff format --check exo/ tests/`
+- `ruff check exo/ tests/`
+
+### Active Intents
+
+- **INT-20260216-040435-LIBD**: True Enforcement: mechanical governance guarantees for stateless agents — boundary: *No kernel changes. No new Python dependencies except watchdog (for daemon). All enforcement is deterministic (no LLM in the loop). Sealed policy is JSON, not a new DSL.*
+  - TKT-20260216-040444-AWF3-EPIC: Watchdog Daemon — exo-watchd out-of-band enforcement
+- **INT-20260217-220647-KXU0**: Intent-to-Verdict Rendering: surface full traceability chain in PR check and adapters — boundary: *Only modify pr_check.py, adapters.py, and their tests. No kernel changes. No new CLI commands.*
+  - TKT-20260217-220656-MAYA: PR check: resolve intent context per session and render in human output [allow: exo/stdlib/pr_check.py, tests/test_pr_check.py]
+  - TKT-20260217-220659-KSCJ: Adapter-generate: embed ticket and requirement provenance in generated files [allow: exo/stdlib/adapters.py, tests/test_adapter_generation.py]
+  - TKT-20260217-221056-YMDG: Drop LOC budget from drift score formula [allow: exo/stdlib/reconcile.py, exo/stdlib/adapters.py, tests/test_intent_accountability.py, tests/test_adapter_generation.py]
 
 ### Source of Truth
 
@@ -144,6 +154,19 @@ Mark a tool as used when you import/call it:
 - The bootstrap file contains your session's scope, checks, and lifecycle commands
 - Drift detection runs at session-finish and is recorded in the session memento
 - Audit sessions may be triggered to review your work independently
+
+## Governed Push
+
+Before pushing code, ALWAYS run checks first:
+
+```
+exo push                      # runs exo check, then git push (recommended)
+# OR
+exo check && git push         # manual equivalent
+```
+
+Do NOT use bare `git push` — it bypasses governance checks.
+If checks fail, fix the issues before pushing.
 
 ## Non-Negotiables
 
