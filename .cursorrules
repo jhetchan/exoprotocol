@@ -8,7 +8,7 @@ This repository uses ExoProtocol governance. All work must go through the sessio
 
 - kernel: exo-kernel 0.1.0
 - lock hash: `88fe490d86f8c193...`
-- generated: 2026-02-18T11:30:03+08:00
+- generated: 2026-02-18T16:31:21+08:00
 
 ### Filesystem Deny Rules
 
@@ -47,6 +47,12 @@ This repository uses ExoProtocol governance. All work must go through the sessio
   - TKT-20260217-220656-MAYA: PR check: resolve intent context per session and render in human output [allow: exo/stdlib/pr_check.py, tests/test_pr_check.py]
   - TKT-20260217-220659-KSCJ: Adapter-generate: embed ticket and requirement provenance in generated files [allow: exo/stdlib/adapters.py, tests/test_adapter_generation.py]
   - TKT-20260217-221056-YMDG: Drop LOC budget from drift score formula [allow: exo/stdlib/reconcile.py, exo/stdlib/adapters.py, tests/test_intent_accountability.py, tests/test_adapter_generation.py]
+- **INT-20260218-160854-93PO**: Acceptance Criteria Test Traceability — Spec-to-Gates Correspondence — boundary: *Only modify requirements.py, cli.py, mcp_server.py, and tests. No new modules. No kernel changes. No external dependencies.*
+  - TKT-20260218-160901-ZZJ1: Extend RequirementDef with acceptance field: add optional acceptance list to schema, validate ACC IDs are unique, load from requirements.yaml [allow: exo/stdlib/requirements.py, tests/test_requirements.py]
+  - TKT-20260218-160908-XLXQ: Add @acc: test scanner: regex scan of test dirs (tests/, test/) for @acc: ACC-XXX annotations, return list of AccTestRef(acc_id, file, line) [allow: exo/stdlib/requirements.py, tests/test_requirements.py]
+  - TKT-20260218-160915-P4AA: Wire ACC tracing into trace_requirements: new check_tests param, untested_acc (error) and acc_orphan (error) violations, extend ReqTraceReport with acc_total/acc_tested/untested_accs fields [allow: exo/stdlib/requirements.py, tests/test_requirements.py]
+  - TKT-20260218-160922-WY40: CLI + MCP: add --check-tests flag to exo trace-reqs, add check_tests param to exo_trace_reqs MCP tool, update human output with ACC coverage section [allow: exo/cli.py, exo/mcp_server.py, exo/stdlib/requirements.py, tests/test_requirements.py]
+  - TKT-20260218-160928-40CW: Bootstrap .exo/requirements.yaml with real acceptance criteria for 2-3 existing requirements, add @acc: annotations to corresponding test files as dogfood proof [allow: .exo/requirements.yaml, tests/**]
 
 ### Source of Truth
 

@@ -41,6 +41,31 @@ EXO_ACTOR=agent:claude exo session-finish \
 
 Session start generates a bootstrap prompt with governance rules, scope constraints, sibling awareness, and operational learnings from prior sessions. Session finish runs drift detection (scope compliance, file budget, boundary violations), feature tracing, and writes a closeout memento.
 
+## Spec-to-gates traceability
+
+```yaml
+# .exo/requirements.yaml
+requirements:
+  - id: REQ-AUTH-01
+    title: "User authentication"
+    acceptance:
+      - ACC-AUTH-LOGIN     # User can log in with email/password
+      - ACC-AUTH-LOCKOUT   # Account locks after 5 failed attempts
+```
+
+```python
+# tests/test_auth.py
+# @acc: ACC-AUTH-LOGIN
+def test_login_with_valid_credentials():
+    ...
+```
+
+```bash
+exo trace-reqs --check-tests  # verifies every acceptance criteria has a test
+```
+
+Requirements declare acceptance criteria. Tests annotate which criteria they verify with `@acc:` comments (language-agnostic). `trace-reqs --check-tests` cross-references the manifest against test annotations — untested criteria and orphan annotations are flagged as errors. The spec becomes the gate.
+
 ## Agent handoff
 
 ```bash

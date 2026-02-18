@@ -469,6 +469,9 @@ def _build_parser() -> argparse.ArgumentParser:
     trace_reqs_cmd.add_argument(
         "--no-check-uncovered", action="store_true", help="Skip checking for requirements with no code refs"
     )
+    trace_reqs_cmd.add_argument(
+        "--check-tests", action="store_true", help="Verify acceptance criteria have @acc: annotations in test files"
+    )
 
     drift_cmd = sub.add_parser("drift", help="Run composite governance drift check across all subsystems")
     drift_cmd.add_argument(
@@ -1277,6 +1280,7 @@ def main(argv: list[str] | None = None) -> int:
                 repo_path,
                 globs=globs,
                 check_uncovered=not bool(args.no_check_uncovered),
+                check_tests=bool(args.check_tests),
             )
             data = req_trace_to_dict(report)
             data["_human_summary"] = format_req_trace_human(report)

@@ -31,6 +31,15 @@ REQ_TAG_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Regex: matches acceptance criteria annotations in test files
+ACC_TAG_PATTERN = re.compile(
+    r"[#/]\s*@acc:\s*(.+)",
+    re.IGNORECASE,
+)
+
+# Directories that contain test files (inverted from SKIP_DIRS)
+TEST_DIRS = frozenset({"tests", "test"})
+
 # Default file extensions to scan (same as features module)
 DEFAULT_SCAN_GLOBS = [
     "**/*.py",
@@ -81,6 +90,7 @@ class RequirementDef:
     description: str = ""
     priority: str = "medium"  # high | medium | low
     tags: tuple[str, ...] = ()
+    acceptance: tuple[str, ...] = ()  # ACC-XXX IDs
 
 
 @dataclass(frozen=True)
@@ -88,6 +98,15 @@ class ReqCodeRef:
     """A @req: reference found in source code."""
 
     req_id: str
+    file: str  # relative path
+    line: int
+
+
+@dataclass(frozen=True)
+class AccTestRef:
+    """An @acc: reference found in a test file."""
+
+    acc_id: str
     file: str  # relative path
     line: int
 
@@ -117,6 +136,9 @@ class ReqTraceReport:
     covered_reqs: list[str]  # requirement IDs with at least one code ref
     uncovered_reqs: list[str]  # active requirement IDs with no code refs
     deprecated_with_refs: list[str]  # deprecated reqs still referenced
+    acc_total: int = 0  # total ACC IDs defined in manifest
+    acc_tested: int = 0  # ACC IDs with @acc: annotations in test files
+    untested_accs: list[str] | None = None  # ACC IDs with no test annotation
     checked_at: str = ""
 
     @property
@@ -146,6 +168,7 @@ def load_requirements(repo: Path) -> list[RequirementDef]:
 
     reqs: list[RequirementDef] = []
     seen_ids: set[str] = set()
+    seen_acc_ids: set[str] = set()
 
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
@@ -198,6 +221,24 @@ def load_requirements(repo: Path) -> list[RequirementDef]:
         tags_raw = entry.get("tags", [])
         tags = tuple(str(t).strip() for t in tags_raw if str(t).strip()) if isinstance(tags_raw, list) else ()
 
+        acc_raw = entry.get("acceptance", [])
+        acceptance: tuple[str, ...] = ()
+        if isinstance(acc_raw, list):
+            acc_list: list[str] = []
+            for a in acc_raw:
+                aid = str(a).strip()
+                if not aid:
+                    continue
+                if aid in seen_acc_ids:
+                    raise ExoError(
+                        code="REQUIREMENTS_DUPLICATE_ACC",
+                        message=f"duplicate acceptance id: {aid}",
+                        blocked=True,
+                    )
+                seen_acc_ids.add(aid)
+                acc_list.append(aid)
+            acceptance = tuple(acc_list)
+
         reqs.append(
             RequirementDef(
                 id=rid,
@@ -206,6 +247,7 @@ def load_requirements(repo: Path) -> list[RequirementDef]:
                 description=str(entry.get("description", "")).strip(),
                 priority=priority,
                 tags=tags,
+                acceptance=acceptance,
             )
         )
 
@@ -259,11 +301,61 @@ def scan_req_refs(repo: Path, *, globs: list[str] | None = None) -> list[ReqCode
     return refs
 
 
+def _scan_test_files(repo: Path, globs: list[str] | None = None) -> list[Path]:
+    """Find test files to scan for @acc: annotations."""
+    patterns = globs or DEFAULT_SCAN_GLOBS
+    found: set[Path] = set()
+    for test_dir_name in TEST_DIRS:
+        test_dir = repo / test_dir_name
+        if not test_dir.is_dir():
+            continue
+        for pattern in patterns:
+            # Strip leading **/ to match within test dir
+            local_pattern = pattern.lstrip("*").lstrip("/") if pattern.startswith("**/") else pattern
+            for path in test_dir.glob(f"**/{local_pattern}"):
+                if path.is_file():
+                    found.add(path)
+    return sorted(found)
+
+
+def scan_acc_refs(repo: Path, *, globs: list[str] | None = None) -> list[AccTestRef]:
+    """Scan test files for @acc: annotations."""
+    repo = Path(repo).resolve()
+    files = _scan_test_files(repo, globs)
+    refs: list[AccTestRef] = []
+
+    for filepath in files:
+        try:
+            lines = filepath.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+
+        rel = str(filepath.relative_to(repo))
+
+        for line_num, line in enumerate(lines, start=1):
+            match = ACC_TAG_PATTERN.search(line)
+            if match:
+                raw_ids = match.group(1)
+                for aid in raw_ids.split(","):
+                    aid = aid.strip()
+                    if aid:
+                        refs.append(
+                            AccTestRef(
+                                acc_id=aid,
+                                file=rel,
+                                line=line_num,
+                            )
+                        )
+
+    return refs
+
+
 def trace_requirements(
     repo: Path,
     *,
     globs: list[str] | None = None,
     check_uncovered: bool = True,
+    check_tests: bool = False,
 ) -> ReqTraceReport:
     """Run the requirement traceability linter.
 
@@ -272,11 +364,13 @@ def trace_requirements(
     2. Deprecated requirements with code refs produce warnings
     3. Deleted requirements with code refs produce errors
     4. (optional) Active requirements with no code refs are flagged as uncovered
+    5. (optional) Acceptance criteria have corresponding @acc: test annotations
 
     Args:
         repo: Repository root path.
         globs: Optional file globs to scan.
         check_uncovered: Whether to flag active requirements with no code refs.
+        check_tests: Whether to verify acceptance criteria have test annotations.
 
     Returns:
         ReqTraceReport with violations and coverage data.
@@ -355,6 +449,55 @@ def trace_requirements(
         if req.status == "deprecated" and req.id in covered_ids:
             deprecated_with_refs.append(req.id)
 
+    # Acceptance criteria → test tracing
+    acc_total = 0
+    acc_tested = 0
+    untested_accs: list[str] = []
+
+    if check_tests:
+        # Build map of all ACC IDs from active requirements
+        all_acc_ids: dict[str, str] = {}  # acc_id → parent req_id
+        for req in reqs:
+            if req.status == "deleted":
+                continue
+            for acc_id in req.acceptance:
+                all_acc_ids[acc_id] = req.id
+        acc_total = len(all_acc_ids)
+
+        # Scan test files for @acc: annotations
+        acc_refs = scan_acc_refs(repo, globs=globs)
+        tested_acc_ids: set[str] = set()
+        for ref in acc_refs:
+            tested_acc_ids.add(ref.acc_id)
+            if ref.acc_id not in all_acc_ids:
+                violations.append(
+                    ReqTraceViolation(
+                        kind="acc_orphan",
+                        req_id=ref.acc_id,
+                        file=ref.file,
+                        line=ref.line,
+                        message=f"@acc: {ref.acc_id} is not defined in any requirement's acceptance list",
+                        severity="error",
+                    )
+                )
+
+        # Check for untested acceptance criteria
+        for acc_id, parent_req_id in sorted(all_acc_ids.items()):
+            if acc_id in tested_acc_ids:
+                acc_tested += 1
+            else:
+                untested_accs.append(acc_id)
+                violations.append(
+                    ReqTraceViolation(
+                        kind="untested_acc",
+                        req_id=acc_id,
+                        file="(manifest)",
+                        line=None,
+                        message=f"acceptance criteria '{acc_id}' (from {parent_req_id}) has no @acc: annotation in test files",
+                        severity="error",
+                    )
+                )
+
     return ReqTraceReport(
         reqs_total=len(reqs),
         reqs_active=sum(1 for r in reqs if r.status == "active"),
@@ -365,13 +508,16 @@ def trace_requirements(
         covered_reqs=sorted(covered_ids),
         uncovered_reqs=sorted(uncovered),
         deprecated_with_refs=sorted(deprecated_with_refs),
+        acc_total=acc_total,
+        acc_tested=acc_tested,
+        untested_accs=sorted(untested_accs) if check_tests else None,
         checked_at=now_iso(),
     )
 
 
 def req_trace_to_dict(report: ReqTraceReport) -> dict[str, Any]:
     """Convert ReqTraceReport to a plain dict for serialization."""
-    return {
+    d: dict[str, Any] = {
         "reqs_total": report.reqs_total,
         "reqs_active": report.reqs_active,
         "reqs_deprecated": report.reqs_deprecated,
@@ -385,8 +531,13 @@ def req_trace_to_dict(report: ReqTraceReport) -> dict[str, Any]:
         "covered_reqs": report.covered_reqs,
         "uncovered_reqs": report.uncovered_reqs,
         "deprecated_with_refs": report.deprecated_with_refs,
+        "acc_total": report.acc_total,
+        "acc_tested": report.acc_tested,
         "checked_at": report.checked_at,
     }
+    if report.untested_accs is not None:
+        d["untested_accs"] = report.untested_accs
+    return d
 
 
 def format_req_trace_human(report: ReqTraceReport) -> str:
@@ -399,6 +550,9 @@ def format_req_trace_human(report: ReqTraceReport) -> str:
         f"  code refs: {report.refs_total}",
         f"  covered: {len(report.covered_reqs)}, uncovered: {len(report.uncovered_reqs)}",
     ]
+
+    if report.acc_total > 0:
+        lines.append(f"  acceptance criteria: {report.acc_total} defined, {report.acc_tested} tested")
 
     if report.deprecated_with_refs:
         lines.append(f"  deprecated with refs: {report.deprecated_with_refs}")

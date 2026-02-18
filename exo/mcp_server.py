@@ -1264,17 +1264,20 @@ if FastMCP:
         repo: str = ".",
         globs: list[str] | None = None,
         check_uncovered: bool = True,
+        check_tests: bool = False,
     ) -> dict[str, Any]:
         """Run requirement traceability linter: cross-reference @req: annotations against manifest.
 
         Checks for orphan references, deprecated/deleted usage, and uncovered
-        requirements. Returns structured report with pass/fail verdict.
+        requirements. With check_tests=True, also verifies acceptance criteria
+        have @acc: annotations in test files.
         """
         try:
             report = run_trace_reqs(
                 Path(repo).resolve(),
                 globs=globs,
                 check_uncovered=check_uncovered,
+                check_tests=check_tests,
             )
             return {"ok": True, "data": req_trace_to_dict(report), "events": [], "blocked": False}
         except ExoError as err:

@@ -1,26 +1,6 @@
-# AGENTS.md
-
-This repository uses Exo's vendor-agnostic protocol as the primary agent contract.
-
-## Required Read Order
-
-1. `.exo/agents/EXO_PROTOCOL.md` (canonical source of truth)
-2. Vendor adapter in `.exo/agents/vendors/` (for execution style only)
-
-## Enforcement Boundary
-
-- Lifecycle and safety are enforced in code, not prompt docs.
-- Required lifecycle: `session-start -> execute -> session-finish`.
-- Worker execution should use `--require-session`.
-
-## Conflict Rule
-
-If an adapter conflicts with canonical protocol:
-- `EXO_PROTOCOL.md` wins.
-
 <!-- exo:governance:begin -->
 <!-- Governance hash: 88fe490d86f8c193 -->
-# ExoProtocol — Agent Operating Instructions
+# ExoProtocol — Codex Operating Instructions
 
 This repository is governed by ExoProtocol. All AI agent work must follow the session lifecycle.
 
@@ -149,17 +129,34 @@ Mark a tool as used when you import/call it:
 
 ## Session Lifecycle
 
-1. `exo session-start --ticket-id <TICKET> --vendor <VENDOR> --model <MODEL> --task "<TASK>"`
+1. `exo session-start --ticket-id <TICKET> --vendor openai --model <MODEL> --task "<TASK>"`
 2. Read `.exo/cache/sessions/<actor>.bootstrap.md`
 3. Execute work within ticket scope
 4. `exo session-finish --ticket-id <TICKET> --summary "<SUMMARY>" --set-status review`
 
-## Enforcement
+## Approval Mode
 
-- Governance rules are enforced at the kernel level, not by prompt
-- The bootstrap file contains your session's scope, checks, and lifecycle commands
-- Drift detection runs at session-finish and is recorded in the session memento
-- Audit sessions may be triggered to review your work independently
+Recommended Codex approval mode for this repo: **suggest**
+
+- `suggest` (recommended when checks are configured): Codex proposes changes, human approves
+- `auto-edit`: Codex applies changes automatically (use only in governed sessions)
+- `full-auto`: Full autonomy (requires active governed session + sandbox enforcement)
+
+Run with: `codex --approval-mode suggest`
+
+## Sandbox Policy
+
+The following paths are denied by governance and MUST NOT be read, written, or deleted:
+
+- `~/.aws/**`
+- `~/.ssh/**`
+- `**/.env*`
+- `.git/**`
+- `exo/kernel/**`
+- `src/**`
+
+When running Codex with `--full-auto`, these paths should be added to your
+sandbox deny list. Use `exo sandbox-policy` for the machine-readable version.
 
 ## Governed Push
 
@@ -167,19 +164,15 @@ Before pushing code, ALWAYS run checks first:
 
 ```
 exo push                      # runs exo check, then git push (recommended)
-# OR
 exo check && git push         # manual equivalent
 ```
-
-Do NOT use bare `git push` — it bypasses governance checks.
-If checks fail, fix the issues before pushing.
 
 ## Non-Negotiables
 
 - No governed execution without active session
 - Respect lock ownership and ticket scope
 - Verification is default at finish; break-glass must be explicit
-- All configurable values must be loaded from their source of truth at runtime — never hardcode, always test
+- All configurable values must be loaded from their source of truth at runtime
 - Read `.exo/LEARNINGS.md` for operational learnings from prior sessions
 
 <!-- exo:governance:end -->

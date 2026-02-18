@@ -19,6 +19,7 @@ from typing import Any
 
 from exo.kernel import governance as governance_mod
 from exo.stdlib.requirements import (
+    ACC_TAG_PATTERN,
     REQ_TAG_PATTERN,
     VALID_PRIORITIES,
     VALID_STATUSES,
@@ -26,6 +27,7 @@ from exo.stdlib.requirements import (
     load_requirements,
     req_trace_to_dict,
     requirements_to_list,
+    scan_acc_refs,
     scan_req_refs,
     trace_requirements,
 )
@@ -801,3 +803,596 @@ class TestEdgeCases:
             raise AssertionError("Should have raised")
         except Exception as e:
             assert "REQUIREMENTS_MANIFEST_INVALID" in str(e)
+
+
+# ── Acceptance Criteria: Schema ─────────────────────────────────────
+
+
+class TestAcceptanceSchema:
+    """Tests for the acceptance field on RequirementDef."""
+
+    def test_load_with_acceptance(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001", "ACC-002"],
+                },
+            ],
+        )
+        reqs = load_requirements(repo)
+        assert reqs[0].acceptance == ("ACC-001", "ACC-002")
+
+    def test_load_without_acceptance_defaults_empty(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [{"id": "REQ-001", "title": "Auth"}],
+        )
+        reqs = load_requirements(repo)
+        assert reqs[0].acceptance == ()
+
+    def test_duplicate_acc_id_raises(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {"id": "REQ-001", "title": "Auth", "acceptance": ["ACC-001"]},
+                {"id": "REQ-002", "title": "Log", "acceptance": ["ACC-001"]},
+            ],
+        )
+        try:
+            load_requirements(repo)
+            raise AssertionError("Should have raised")
+        except Exception as e:
+            assert "REQUIREMENTS_DUPLICATE_ACC" in str(e)
+
+    def test_duplicate_acc_within_same_req_raises(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001", "ACC-001"],
+                },
+            ],
+        )
+        try:
+            load_requirements(repo)
+            raise AssertionError("Should have raised")
+        except Exception as e:
+            assert "REQUIREMENTS_DUPLICATE_ACC" in str(e)
+
+    def test_acceptance_non_list_ignored(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [{"id": "REQ-001", "title": "Auth", "acceptance": "not-a-list"}],
+        )
+        reqs = load_requirements(repo)
+        assert reqs[0].acceptance == ()
+
+    def test_acceptance_in_round_trip(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001", "ACC-002"],
+                },
+            ],
+        )
+        reqs = load_requirements(repo)
+        lst = requirements_to_list(reqs)
+        assert lst[0]["acceptance"] == ("ACC-001", "ACC-002")
+
+
+# ── ACC Tag Pattern ─────────────────────────────────────────────────
+
+
+class TestAccTagPattern:
+    """Tests for the ACC_TAG_PATTERN regex."""
+
+    def test_python_comment(self) -> None:
+        m = ACC_TAG_PATTERN.search("# @acc: ACC-001")
+        assert m
+        assert "ACC-001" in m.group(1)
+
+    def test_js_comment(self) -> None:
+        m = ACC_TAG_PATTERN.search("// @acc: ACC-001")
+        assert m
+        assert "ACC-001" in m.group(1)
+
+    def test_case_insensitive(self) -> None:
+        assert ACC_TAG_PATTERN.search("# @ACC: ACC-001")
+        assert ACC_TAG_PATTERN.search("# @Acc: ACC-001")
+
+    def test_multi_ref(self) -> None:
+        m = ACC_TAG_PATTERN.search("# @acc: ACC-001, ACC-002")
+        assert m
+        assert "ACC-001, ACC-002" in m.group(1)
+
+    def test_no_match_without_prefix(self) -> None:
+        assert not ACC_TAG_PATTERN.search("@acc: ACC-001")
+
+
+# ── Scan ACC Refs ───────────────────────────────────────────────────
+
+
+class TestScanAccRefs:
+    """Tests for scanning test files for @acc: annotations."""
+
+    def test_scan_in_tests_dir(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001\ndef test_login(): pass\n",
+            encoding="utf-8",
+        )
+        refs = scan_acc_refs(repo)
+        assert len(refs) == 1
+        assert refs[0].acc_id == "ACC-001"
+        assert "tests/test_auth.py" in refs[0].file
+        assert refs[0].line == 1
+
+    def test_scan_in_test_dir(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "test").mkdir(parents=True, exist_ok=True)
+        (repo / "test" / "test_auth.py").write_text(
+            "# @acc: ACC-001\ndef test_login(): pass\n",
+            encoding="utf-8",
+        )
+        refs = scan_acc_refs(repo)
+        assert len(refs) == 1
+        assert refs[0].acc_id == "ACC-001"
+
+    def test_scan_multi_ref_line(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001, ACC-002\ndef test_login(): pass\n",
+            encoding="utf-8",
+        )
+        refs = scan_acc_refs(repo)
+        assert len(refs) == 2
+        assert refs[0].acc_id == "ACC-001"
+        assert refs[1].acc_id == "ACC-002"
+
+    def test_scan_ignores_source_dirs(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        # Put @acc: in source dir — should NOT be found by scan_acc_refs
+        _write_source_file(repo, "src/auth.py", "# @acc: ACC-001\n")
+        refs = scan_acc_refs(repo)
+        assert len(refs) == 0
+
+    def test_scan_no_test_dirs(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        # Neither tests/ nor test/ exist
+        refs = scan_acc_refs(repo)
+        assert len(refs) == 0
+
+    def test_scan_nested_test_file(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "tests" / "integration").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "integration" / "test_flow.py").write_text(
+            "# @acc: ACC-003\ndef test_flow(): pass\n",
+            encoding="utf-8",
+        )
+        refs = scan_acc_refs(repo)
+        assert len(refs) == 1
+        assert refs[0].acc_id == "ACC-003"
+
+    def test_scan_js_test_file(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "auth.test.js").write_text(
+            "// @acc: ACC-001\ntest('login', () => {});\n",
+            encoding="utf-8",
+        )
+        refs = scan_acc_refs(repo)
+        assert len(refs) == 1
+        assert refs[0].acc_id == "ACC-001"
+
+
+# ── Trace with ACC ──────────────────────────────────────────────────
+
+
+class TestTraceWithAcc:
+    """Tests for trace_requirements with check_tests=True."""
+
+    def test_clean_trace_with_acc(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001", "ACC-002"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001\n# @acc: ACC-002\ndef test_login(): pass\n",
+            encoding="utf-8",
+        )
+        report = trace_requirements(repo, check_tests=True)
+        assert report.passed
+        assert report.acc_total == 2
+        assert report.acc_tested == 2
+        assert report.untested_accs == []
+
+    def test_untested_acc_violation(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001", "ACC-002"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001\ndef test_login(): pass\n",
+            encoding="utf-8",
+        )
+        report = trace_requirements(repo, check_tests=True)
+        assert not report.passed
+        assert report.acc_total == 2
+        assert report.acc_tested == 1
+        assert "ACC-002" in report.untested_accs
+        untested_violations = [v for v in report.violations if v.kind == "untested_acc"]
+        assert len(untested_violations) == 1
+        assert untested_violations[0].severity == "error"
+        assert "ACC-002" in untested_violations[0].message
+        assert "REQ-001" in untested_violations[0].message
+
+    def test_acc_orphan_violation(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001\n# @acc: ACC-GHOST\ndef test_login(): pass\n",
+            encoding="utf-8",
+        )
+        report = trace_requirements(repo, check_tests=True)
+        assert not report.passed
+        orphans = [v for v in report.violations if v.kind == "acc_orphan"]
+        assert len(orphans) == 1
+        assert orphans[0].req_id == "ACC-GHOST"
+        assert orphans[0].severity == "error"
+
+    def test_check_tests_false_skips_acc(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        # No test files — but check_tests=False so should pass
+        report = trace_requirements(repo, check_tests=False)
+        assert report.passed
+        assert report.acc_total == 0
+        assert report.acc_tested == 0
+        assert report.untested_accs is None
+
+    def test_deleted_req_acc_excluded(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "status": "deleted",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        report = trace_requirements(repo, check_tests=True)
+        # Deleted requirement's ACCs should not be counted
+        assert report.acc_total == 0
+
+    def test_deprecated_req_acc_included(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "status": "deprecated",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        report = trace_requirements(repo, check_tests=True)
+        # Deprecated requirement's ACCs should still be counted
+        assert report.acc_total == 1
+
+    def test_mixed_acc_violations(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001", "ACC-002", "ACC-003"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001\n# @acc: ACC-ORPHAN\ndef test_login(): pass\n",
+            encoding="utf-8",
+        )
+        report = trace_requirements(repo, check_tests=True)
+        assert not report.passed
+        kinds = {v.kind for v in report.violations}
+        assert "untested_acc" in kinds  # ACC-002, ACC-003 untested
+        assert "acc_orphan" in kinds  # ACC-ORPHAN not in manifest
+        assert report.acc_total == 3
+        assert report.acc_tested == 1
+        assert "ACC-002" in report.untested_accs
+        assert "ACC-003" in report.untested_accs
+
+    def test_no_acceptance_with_check_tests(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [{"id": "REQ-001", "title": "Auth"}],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        report = trace_requirements(repo, check_tests=True)
+        assert report.passed
+        assert report.acc_total == 0
+        assert report.acc_tested == 0
+        assert report.untested_accs == []
+
+
+# ── ACC Report Output ───────────────────────────────────────────────
+
+
+class TestAccReportOutput:
+    """Tests for ACC data in report serialization and formatting."""
+
+    def test_to_dict_includes_acc_fields(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001", "ACC-002"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001\n",
+            encoding="utf-8",
+        )
+        report = trace_requirements(repo, check_tests=True)
+        d = req_trace_to_dict(report)
+        assert d["acc_total"] == 2
+        assert d["acc_tested"] == 1
+        assert "untested_accs" in d
+        assert "ACC-002" in d["untested_accs"]
+
+    def test_to_dict_no_untested_when_check_tests_false(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        report = trace_requirements(repo, check_tests=False)
+        d = req_trace_to_dict(report)
+        assert d["acc_total"] == 0
+        assert "untested_accs" not in d
+
+    def test_human_format_shows_acc_line(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001", "ACC-002"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001\n# @acc: ACC-002\n",
+            encoding="utf-8",
+        )
+        report = trace_requirements(repo, check_tests=True)
+        text = format_req_trace_human(report)
+        assert "acceptance criteria: 2 defined, 2 tested" in text
+
+    def test_human_format_no_acc_line_when_zero(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [{"id": "REQ-001", "title": "Auth"}],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        report = trace_requirements(repo, check_tests=False)
+        text = format_req_trace_human(report)
+        assert "acceptance criteria" not in text
+
+    def test_human_format_shows_untested_violations(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        report = trace_requirements(repo, check_tests=True)
+        text = format_req_trace_human(report)
+        assert "untested_acc" in text
+        assert "ACC-001" in text
+
+
+# ── CLI --check-tests ───────────────────────────────────────────────
+
+
+class TestCLICheckTests:
+    """Tests for CLI trace-reqs --check-tests flag."""
+
+    def test_check_tests_pass(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_auth.py").write_text(
+            "# @acc: ACC-001\ndef test_login(): pass\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "trace-reqs",
+                "--check-tests",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["ok"]
+        assert data["data"]["passed"]
+        assert data["data"]["acc_total"] == 1
+        assert data["data"]["acc_tested"] == 1
+
+    def test_check_tests_fail(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        # No test files with @acc: annotation
+        result = subprocess.run(
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "trace-reqs",
+                "--check-tests",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert not data["data"]["passed"]
+        assert data["data"]["acc_total"] == 1
+        assert data["data"]["acc_tested"] == 0
+        assert "ACC-001" in data["data"]["untested_accs"]
+
+    def test_without_check_tests_flag(self, tmp_path: Path) -> None:
+        repo = _bootstrap_repo(tmp_path)
+        _write_requirements_yaml(
+            repo,
+            [
+                {
+                    "id": "REQ-001",
+                    "title": "Auth",
+                    "acceptance": ["ACC-001"],
+                },
+            ],
+        )
+        _write_source_file(repo, "src/auth.py", "# @req: REQ-001\n")
+        # No --check-tests flag: ACC not checked, should pass
+        result = subprocess.run(
+            [
+                "python3",
+                "-m",
+                "exo.cli",
+                "--format",
+                "json",
+                "--repo",
+                str(repo),
+                "trace-reqs",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["data"]["passed"]
+        assert data["data"]["acc_total"] == 0
