@@ -101,7 +101,13 @@ Accumulated knowledge from governed sessions lives in `.exo/LEARNINGS.md` — a 
 
 ### Lane-aware dispatch
 
-`exo next` supports lane-aware scheduling via `.exo/config.yaml`:
+`exo next` dispatches the highest-priority dispatchable ticket and acquires a lock.
+
+**Priority**: 1 = highest urgency, 5 = lowest. Scoring formula: `(6 - priority)*100 + blockers_count*30 + age_hours*0.1`. Tie-breakers: priority number, unblocks count, age, ticket ID.
+
+**Kind filtering**: Only `task` tickets are dispatchable. Epics and intents are containers — they define scope and hierarchy but are never dispatched directly. Tickets without a `kind` field default to `task` for backward compatibility.
+
+**Lane-aware scheduling** via `.exo/config.yaml`:
 
 ```yaml
 scheduler:
