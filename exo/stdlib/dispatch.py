@@ -116,7 +116,9 @@ def score_ticket(ticket: dict[str, Any], now: datetime) -> float:
     priority = int(ticket.get("priority", 3))
     blockers_count = _unblocks_count(ticket)
     age_hours = _ticket_age_hours(ticket, now)
-    return priority * 100 + blockers_count * 30 + age_hours * 0.1
+    # Invert priority: 1 (highest) → 500, 5 (lowest) → 100
+    inverted_priority = 6 - max(1, min(priority, 5))
+    return inverted_priority * 100 + blockers_count * 30 + age_hours * 0.1
 
 
 def choose_next_ticket(
@@ -137,9 +139,15 @@ def choose_next_ticket(
     if isinstance(active_lock, dict):
         active_lock_ticket = str(active_lock.get("ticket_id", "")).strip()
 
+    # Non-dispatchable kinds — epics and intents are containers, not work items
+    _CONTAINER_KINDS = {"epic", "intent"}
+
     candidates: list[dict[str, Any]] = []
     for ticket in tickets:
         if ticket.get("status") != "todo":
+            continue
+        kind = str(ticket.get("kind", "task")).strip().lower()
+        if kind in _CONTAINER_KINDS:
             continue
         if not blockers_resolved(ticket, index):
             continue
@@ -241,7 +249,7 @@ def choose_next_ticket(
     filtered.sort(
         key=lambda t: (
             -float(t["_score"]),
-            -int(t.get("priority", 3)),
+            int(t.get("priority", 3)),  # lower priority number = higher urgency
             -int(t["_unblocks"]),
             -float(t["_age_hours"]),
             str(t.get("id")),
@@ -252,7 +260,7 @@ def choose_next_ticket(
     reasoning = {
         "candidate_count": len(filtered),
         "dispatchable_before_scheduler": len(candidates),
-        "formula": "score = priority*100 + blockers_count*30 + age_hours*0.1",
+        "formula": "score = (6 - priority)*100 + blockers_count*30 + age_hours*0.1",
         "score": chosen["_score"],
         "priority": chosen.get("priority", 3),
         "unblocks_count": chosen["_unblocks"],
