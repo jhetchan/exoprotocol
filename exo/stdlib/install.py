@@ -1,12 +1,13 @@
 """One-shot ExoProtocol setup (``exo install``).
 
-Orchestrates init → compile → adapter-generate → hook-install → gitignore
+Orchestrates init → compile → adapter-generate → hook-install → gitignore → git-track
 into a single idempotent command.  Each step is isolated — errors in one
 don't block the others.
 """
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,131 @@ class InstallReport:
     @property
     def error_count(self) -> int:
         return sum(1 for s in self.steps if s.status == "error")
+
+
+# ── Git tracking helpers ──────────────────────────────────────────
+
+
+def _is_git_repo(repo: Path) -> bool:
+    """Check if repo is inside a git working tree."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "true"
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
+
+
+def is_exo_tracked(repo: Path) -> bool:
+    """Check if .exo/ governance files are tracked by git.
+
+    Returns True if governance.lock.json is in the git index.
+    Returns False if untracked or not a git repo.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", ".exo/governance.lock.json"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return bool(result.returncode == 0 and result.stdout.strip())
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
+
+
+# Non-ephemeral .exo/ files that should be committed
+_EXO_TRACKABLE_PATHS = [
+    ".exo/.gitignore",
+    ".exo/CONSTITUTION.md",
+    ".exo/config.yaml",
+    ".exo/governance.lock.json",
+    ".exo/LEARNINGS.md",
+    ".exo/tickets/",
+]
+
+
+def _install_git_track(repo: Path, *, dry_run: bool) -> InstallStep:
+    """Stage and commit non-ephemeral .exo/ files if not already tracked."""
+    if is_exo_tracked(repo):
+        return InstallStep(
+            name="git_track",
+            status="skipped",
+            summary=".exo/ already tracked by git",
+        )
+
+    if dry_run:
+        return InstallStep(
+            name="git_track",
+            status="skipped",
+            summary="would commit .exo/ governance files (dry run)",
+            details={"dry_run": True},
+        )
+
+    try:
+        # Stage non-ephemeral paths (ignore missing ones)
+        add_paths = []
+        for p in _EXO_TRACKABLE_PATHS:
+            full = repo / p
+            if full.exists():
+                add_paths.append(p)
+
+        if not add_paths:
+            return InstallStep(
+                name="git_track",
+                status="skipped",
+                summary="no .exo/ files to track",
+            )
+
+        subprocess.run(
+            ["git", "add", *add_paths],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        # Check if anything was actually staged
+        diff_result = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        staged = [line.strip() for line in diff_result.stdout.splitlines() if line.strip().startswith(".exo/")]
+        if not staged:
+            return InstallStep(
+                name="git_track",
+                status="skipped",
+                summary=".exo/ files already staged or committed",
+            )
+
+        subprocess.run(
+            ["git", "commit", "-m", "chore(exo): track governance files"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return InstallStep(
+            name="git_track",
+            status="created",
+            summary=f"{len(staged)} governance file(s) committed",
+            details={"committed": staged},
+        )
+    except Exception as exc:
+        return InstallStep(
+            name="git_track",
+            status="error",
+            summary=f"git tracking failed: {exc}",
+        )
 
 
 # ── Ephemeral paths excluded from git ──────────────────────────────
@@ -281,6 +407,9 @@ def install(
 
     # 5. .exo/.gitignore
     steps.append(_install_gitignore(repo, dry_run=dry_run))
+
+    # 6. Git track: commit non-ephemeral .exo/ files
+    steps.append(_install_git_track(repo, dry_run=dry_run))
 
     # Determine overall status
     has_error = any(s.status == "error" for s in steps)

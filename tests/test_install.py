@@ -15,9 +15,11 @@ from exo.stdlib.install import (
     _EXO_GITIGNORE_ENTRIES,
     InstallReport,
     InstallStep,
+    _is_git_repo,
     format_install_human,
     install,
     install_to_dict,
+    is_exo_tracked,
 )
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -333,3 +335,131 @@ class TestInstallDataclasses:
     def test_step_defaults(self) -> None:
         s = InstallStep(name="test", status="created", summary="hello")
         assert s.details == {}
+
+
+# ── TestIsExoTracked ──────────────────────────────────────────────
+
+
+class TestIsExoTracked:
+    """Test git tracking detection for .exo/ files."""
+
+    def test_returns_false_for_non_git_repo(self, tmp_path: Path) -> None:
+        assert is_exo_tracked(tmp_path) is False
+
+    def test_returns_false_when_untracked(self, tmp_path: Path) -> None:
+        subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        exo_dir = tmp_path / ".exo"
+        exo_dir.mkdir()
+        (exo_dir / "governance.lock.json").write_text("{}", encoding="utf-8")
+        assert is_exo_tracked(tmp_path) is False
+
+    def test_returns_true_when_tracked(self, tmp_path: Path) -> None:
+        subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        exo_dir = tmp_path / ".exo"
+        exo_dir.mkdir()
+        (exo_dir / "governance.lock.json").write_text("{}", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", ".exo/governance.lock.json"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        assert is_exo_tracked(tmp_path) is True
+
+
+class TestIsGitRepo:
+    """Test git repo detection."""
+
+    def test_non_git_dir(self, tmp_path: Path) -> None:
+        assert _is_git_repo(tmp_path) is False
+
+    def test_git_dir(self, tmp_path: Path) -> None:
+        subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        assert _is_git_repo(tmp_path) is True
+
+
+class TestInstallGitTrack:
+    """Test the git_track step in install pipeline."""
+
+    def test_git_track_step_present(self, tmp_path: Path) -> None:
+        """Install pipeline includes git_track step."""
+        report = install(tmp_path)
+        step_names = [s.name for s in report.steps]
+        assert "git_track" in step_names
+
+    def test_git_track_skips_non_git(self, tmp_path: Path) -> None:
+        """In a non-git repo, git_track step is skipped or errors gracefully."""
+        report = install(tmp_path)
+        git_step = [s for s in report.steps if s.name == "git_track"][0]
+        # No git repo — should error or skip, not crash
+        assert git_step.status in ("skipped", "error")
+
+    def test_git_track_commits_in_git_repo(self, tmp_path: Path) -> None:
+        """In a git repo with untracked .exo/, git_track commits the files."""
+        subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        report = install(tmp_path, skip_hooks=True)
+        git_step = [s for s in report.steps if s.name == "git_track"][0]
+        assert git_step.status == "created"
+        assert is_exo_tracked(tmp_path) is True
+
+    def test_git_track_skips_already_tracked(self, tmp_path: Path) -> None:
+        """If .exo/ is already committed, git_track skips."""
+        subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        # First install: creates and commits
+        install(tmp_path, skip_hooks=True)
+        # Second install: should skip git_track
+        report2 = install(tmp_path, skip_hooks=True)
+        git_step = [s for s in report2.steps if s.name == "git_track"][0]
+        assert git_step.status == "skipped"
+
+    def test_git_track_dry_run(self, tmp_path: Path) -> None:
+        """Dry run doesn't actually commit."""
+        subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        report = install(tmp_path, dry_run=True, skip_hooks=True)
+        git_step = [s for s in report.steps if s.name == "git_track"][0]
+        assert git_step.status == "skipped"
+        assert is_exo_tracked(tmp_path) is False

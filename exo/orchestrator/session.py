@@ -793,6 +793,24 @@ class AgentSessionManager:
         if advisory_lines:
             bootstrap_lines.extend(advisory_lines)
 
+        # --- Governance tracking advisory ---
+        try:
+            from exo.stdlib.install import _is_git_repo, is_exo_tracked
+
+            if _is_git_repo(self.root) and not is_exo_tracked(self.root):
+                bootstrap_lines.extend(
+                    [
+                        "## Governance Warning",
+                        "`.exo/` governance files are NOT tracked by git.",
+                        "Tickets, config, and governance rules are local-only.",
+                        "Other agents and CI pipelines cannot see them.",
+                        "Fix: `git add .exo/ && git commit -m 'chore: track governance'` or re-run `exo install`.",
+                        "",
+                    ]
+                )
+        except Exception:
+            pass  # Advisory — never blocks session start
+
         if mode == "audit":
             bootstrap_lines.extend(
                 [

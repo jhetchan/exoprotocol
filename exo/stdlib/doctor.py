@@ -205,6 +205,40 @@ def _check_scaffold(repo: Path) -> DoctorSection:
     )
 
 
+def _check_governance_tracked(repo: Path) -> DoctorSection:
+    """Check if .exo/ governance files are tracked by git."""
+    try:
+        from exo.stdlib.install import _is_git_repo, is_exo_tracked
+
+        if not _is_git_repo(repo):
+            return DoctorSection(
+                name="governance_tracked",
+                status="skip",
+                summary="Tracked: not a git repo (skipped)",
+            )
+
+        if is_exo_tracked(repo):
+            return DoctorSection(
+                name="governance_tracked",
+                status="pass",
+                summary="Tracked: .exo/ governance files are in git",
+            )
+        return DoctorSection(
+            name="governance_tracked",
+            status="fail",
+            summary="Untracked: .exo/ governance files not committed to git",
+            errors=1,
+            details={"fix": "Run: git add .exo/ && git commit -m 'chore: track governance' OR re-run: exo install"},
+        )
+    except Exception as exc:  # noqa: BLE001
+        return DoctorSection(
+            name="governance_tracked",
+            status="error",
+            summary=f"Git tracking check failed: {exc}",
+            errors=1,
+        )
+
+
 # ── Main Entry ─────────────────────────────────────────────────────
 
 
@@ -229,6 +263,9 @@ def doctor(
 
     # 4. Scan freshness
     sections.append(_check_scan_freshness(repo))
+
+    # 5. Governance tracked by git
+    sections.append(_check_governance_tracked(repo))
 
     has_failure = any(s.status in ("fail", "error") for s in sections)
 

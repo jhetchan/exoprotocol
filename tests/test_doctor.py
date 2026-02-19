@@ -225,7 +225,7 @@ class TestDoctor:
         report = doctor(repo)
         assert report.passed
         assert report.overall == "pass"
-        assert len(report.sections) == 4
+        assert len(report.sections) == 5
 
     def test_missing_exo_fails(self, tmp_path: Path) -> None:
         report = doctor(tmp_path)
@@ -276,6 +276,38 @@ class TestDoctor:
         assert report.total_errors == 0
         assert isinstance(report.total_warnings, int)
 
+    def test_governance_tracked_skips_non_git(self, tmp_path: Path) -> None:
+        """In a non-git repo, governance_tracked should skip (not fail)."""
+        repo = _full_init_repo(tmp_path)
+        report = doctor(repo)
+        tracked_section = [s for s in report.sections if s.name == "governance_tracked"][0]
+        assert tracked_section.status == "skip"
+
+    def test_governance_tracked_fails_when_untracked(self, tmp_path: Path) -> None:
+        """In a git repo with untracked .exo/, governance_tracked should fail."""
+        import subprocess
+
+        repo = _full_init_repo(tmp_path)
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
+        report = doctor(repo)
+        tracked_section = [s for s in report.sections if s.name == "governance_tracked"][0]
+        assert tracked_section.status == "fail"
+        assert tracked_section.errors == 1
+
+    def test_governance_tracked_passes_when_committed(self, tmp_path: Path) -> None:
+        """In a git repo with committed .exo/, governance_tracked should pass."""
+        import subprocess
+
+        repo = _full_init_repo(tmp_path)
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "config", "user.name", "T"], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "add", ".exo/"], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True)
+        report = doctor(repo)
+        tracked_section = [s for s in report.sections if s.name == "governance_tracked"][0]
+        assert tracked_section.status == "pass"
+
 
 class TestDoctorSerialization:
     def test_doctor_to_dict(self, tmp_path: Path) -> None:
@@ -285,7 +317,7 @@ class TestDoctorSerialization:
         assert "overall" in d
         assert "sections" in d
         assert "total_errors" in d
-        assert len(d["sections"]) == 4
+        assert len(d["sections"]) == 5
         json.dumps(d, ensure_ascii=True)
 
     def test_format_doctor_human(self, tmp_path: Path) -> None:

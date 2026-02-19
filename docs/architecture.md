@@ -51,7 +51,7 @@ Orchestration and governance subsystems:
 | `reconcile.py` | Intent drift detection |
 | `timeline.py` | Intent timeline builder |
 | `reflect.py` | Error reflection and LEARNINGS.md generation |
-| `doctor.py` | Unified health check |
+| `doctor.py` | Unified health check (scaffold, config, drift, scan, git tracking) |
 | `config_schema.py` | Config validation |
 | `upgrade.py` | Schema migration |
 | `gc.py` | Garbage collection |
@@ -277,6 +277,14 @@ pip install exoprotocol[openai-agents]
 **Structured traces** (`exo export-traces`): Converts session index entries to OTel-compatible JSONL spans. Each session becomes a span with `exo.*` namespaced attributes, nanosecond timestamps, and events for drift checks and feature traces. Output at `.exo/logs/traces.jsonl` can be ingested by Jaeger, Grafana Tempo, or any OTel-compatible backend.
 
 **Sandbox policy preview** (`exo sandbox-policy`): Derives Claude Code sandbox permissions from constitution deny rules. Maps `read` → `Read(pattern)`, `write` → `Edit(pattern)`, `delete` → `Edit(pattern)` + `Bash(rm pattern)`.
+
+### `.exo/` git tracking
+
+Governance files (constitution, config, lock, tickets) must be committed to git so that CI pipelines, other agents, and team members can see them. Ephemeral data (cache, logs, locks, sessions) is excluded via `.exo/.gitignore`.
+
+`exo install` automatically commits governance files as its final step. `exo doctor` checks tracking status and fails if `.exo/` is untracked. Session-start injects a bootstrap warning when governance files are not committed.
+
+Trackable paths: `.exo/.gitignore`, `.exo/CONSTITUTION.md`, `.exo/config.yaml`, `.exo/governance.lock.json`, `.exo/LEARNINGS.md`, `.exo/tickets/`.
 
 ### Sidecar worktree (dual-timeline)
 

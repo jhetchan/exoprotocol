@@ -297,6 +297,30 @@ The tool registry lives in `.exo/tools.yaml` and gets injected into agent bootst
 
 ---
 
+## `.exo/` git tracking
+
+Governance files must be committed to git. Without this, CI pipelines can't run `exo pr-check`, other agents can't see governance rules, and team members lose visibility into what's being enforced.
+
+`exo install` handles this automatically — it commits `.exo/CONSTITUTION.md`, `.exo/config.yaml`, `.exo/governance.lock.json`, `.exo/tickets/`, and `.exo/.gitignore` as its final step. Ephemeral data (`cache/`, `logs/`, `locks/`, `memory/sessions/`) is excluded via `.exo/.gitignore`.
+
+If you've already initialized but haven't committed:
+
+```bash
+git add .exo/ && git commit -m "chore: track governance files"
+```
+
+`exo doctor` checks tracking status — it will fail if `.exo/` is untracked in a git repo. Session-start also injects a bootstrap warning so agents know governance is local-only.
+
+For teams wanting separate git histories for app code and governance state, use the sidecar worktree pattern:
+
+```bash
+exo sidecar-init --branch exo-governance --sidecar .exo
+```
+
+This gives you dual timelines: app code on `main`, governance state on `exo-governance`. Auto-commits at every lifecycle boundary (start, finish, suspend, resume) keep the governance branch up to date without polluting your app history.
+
+---
+
 ## Cleaning up
 
 ### Stale sessions
