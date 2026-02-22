@@ -1203,3 +1203,89 @@ class TestGitWorkflowIntegration:
         advisories = result.get("start_advisories") or []
         kinds = [a["kind"] for a in advisories]
         assert "base_divergence" in kinds
+
+
+# ── TestDetectMergeScopeViolations ──────────────────────────────────
+
+
+class TestDetectMergeScopeViolations:
+    """Tests for detect_merge_scope_violations() — Ticket #3."""
+
+    def test_no_files_no_violations(self) -> None:
+        from exo.stdlib.conflicts import detect_merge_scope_violations
+
+        violations = detect_merge_scope_violations([], {"allow": ["src/**"], "deny": []})
+        assert violations == []
+
+    def test_all_in_scope(self) -> None:
+        from exo.stdlib.conflicts import detect_merge_scope_violations
+
+        violations = detect_merge_scope_violations(
+            ["src/foo.py", "src/bar.py"],
+            {"allow": ["src/**"], "deny": []},
+        )
+        assert violations == []
+
+    def test_out_of_scope(self) -> None:
+        from exo.stdlib.conflicts import detect_merge_scope_violations
+
+        violations = detect_merge_scope_violations(
+            ["src/foo.py", "lib/other.py"],
+            {"allow": ["src/**"], "deny": []},
+        )
+        assert len(violations) == 1
+        assert violations[0]["file"] == "lib/other.py"
+        assert violations[0]["reason"] == "out_of_scope"
+
+    def test_denied_file(self) -> None:
+        from exo.stdlib.conflicts import detect_merge_scope_violations
+
+        violations = detect_merge_scope_violations(
+            ["src/foo.py", "config/.env.local"],
+            {"allow": ["**"], "deny": ["**/.env*"]},
+        )
+        assert len(violations) == 1
+        assert violations[0]["file"] == "config/.env.local"
+        assert violations[0]["reason"] == "denied"
+        assert violations[0]["pattern"] == "**/.env*"
+
+    def test_default_scope_no_violations(self) -> None:
+        from exo.stdlib.conflicts import detect_merge_scope_violations
+
+        violations = detect_merge_scope_violations(
+            ["anything.py", "deep/nested/file.js"],
+            {"allow": ["**"], "deny": []},
+        )
+        assert violations == []
+
+    def test_deny_takes_precedence(self) -> None:
+        from exo.stdlib.conflicts import detect_merge_scope_violations
+
+        violations = detect_merge_scope_violations(
+            ["src/secret.key"],
+            {"allow": ["src/**"], "deny": ["**/*.key"]},
+        )
+        assert len(violations) == 1
+        assert violations[0]["reason"] == "denied"
+
+    def test_multiple_violations(self) -> None:
+        from exo.stdlib.conflicts import detect_merge_scope_violations
+
+        violations = detect_merge_scope_violations(
+            ["src/ok.py", "lib/a.py", "lib/b.py", "test/c.py"],
+            {"allow": ["src/**"], "deny": []},
+        )
+        assert len(violations) == 3
+        files = [v["file"] for v in violations]
+        assert "lib/a.py" in files
+        assert "lib/b.py" in files
+        assert "test/c.py" in files
+
+    def test_empty_scope(self) -> None:
+        from exo.stdlib.conflicts import detect_merge_scope_violations
+
+        violations = detect_merge_scope_violations(
+            ["anything.py"],
+            {},
+        )
+        assert violations == []  # defaults to ["**"] allow

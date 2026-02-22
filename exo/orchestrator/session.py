@@ -58,6 +58,102 @@ def _current_git_branch(repo: Path) -> str:
     return ""
 
 
+def _git_head_sha(repo: Path) -> str:
+    """Get current HEAD SHA. Returns empty string on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return ""
+
+
+def _classify_session_commits(
+    repo: Path,
+    start_sha: str,
+    session_started_at: str,
+) -> dict[str, Any]:
+    """Classify commits between *start_sha* and HEAD as session vs inherited.
+
+    Inherited commits have an author date **before** session start — they were
+    pulled in via ``git merge`` or ``git pull`` mid-session.
+
+    Returns ``{"session_commits": [...], "inherited_commits": [...], "inherited_files": [...]}``.
+    """
+    empty: dict[str, Any] = {"session_commits": [], "inherited_commits": [], "inherited_files": []}
+    if not start_sha:
+        return empty
+
+    try:
+        result = subprocess.run(
+            ["git", "log", f"{start_sha}..HEAD", "--format=%H %aI"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return empty
+
+        from datetime import timezone
+
+        session_start = datetime.fromisoformat(session_started_at)
+        if not session_start.tzinfo:
+            session_start = session_start.replace(tzinfo=timezone.utc)
+
+        session_shas: list[str] = []
+        inherited_shas: list[str] = []
+
+        for line in result.stdout.strip().splitlines():
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) < 2:
+                continue
+            sha, author_date_str = parts
+            try:
+                author_date = datetime.fromisoformat(author_date_str)
+                if not author_date.tzinfo:
+                    author_date = author_date.replace(tzinfo=timezone.utc)
+                if author_date < session_start:
+                    inherited_shas.append(sha)
+                else:
+                    session_shas.append(sha)
+            except (ValueError, TypeError):
+                session_shas.append(sha)  # uncertain → attribute to session
+
+        # Get files touched by inherited commits
+        inherited_files: set[str] = set()
+        for sha in inherited_shas:
+            try:
+                files_result = subprocess.run(
+                    ["git", "diff-tree", "--no-commit-id", "-r", "--name-only", sha],
+                    cwd=str(repo),
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if files_result.returncode == 0:
+                    for f in files_result.stdout.strip().splitlines():
+                        if f.strip():
+                            inherited_files.add(f.strip())
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                pass
+
+        return {
+            "session_commits": session_shas,
+            "inherited_commits": inherited_shas,
+            "inherited_files": sorted(inherited_files),
+        }
+    except Exception:
+        return empty
+
+
 def _auto_create_ticket_branch(repo: Path, ticket_id: str) -> str:
     """Create and checkout a per-ticket branch if git_controls.auto_create_lock_branch is enabled.
 
@@ -153,6 +249,7 @@ def _exo_banner(
     trace_violations: int | None = None,
     audit_warnings: list[str] | None = None,
     memory_leak_warnings: list[str] | None = None,
+    inherited_warnings: list[str] | None = None,
     branch: str = "",
 ) -> str:
     """Generate the ExoProtocol governance banner strip for session lifecycle events."""
@@ -197,6 +294,9 @@ def _exo_banner(
                 lines.append(_pad(f"! {w[: width - 6]}"))
         if memory_leak_warnings:
             for w in memory_leak_warnings:
+                lines.append(_pad(f"! {w[: width - 6]}"))
+        if inherited_warnings:
+            for w in inherited_warnings:
                 lines.append(_pad(f"! {w[: width - 6]}"))
     elif event == "resume":
         lines.append(_pad(">>> EXO SESSION RESUMED"))
@@ -945,6 +1045,7 @@ class AgentSessionManager:
             "topic_id": topic,
             "started_at": started_at,
             "git_branch": git_branch,
+            "git_head_sha": _git_head_sha(self.root),
             "pid": os.getpid(),
             "lock": lock,
             "bootstrap_path": relative_posix(self.bootstrap_path, self.root),
@@ -1128,6 +1229,27 @@ class AgentSessionManager:
             started_at = str(session.get("started_at", "")).strip()
             if started_at:
                 session_commits = _git_commits_since(self.root, started_at, branch=finish_branch)
+        except Exception:
+            pass  # Advisory — never blocks session-finish
+
+        # --- Inherited commit detection (cross-branch contamination) ---
+        inherited_commits: list[str] = []
+        inherited_files: list[str] = []
+        merge_scope_violations: list[dict[str, str]] = []
+        try:
+            start_sha = str(session.get("git_head_sha", "")).strip()
+            if start_sha:
+                classification = _classify_session_commits(self.root, start_sha, str(session.get("started_at", "")))
+                inherited_commits = classification.get("inherited_commits", [])
+                inherited_files = classification.get("inherited_files", [])
+
+                if inherited_files:
+                    from exo.stdlib.conflicts import detect_merge_scope_violations
+
+                    ticket_for_scope = tickets.load_ticket(self.root, target_ticket)
+                    merge_scope_violations = detect_merge_scope_violations(
+                        inherited_files, ticket_for_scope.get("scope") or {}
+                    )
         except Exception:
             pass  # Advisory — never blocks session-finish
 
@@ -1326,6 +1448,24 @@ class AgentSessionManager:
             memento_sections.append("## Commits")
             for sha in session_commits:
                 memento_sections.append(f"- {sha}")
+        if inherited_commits:
+            memento_sections.append("")
+            memento_sections.append("## Inherited Commits (mid-session merge)")
+            memento_sections.append(f"- {len(inherited_commits)} commit(s) pulled in from another branch")
+            for sha in inherited_commits:
+                memento_sections.append(f"- {sha}")
+            if inherited_files:
+                memento_sections.append(f"- files introduced: {len(inherited_files)}")
+                for f in inherited_files[:20]:  # cap at 20 for readability
+                    memento_sections.append(f"  - {f}")
+                if len(inherited_files) > 20:
+                    memento_sections.append(f"  - ... and {len(inherited_files) - 20} more")
+            if merge_scope_violations:
+                memento_sections.append(
+                    f"- SCOPE VIOLATIONS: {len(merge_scope_violations)} file(s) outside ticket scope"
+                )
+                for v in merge_scope_violations:
+                    memento_sections.append(f"  - {v['file']} ({v['reason']})")
         if drift_section:
             memento_sections.append("")
             memento_sections.append(drift_section)
@@ -1435,6 +1575,9 @@ class AgentSessionManager:
             "branch_drifted": branch_drifted,
             "commits": session_commits if session_commits else None,
             "commit_count": len(session_commits),
+            "inherited_commit_count": len(inherited_commits),
+            "inherited_files": inherited_files if inherited_files else None,
+            "merge_scope_violations": merge_scope_violations if merge_scope_violations else None,
             "audit_warnings": audit_warnings if audit_warnings else None,
             "errors": errors_list if errors_list else None,
             "error_count": sum(e["count"] for e in errors_list) if errors_list else 0,
@@ -1477,6 +1620,13 @@ class AgentSessionManager:
             f"chore(exo): session-finish {session_id} [{target_ticket}]",
         )
 
+        # Build inherited commit warnings for banner
+        _inherited_warns: list[str] = []
+        if inherited_commits:
+            _inherited_warns.append(f"MERGE: {len(inherited_commits)} inherited commit(s) from mid-session merge")
+        if merge_scope_violations:
+            _inherited_warns.append(f"MERGE SCOPE: {len(merge_scope_violations)} file(s) outside ticket scope")
+
         finish_banner = _exo_banner(
             event="finish",
             mode=session_mode,
@@ -1487,6 +1637,7 @@ class AgentSessionManager:
             trace_violations=len(trace_report.violations) if trace_report else None,
             audit_warnings=audit_warnings or None,
             memory_leak_warnings=[w["message"] for w in memory_leak_warnings] if memory_leak_warnings else None,
+            inherited_warnings=_inherited_warns or None,
             branch=finish_branch,
         )
 
@@ -1511,6 +1662,10 @@ class AgentSessionManager:
             "branch_drifted": branch_drifted,
             "commits": session_commits if session_commits else None,
             "commit_count": len(session_commits),
+            "inherited_commits": inherited_commits if inherited_commits else None,
+            "inherited_commit_count": len(inherited_commits),
+            "inherited_files": inherited_files if inherited_files else None,
+            "merge_scope_violations": merge_scope_violations if merge_scope_violations else None,
             "exo_banner": finish_banner,
             "sidecar_commit": sidecar_commit,
         }

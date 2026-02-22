@@ -806,6 +806,46 @@ def detect_machine_load(
 
 
 # ---------------------------------------------------------------------------
+# 8. Merge scope violation detection (session-finish)
+# ---------------------------------------------------------------------------
+
+
+def detect_merge_scope_violations(
+    inherited_files: list[str],
+    ticket_scope: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Check if files from inherited (merged-in) commits violate ticket scope.
+
+    Returns a list of ``{"file": ..., "reason": "denied"|"out_of_scope", "pattern": ...}``
+    for each file that falls outside the ticket's scope boundaries.
+    """
+    allow_patterns = ticket_scope.get("allow") or ["**"]
+    deny_patterns = ticket_scope.get("deny") or []
+
+    violations: list[dict[str, str]] = []
+    for f in inherited_files:
+        # Check deny patterns first (always wins)
+        denied = False
+        for dp in deny_patterns:
+            if fnmatch.fnmatch(f, dp):
+                violations.append({"file": f, "reason": "denied", "pattern": dp})
+                denied = True
+                break
+        if denied:
+            continue
+
+        # Check allow patterns (skip if default wildcard)
+        if allow_patterns == ["**"]:
+            continue
+
+        in_scope = any(fnmatch.fnmatch(f, ap) for ap in allow_patterns)
+        if not in_scope:
+            violations.append({"file": f, "reason": "out_of_scope", "pattern": ""})
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Formatting / serialisation
 # ---------------------------------------------------------------------------
 

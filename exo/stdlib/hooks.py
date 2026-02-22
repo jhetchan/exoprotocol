@@ -454,6 +454,8 @@ def generate_enforce_config() -> dict[str, Any]:
                                 ") "
                                 "if 'git commit' in cmd "
                                 "or 'git push' in cmd "
+                                "or 'git merge' in cmd "
+                                "or 'git pull' in cmd "
                                 "else 0)"
                                 '"'
                             ),
