@@ -619,3 +619,66 @@ class TestScanToDict:
         d = scan_to_dict(report)
         # Should not raise
         json.dumps(d, ensure_ascii=True)
+
+
+# ════════════════════════════════════════════════════════════════════
+# Archive directory detection (closes feedback #7a)
+# ════════════════════════════════════════════════════════════════════
+
+
+class TestArchiveDirDetection:
+    """scan_repo flags archive/ for ignore-paths and tool excludes."""
+
+    def test_no_archive_dir_returns_none(self, tmp_path: Path) -> None:
+        report = scan_repo(tmp_path)
+        assert report.archive_dir is None
+
+    def test_archive_dir_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "archive").mkdir()
+        report = scan_repo(tmp_path)
+        assert report.archive_dir is not None
+        assert report.archive_dir.path == "archive"
+        assert report.archive_dir.has_index is False
+
+    def test_archive_index_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "archive").mkdir()
+        (tmp_path / "archive" / "INDEX.md").write_text("# Archive Index\n", encoding="utf-8")
+        report = scan_repo(tmp_path)
+        assert report.archive_dir is not None
+        assert report.archive_dir.has_index is True
+
+    def test_generated_config_includes_archive_glob(self, tmp_path: Path) -> None:
+        (tmp_path / "archive").mkdir()
+        (tmp_path / "archive" / "old_module.py").write_text("# stale", encoding="utf-8")
+        report = scan_repo(tmp_path)
+        config = generate_config(report)
+        assert "archive/**" in config["git_controls"]["ignore_paths"]
+        assert config["archive"] == {
+            "path": "archive",
+            "has_index": False,
+            "tool_excludes": ["archive/**"],
+        }
+
+    def test_no_archive_section_when_dir_missing(self, tmp_path: Path) -> None:
+        report = scan_repo(tmp_path)
+        config = generate_config(report)
+        assert "archive" not in config
+
+    def test_archive_glob_not_duplicated(self, tmp_path: Path) -> None:
+        """Re-running generate_config on a report with archive shouldn't double-add."""
+        (tmp_path / "archive").mkdir()
+        report = scan_repo(tmp_path)
+        config = generate_config(report)
+        ignore_paths = config["git_controls"]["ignore_paths"]
+        assert ignore_paths.count("archive/**") == 1
+
+    def test_archive_dir_in_scan_to_dict(self, tmp_path: Path) -> None:
+        (tmp_path / "archive").mkdir()
+        report = scan_repo(tmp_path)
+        d = scan_to_dict(report)
+        assert d["archive_dir"] == {"path": "archive", "has_index": False}
+
+    def test_archive_dir_none_in_scan_to_dict(self, tmp_path: Path) -> None:
+        report = scan_repo(tmp_path)
+        d = scan_to_dict(report)
+        assert d["archive_dir"] is None

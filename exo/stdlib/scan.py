@@ -65,6 +65,18 @@ class AgentMemoryPath:
 
 
 @dataclass
+class ArchiveDir:
+    """A user-managed `archive/` directory at repo root.
+
+    Detected when `<repo>/archive/` exists. Triggers ignore_paths +
+    ruff/pytest/mypy excludes in generated config (closes feedback #7a).
+    """
+
+    path: str  # repo-relative, e.g. "archive"
+    has_index: bool  # whether archive/INDEX.md is present
+
+
+@dataclass
 class ScanReport:
     languages: list[LanguageDetection] = field(default_factory=list)
     sensitive_files: list[SensitiveFile] = field(default_factory=list)
@@ -73,6 +85,7 @@ class ScanReport:
     ci_systems: list[CIDetection] = field(default_factory=list)
     source_dirs: list[str] = field(default_factory=list)
     agent_memory_paths: list[AgentMemoryPath] = field(default_factory=list)
+    archive_dir: ArchiveDir | None = None
     scanned_at: str = ""
 
     @property
@@ -293,6 +306,23 @@ def _detect_source_dirs(repo: Path, _languages: list[LanguageDetection]) -> list
     return found
 
 
+def _detect_archive_dir(repo: Path) -> ArchiveDir | None:
+    """Detect a user-managed archive/ directory at repo root.
+
+    Returns None if there's no archive/ directory or it sits inside a
+    skipped path (e.g. node_modules/archive). Closes feedback #7a:
+    archive/ should be excluded from pytest/ruff/mypy and have an
+    immutability rule applied to it.
+    """
+    candidate = repo / "archive"
+    if not candidate.is_dir():
+        return None
+    return ArchiveDir(
+        path="archive",
+        has_index=(candidate / "INDEX.md").exists(),
+    )
+
+
 def _detect_agent_memory_paths(repo: Path) -> list[AgentMemoryPath]:
     """Detect known agent memory file paths for this repo."""
     found: list[AgentMemoryPath] = []
@@ -353,6 +383,7 @@ def scan_repo(repo: Path) -> ScanReport:
         ci_systems=_detect_ci(repo),
         source_dirs=_detect_source_dirs(repo, languages),
         agent_memory_paths=_detect_agent_memory_paths(repo),
+        archive_dir=_detect_archive_dir(repo),
         scanned_at=now_iso(),
     )
 
@@ -509,6 +540,21 @@ def generate_config(report: ScanReport) -> dict[str, Any]:
                 existing_ignore.append(glob_pattern)
         config["git_controls"]["ignore_paths"] = existing_ignore
 
+    # Archive directory: ignore-paths + tool excludes (closes feedback #7a)
+    if report.archive_dir is not None:
+        archive_glob = f"{report.archive_dir.path}/**"
+        existing_ignore = config.get("git_controls", {}).get("ignore_paths", [])
+        if archive_glob not in existing_ignore:
+            existing_ignore.append(archive_glob)
+        config.setdefault("git_controls", {})["ignore_paths"] = existing_ignore
+        # Surface dedicated archive section so adapters/tools can pick it up
+        # without re-scanning. This is read-only metadata, not enforcement.
+        config["archive"] = {
+            "path": report.archive_dir.path,
+            "has_index": report.archive_dir.has_index,
+            "tool_excludes": [archive_glob],
+        }
+
     # Populate private_memory.watch_paths from detected agent memory paths
     if report.agent_memory_paths:
         watch_paths = [amp.path for amp in report.agent_memory_paths]
@@ -544,6 +590,11 @@ def scan_to_dict(report: ScanReport) -> dict[str, Any]:
         "agent_memory_paths": [
             {"agent": amp.agent, "path": amp.path, "exists": amp.exists} for amp in report.agent_memory_paths
         ],
+        "archive_dir": (
+            {"path": report.archive_dir.path, "has_index": report.archive_dir.has_index}
+            if report.archive_dir is not None
+            else None
+        ),
         "primary_language": report.primary_language,
         "has_existing_exo": report.has_existing_exo,
         "scanned_at": report.scanned_at,
