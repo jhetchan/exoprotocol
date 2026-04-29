@@ -385,6 +385,13 @@ def _build_parser() -> argparse.ArgumentParser:
     intent_create_cmd.add_argument("--max-loc", type=int, default=400, help="LOC budget")
     intent_create_cmd.add_argument("--priority", type=int, default=3)
     intent_create_cmd.add_argument("--label", action="append", default=[])
+    intent_create_cmd.add_argument(
+        "--checks",
+        action="append",
+        default=[],
+        dest="checks",
+        help="Verify command (repeatable). Each must be in checks_allowlist. Defaults from config if omitted.",
+    )
 
     ticket_create_cmd = sub.add_parser("ticket-create", help="Create a task or epic ticket linked to an intent")
     ticket_create_cmd.add_argument("title", help="Short ticket title")
@@ -400,6 +407,13 @@ def _build_parser() -> argparse.ArgumentParser:
     ticket_create_cmd.add_argument("--label", action="append", default=[])
     ticket_create_cmd.add_argument("--boundary", default="")
     ticket_create_cmd.add_argument("--success-condition", default="", dest="success_condition")
+    ticket_create_cmd.add_argument(
+        "--checks",
+        action="append",
+        default=[],
+        dest="checks",
+        help="Verify command (repeatable). Each must be in checks_allowlist. Defaults from config if omitted.",
+    )
 
     archive_cmd = sub.add_parser("ticket-archive", help="Archive done tickets to ARCHIVE/ subdirectory")
     archive_cmd.add_argument("ticket_id", nargs="?", default="", help="Ticket ID to archive (omit to archive all done)")
@@ -713,6 +727,59 @@ def _ok(data: dict[str, Any]) -> dict[str, Any]:
         "events": [],
         "blocked": False,
     }
+
+
+def _resolve_ticket_checks(repo: Path, user_checks: list[str]) -> list[str]:
+    """Decide which verify commands a freshly created ticket should carry.
+
+    Closes feedback #4: ticket-create must never persist a ticket whose
+    checks list silently bypasses verification. Order of precedence:
+      1. User-supplied --checks (must be a subset of checks_allowlist)
+      2. defaults.ticket_checks from config (if non-empty)
+      3. checks_allowlist itself (so the verify gate runs *something*)
+    """
+    from exo.kernel.utils import load_yaml
+
+    cleaned_user = [str(c).strip() for c in (user_checks or []) if isinstance(c, str) and str(c).strip()]
+    config_path = repo / ".exo" / "config.yaml"
+    config: dict[str, Any] = {}
+    if config_path.exists():
+        try:
+            loaded = load_yaml(config_path)
+            if isinstance(loaded, dict):
+                config = loaded
+        except Exception:  # noqa: BLE001
+            config = {}
+
+    allowlist_raw = config.get("checks_allowlist") or []
+    allowlist = [str(c).strip() for c in allowlist_raw if isinstance(c, str) and str(c).strip()]
+
+    if cleaned_user:
+        if allowlist:
+            unknown = [c for c in cleaned_user if c not in allowlist]
+            if unknown:
+                raise ExoError(
+                    code="CHECK_NOT_IN_ALLOWLIST",
+                    message=f"Check(s) not in checks_allowlist: {unknown}",
+                    details={"unknown": unknown, "allowlist": allowlist},
+                    blocked=True,
+                )
+        return cleaned_user
+
+    defaults_section = config.get("defaults") or {}
+    if isinstance(defaults_section, dict):
+        ticket_defaults = defaults_section.get("ticket_checks") or []
+        cleaned_defaults = [str(c).strip() for c in ticket_defaults if isinstance(c, str) and str(c).strip()]
+        if cleaned_defaults:
+            return cleaned_defaults
+
+    if allowlist:
+        return list(allowlist)
+
+    # No config or empty allowlist: persist empty checks and let `exo doctor`
+    # surface it. Refusing here would break greenfield bootstrap flows that
+    # haven't populated config.checks_allowlist yet.
+    return []
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1092,6 +1159,7 @@ def main(argv: list[str] | None = None) -> int:
                     "max_files_changed": args.max_files,
                     "max_loc_changed": args.max_loc,
                 },
+                "checks": _resolve_ticket_checks(repo_path, getattr(args, "checks", []) or []),
             }
             saved_path = save_ticket(repo_path, ticket_data)
             saved_ticket = normalize_ticket(ticket_data)
@@ -1160,6 +1228,7 @@ def main(argv: list[str] | None = None) -> int:
                     "max_files_changed": args.max_files,
                     "max_loc_changed": args.max_loc,
                 },
+                "checks": _resolve_ticket_checks(repo_path, getattr(args, "checks", []) or []),
             }
             saved_path = save_ticket(repo_path, ticket_data)
             saved_ticket = normalize_ticket(ticket_data)

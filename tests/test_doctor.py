@@ -225,7 +225,9 @@ class TestDoctor:
         report = doctor(repo)
         assert report.passed
         assert report.overall == "pass"
-        assert len(report.sections) == 5
+        # 6 sections: scaffold, config_validation, governance_drift,
+        # scan_freshness, ticket_validity, governance_tracked
+        assert len(report.sections) == 6
 
     def test_missing_exo_fails(self, tmp_path: Path) -> None:
         report = doctor(tmp_path)
@@ -317,7 +319,7 @@ class TestDoctorSerialization:
         assert "overall" in d
         assert "sections" in d
         assert "total_errors" in d
-        assert len(d["sections"]) == 5
+        assert len(d["sections"]) == 6
         json.dumps(d, ensure_ascii=True)
 
     def test_format_doctor_human(self, tmp_path: Path) -> None:
@@ -530,3 +532,110 @@ class TestCLI:
         _full_init_repo(tmp_path)
         exit_code = main(["--repo", str(tmp_path), "--format", "human", "upgrade", "--dry-run"])
         assert exit_code == 0
+
+
+# ════════════════════════════════════════════════════════════════════
+# Ticket validity (closes feedback #4)
+# ════════════════════════════════════════════════════════════════════
+
+
+class TestTicketValidityCheck:
+    """Doctor flags active tickets that would silently bypass verify gates."""
+
+    def test_no_tickets_passes(self, tmp_path: Path) -> None:
+        from exo.stdlib.doctor import _check_ticket_validity
+
+        repo = _bootstrap_repo(tmp_path)
+        result = _check_ticket_validity(repo)
+        assert result.status == "pass"
+
+    def test_active_task_with_empty_checks_fails(self, tmp_path: Path) -> None:
+        from exo.kernel import tickets as tickets_mod
+        from exo.stdlib.doctor import _check_ticket_validity
+
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "TKT-20260101-000001-EM01",
+                "kind": "task",
+                "title": "missing checks",
+                "intent": "missing checks",
+                "status": "todo",
+                "checks": [],
+                "scope": {"allow": ["**"], "deny": []},
+            },
+        )
+        result = _check_ticket_validity(repo)
+        assert result.status == "fail"
+        assert result.errors == 1
+        assert "TKT-20260101-000001-EM01" in result.details["empty_checks_tickets"]
+
+    def test_done_ticket_with_empty_checks_skipped(self, tmp_path: Path) -> None:
+        from exo.kernel import tickets as tickets_mod
+        from exo.stdlib.doctor import _check_ticket_validity
+
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "TKT-20260101-000002-DN02",
+                "kind": "task",
+                "title": "completed",
+                "intent": "completed",
+                "status": "done",
+                "checks": [],
+                "scope": {"allow": ["**"], "deny": []},
+            },
+        )
+        result = _check_ticket_validity(repo)
+        assert result.status == "pass"
+
+    def test_intent_with_empty_checks_skipped(self, tmp_path: Path) -> None:
+        """Intents and epics are containers and don't run their own checks."""
+        from exo.kernel import tickets as tickets_mod
+        from exo.stdlib.doctor import _check_ticket_validity
+
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "INTENT-001",
+                "kind": "intent",
+                "title": "container",
+                "intent": "container",
+                "brain_dump": "x",
+                "status": "todo",
+                "checks": [],
+            },
+        )
+        result = _check_ticket_validity(repo)
+        assert result.status == "pass"
+
+    def test_ticket_with_checks_passes(self, tmp_path: Path) -> None:
+        from exo.kernel import tickets as tickets_mod
+        from exo.stdlib.doctor import _check_ticket_validity
+
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "TKT-20260101-000003-OK03",
+                "kind": "task",
+                "title": "has checks",
+                "intent": "has checks",
+                "status": "todo",
+                "checks": ["python3 -m pytest"],
+                "scope": {"allow": ["**"], "deny": []},
+            },
+        )
+        result = _check_ticket_validity(repo)
+        assert result.status == "pass"
+
+    def test_doctor_includes_ticket_validity_section(self, tmp_path: Path) -> None:
+        from exo.stdlib.doctor import doctor
+
+        repo = _bootstrap_repo(tmp_path)
+        report = doctor(repo)
+        names = {section.name for section in report.sections}
+        assert "ticket_validity" in names

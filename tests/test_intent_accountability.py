@@ -1362,3 +1362,126 @@ class TestFrameworkPaths:
         with pytest.raises(ExoError) as exc_info:
             engine._check_ticket_scope(ticket, outside)
         assert exc_info.value.code == "SCOPE_ALLOW_REQUIRED"
+
+
+# ──────────────────────────────────────────────
+# Phase: Ticket checks default-fill (closes feedback #4)
+# ──────────────────────────────────────────────
+
+
+class TestTicketChecksDefaultFill:
+    """ticket-create / intent-create must never persist a ticket with empty checks."""
+
+    def _make_repo_with_config(
+        self,
+        tmp_path: Path,
+        allowlist: list[str],
+        defaults_checks: list[str] | None = None,
+    ) -> Path:
+        from exo.kernel.utils import dump_yaml
+
+        repo = _bootstrap_repo(tmp_path)
+        config = {
+            "version": 1,
+            "defaults": {
+                "ticket_budgets": {"max_files_changed": 12, "max_loc_changed": 400},
+                "ticket_checks": defaults_checks or [],
+            },
+            "checks_allowlist": allowlist,
+            "do_allowlist": [],
+            "recall_paths": [],
+            "self_evolution": {},
+            "scheduler": {},
+            "control_caps": {},
+            "git_controls": {"enabled": False, "ignore_paths": []},
+            "privacy": {"commit_logs": False, "redact_local_paths": False},
+            "coherence": {
+                "enabled": True,
+                "co_update_rules": [],
+                "docstring_languages": [],
+                "skip_patterns": [],
+            },
+        }
+        dump_yaml(repo / ".exo" / "config.yaml", config)
+        return repo
+
+    def test_resolve_uses_user_supplied_when_in_allowlist(self, tmp_path: Path) -> None:
+        from exo.cli import _resolve_ticket_checks
+
+        repo = self._make_repo_with_config(tmp_path, ["python3 -m pytest", "ruff check exo/"])
+        assert _resolve_ticket_checks(repo, ["python3 -m pytest"]) == ["python3 -m pytest"]
+
+    def test_resolve_rejects_user_supplied_outside_allowlist(self, tmp_path: Path) -> None:
+        from exo.cli import _resolve_ticket_checks
+        from exo.kernel.errors import ExoError
+
+        repo = self._make_repo_with_config(tmp_path, ["python3 -m pytest"])
+        with pytest.raises(ExoError) as exc_info:
+            _resolve_ticket_checks(repo, ["rm -rf /"])
+        assert exc_info.value.code == "CHECK_NOT_IN_ALLOWLIST"
+
+    def test_resolve_falls_back_to_defaults_ticket_checks(self, tmp_path: Path) -> None:
+        from exo.cli import _resolve_ticket_checks
+
+        repo = self._make_repo_with_config(
+            tmp_path,
+            allowlist=["python3 -m pytest", "ruff check exo/"],
+            defaults_checks=["ruff check exo/"],
+        )
+        assert _resolve_ticket_checks(repo, []) == ["ruff check exo/"]
+
+    def test_resolve_falls_back_to_full_allowlist(self, tmp_path: Path) -> None:
+        from exo.cli import _resolve_ticket_checks
+
+        repo = self._make_repo_with_config(tmp_path, allowlist=["python3 -m pytest", "ruff check exo/"])
+        assert _resolve_ticket_checks(repo, []) == ["python3 -m pytest", "ruff check exo/"]
+
+    def test_resolve_returns_empty_when_no_source_of_checks(self, tmp_path: Path) -> None:
+        """No config + no user-supplied → empty list (doctor flags it later)."""
+        from exo.cli import _resolve_ticket_checks
+
+        repo = self._make_repo_with_config(tmp_path, allowlist=[])
+        assert _resolve_ticket_checks(repo, []) == []
+
+    def test_ticket_create_persists_default_checks(self, tmp_path: Path, monkeypatch: Any) -> None:
+        """End-to-end: ticket-create with no --checks default-fills from allowlist."""
+        from exo.cli import main as cli_main_local
+
+        repo = self._make_repo_with_config(tmp_path, ["python3 -m pytest", "ruff check exo/"])
+        _seed_intent(repo, intent_id="INTENT-501")
+
+        monkeypatch.chdir(repo)
+        rc = cli_main_local(["ticket-create", "Auto-checked task", "--parent", "INTENT-501"])
+        assert rc == 0
+        latest = sorted(
+            (repo / ".exo" / "tickets").glob("TKT-*.yaml"),
+            key=lambda p: p.stat().st_mtime,
+        )[-1]
+        ticket = tickets_mod.load_ticket(repo, latest.stem)
+        assert ticket["checks"] == ["python3 -m pytest", "ruff check exo/"]
+
+    def test_ticket_create_persists_explicit_checks(self, tmp_path: Path, monkeypatch: Any) -> None:
+        """ticket-create --checks X persists exactly that."""
+        from exo.cli import main as cli_main_local
+
+        repo = self._make_repo_with_config(tmp_path, ["python3 -m pytest", "ruff check exo/"])
+        _seed_intent(repo, intent_id="INTENT-502")
+
+        monkeypatch.chdir(repo)
+        rc = cli_main_local(
+            [
+                "ticket-create",
+                "Explicit-checks task",
+                "--parent",
+                "INTENT-502",
+                "--checks",
+                "python3 -m pytest",
+            ]
+        )
+        assert rc == 0
+        latest = sorted(
+            (repo / ".exo" / "tickets").glob("TKT-*.yaml"),
+            key=lambda p: p.stat().st_mtime,
+        )[-1]
+        ticket = tickets_mod.load_ticket(repo, latest.stem)
+        assert ticket["checks"] == ["python3 -m pytest"]
