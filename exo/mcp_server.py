@@ -1074,6 +1074,31 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_archive(
+        paths: list[str],
+        reason: str,
+        repo: str = ".",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Move source paths under archive/ with audit trail (closes feedback #7b)."""
+        try:
+            from exo.stdlib.archive import archive_paths, archive_to_dict, format_archive_human
+
+            result = archive_paths(Path(repo).resolve(), paths, reason=reason, dry_run=dry_run)
+            data = archive_to_dict(result)
+            data["_human_summary"] = format_archive_human(result)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_pr_check(
         repo: str = ".",
         base_ref: str = "main",

@@ -425,6 +425,14 @@ def _build_parser() -> argparse.ArgumentParser:
     test_triage_cmd.add_argument("test_path", help="Repo-relative path to the test file")
     test_triage_cmd.add_argument("--window-days", type=int, default=30, help="Lookback window for behavior changes")
 
+    fs_archive_cmd = sub.add_parser(
+        "archive",
+        help="Move source paths under archive/ with audit trail (closes feedback #7b/c)",
+    )
+    fs_archive_cmd.add_argument("paths", nargs="+", help="Repo-relative paths to archive")
+    fs_archive_cmd.add_argument("--reason", required=True, help="Reason recorded in archive/INDEX.md")
+    fs_archive_cmd.add_argument("--dry-run", action="store_true", help="Preview moves without writing")
+
     pr_check_cmd = sub.add_parser("pr-check", help="Check governance compliance for all commits in a PR range")
     pr_check_cmd.add_argument("--base", default="main", help="Base branch/ref (default: main)")
     pr_check_cmd.add_argument("--head", default="HEAD", help="Head ref (default: HEAD)")
@@ -1321,6 +1329,14 @@ def main(argv: list[str] | None = None) -> int:
             report = triage_test(repo_path, args.test_path, window_days=args.window_days)
             data = triage_to_dict(report)
             data["_human_summary"] = format_triage_human(report)
+            response = _ok(data)
+        elif cmd == "archive":
+            from exo.stdlib.archive import archive_paths, archive_to_dict, format_archive_human
+
+            repo_path = Path(args.repo).resolve()
+            result = archive_paths(repo_path, args.paths, reason=args.reason, dry_run=bool(args.dry_run))
+            data = archive_to_dict(result)
+            data["_human_summary"] = format_archive_human(result)
             response = _ok(data)
         elif cmd == "pr-check":
             repo_path = Path(args.repo).resolve()

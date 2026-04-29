@@ -439,6 +439,16 @@ def _constitution_rules(report: ScanReport) -> list[dict[str, Any]]:
             }
         )
 
+    # RULE-ARC-001: archive/ is immutable when an archive directory exists
+    # (closes feedback #7c). Restoration goes through `git mv`, not silent edits.
+    if getattr(report, "archive_present", False) or getattr(report, "archive_dir", None) is not None:
+        try:
+            from exo.stdlib.archive import archive_constitution_rule
+
+            rules.append(archive_constitution_rule())
+        except Exception:  # noqa: BLE001
+            pass
+
     return rules
 
 
@@ -455,6 +465,7 @@ def _rules_to_constitution(rules: list[dict[str, Any]]) -> str:
         "RULE-CHECK-001": "Checks before done",
         "RULE-EVO-001": "Practice is mutable, governance is sacred",
         "RULE-EVO-002": "Patch-first evolution",
+        "RULE-ARC-001": "Archive immutability (scan-detected)",
     }
 
     # Map rule IDs to article descriptions
@@ -468,6 +479,7 @@ def _rules_to_constitution(rules: list[dict[str, Any]]) -> str:
         "RULE-CHECK-001": "A ticket must pass checks before status can move to done.",
         "RULE-EVO-001": "Practice changes may use lightweight approval; governance changes require human approval.",
         "RULE-EVO-002": "No self-evolution applies without proposal + patch + approval + audit trail.",
+        "RULE-ARC-001": "archive/ tree is immutable; restore via `git mv` to edit.",
     }
 
     lines = ["# Project Constitution", ""]
