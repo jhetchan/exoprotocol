@@ -1143,6 +1143,34 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_test_triage(
+        test_path: str,
+        repo: str = ".",
+        window_days: int = 30,
+    ) -> dict[str, Any]:
+        """Classify a failing test as stale / regression / ambiguous via git blame timing (closes feedback #6).
+
+        Returns evidence + a recommended owner. Does NOT autonomously
+        delete or rewrite tests — that judgment call stays with humans.
+        """
+        try:
+            from exo.stdlib.triage import format_triage_human, triage_test, triage_to_dict
+
+            report = triage_test(Path(repo).resolve(), test_path, window_days=window_days)
+            data = triage_to_dict(report)
+            data["_human_summary"] = format_triage_human(report)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_adapter_generate(
         repo: str = ".",
         targets: list[str] | None = None,

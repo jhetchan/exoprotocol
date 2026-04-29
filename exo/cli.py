@@ -418,6 +418,13 @@ def _build_parser() -> argparse.ArgumentParser:
     archive_cmd = sub.add_parser("ticket-archive", help="Archive done tickets to ARCHIVE/ subdirectory")
     archive_cmd.add_argument("ticket_id", nargs="?", default="", help="Ticket ID to archive (omit to archive all done)")
 
+    test_triage_cmd = sub.add_parser(
+        "test-triage",
+        help="Classify a failing test as stale/regression/ambiguous via git blame timing (closes feedback #6)",
+    )
+    test_triage_cmd.add_argument("test_path", help="Repo-relative path to the test file")
+    test_triage_cmd.add_argument("--window-days", type=int, default=30, help="Lookback window for behavior changes")
+
     pr_check_cmd = sub.add_parser("pr-check", help="Check governance compliance for all commits in a PR range")
     pr_check_cmd.add_argument("--base", default="main", help="Base branch/ref (default: main)")
     pr_check_cmd.add_argument("--head", default="HEAD", help="Head ref (default: HEAD)")
@@ -1307,6 +1314,14 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 archived = archive_done_tickets(repo_path)
                 response = _ok({"archived": archived, "count": len(archived)})
+        elif cmd == "test-triage":
+            from exo.stdlib.triage import format_triage_human, triage_test, triage_to_dict
+
+            repo_path = Path(args.repo).resolve()
+            report = triage_test(repo_path, args.test_path, window_days=args.window_days)
+            data = triage_to_dict(report)
+            data["_human_summary"] = format_triage_human(report)
+            response = _ok(data)
         elif cmd == "pr-check":
             repo_path = Path(args.repo).resolve()
             report = pr_check(
