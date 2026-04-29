@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets as tickets_mod
 from exo.stdlib.pr_check import (
@@ -1115,3 +1117,123 @@ class TestIntentContext:
         assert len(report.sessions) == 1
         assert report.sessions[0].intent_id == ""
         assert report.sessions[0].intent_boundary == ""
+
+
+# ════════════════════════════════════════════════════════════════════
+# pr_merge — API-based PR merge (closes feedback #3)
+# ════════════════════════════════════════════════════════════════════
+
+
+class TestPRMerge:
+    """exo pr-merge gates on pr-check, calls GitHub API, never touches local checkout."""
+
+    def _runner_recorder(self, *, repo_view_rc: int = 0, merge_rc: int = 0):
+        """Build a (calls_list, runner) pair where runner mocks gh CLI calls."""
+        calls: list[list[str]] = []
+
+        def runner(args: list[str]) -> tuple[int, str, str]:
+            calls.append(list(args))
+            if args[:3] == ["gh", "repo", "view"]:
+                return repo_view_rc, "owner/repo\n", ""
+            if args[:2] == ["gh", "api"]:
+                return (
+                    merge_rc,
+                    '{"merged": true}\n' if merge_rc == 0 else "",
+                    "" if merge_rc == 0 else "boom",
+                )
+            return 1, "", "unknown"
+
+        return calls, runner
+
+    def test_invalid_method_rejected(self, tmp_path: Path) -> None:
+        from exo.kernel.errors import ExoError
+        from exo.stdlib.pr_check import pr_merge
+
+        repo = _bootstrap_repo(tmp_path)
+        with pytest.raises(ExoError) as exc_info:
+            pr_merge(repo, pr_number=1, method="cherry-pick")
+        assert exc_info.value.code == "INVALID_MERGE_METHOD"
+
+    def test_invalid_pr_number_rejected(self, tmp_path: Path) -> None:
+        from exo.kernel.errors import ExoError
+        from exo.stdlib.pr_check import pr_merge
+
+        repo = _bootstrap_repo(tmp_path)
+        with pytest.raises(ExoError) as exc_info:
+            pr_merge(repo, pr_number=0)
+        assert exc_info.value.code == "INVALID_PR_NUMBER"
+
+    def test_refuses_when_verdict_not_pass(self, tmp_path: Path) -> None:
+        """If pr-check verdict is 'fail' and no break-glass-reason, refuse."""
+        from exo.stdlib.pr_check import pr_merge
+
+        repo = _bootstrap_repo(tmp_path)
+        _make_commit(repo, "ungoverned.txt", "x", "feat: ungoverned change")
+
+        calls, runner = self._runner_recorder()
+        result = pr_merge(repo, pr_number=42, base="HEAD~1", head="HEAD", runner=runner)
+
+        assert result["ok"] is False
+        assert result["merged"] is False
+        # Critical contract: API merge call must NOT fire when refused
+        assert not any(c[:2] == ["gh", "api"] for c in calls)
+
+    def test_break_glass_overrides_failed_verdict(self, tmp_path: Path) -> None:
+        from exo.stdlib.pr_check import pr_merge
+
+        repo = _bootstrap_repo(tmp_path)
+        _make_commit(repo, "ungoverned.txt", "x", "feat: ungoverned change")
+
+        calls, runner = self._runner_recorder()
+        result = pr_merge(
+            repo,
+            pr_number=42,
+            base="HEAD~1",
+            head="HEAD",
+            break_glass_reason="emergency hotfix: tracked in INC-1234",
+            runner=runner,
+        )
+        assert result["ok"] is True
+        assert result["merged"] is True
+        assert result["break_glass_reason"] == "emergency hotfix: tracked in INC-1234"
+        api_calls = [c for c in calls if c[:2] == ["gh", "api"]]
+        assert len(api_calls) == 1
+        assert "repos/owner/repo/pulls/42/merge" in api_calls[0]
+
+    def test_uses_squash_method_by_default(self, tmp_path: Path) -> None:
+        from exo.stdlib.pr_check import pr_merge
+
+        repo = _bootstrap_repo(tmp_path)
+        calls, runner = self._runner_recorder()
+        pr_merge(repo, pr_number=7, break_glass_reason="test", runner=runner)
+        api_call = next(c for c in calls if c[:2] == ["gh", "api"])
+        assert "merge_method=squash" in api_call
+
+    def test_method_passed_to_api(self, tmp_path: Path) -> None:
+        from exo.stdlib.pr_check import pr_merge
+
+        repo = _bootstrap_repo(tmp_path)
+        calls, runner = self._runner_recorder()
+        pr_merge(repo, pr_number=7, method="rebase", break_glass_reason="t", runner=runner)
+        api_call = next(c for c in calls if c[:2] == ["gh", "api"])
+        assert "merge_method=rebase" in api_call
+
+    def test_never_runs_local_checkout_commands(self, tmp_path: Path) -> None:
+        """Critical contract: pr_merge must never invoke git checkout / pull / fetch."""
+        from exo.stdlib.pr_check import pr_merge
+
+        repo = _bootstrap_repo(tmp_path)
+        calls, runner = self._runner_recorder()
+        pr_merge(repo, pr_number=99, break_glass_reason="t", runner=runner)
+        # All recorded calls go through gh, never raw git
+        assert all(c[0] == "gh" for c in calls), f"Expected gh-only calls, got: {calls}"
+
+    def test_gh_api_failure_returns_structured_error(self, tmp_path: Path) -> None:
+        from exo.stdlib.pr_check import pr_merge
+
+        repo = _bootstrap_repo(tmp_path)
+        _calls, runner = self._runner_recorder(merge_rc=1)
+        result = pr_merge(repo, pr_number=99, break_glass_reason="t", runner=runner)
+        assert result["ok"] is False
+        assert result["merged"] is False
+        assert "gh api merge failed" in result["reason"]
