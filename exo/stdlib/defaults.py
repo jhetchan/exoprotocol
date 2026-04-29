@@ -1,6 +1,62 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+DEFAULT_FRAMEWORK_PATHS: list[str] = [
+    ".exo/cache/**",
+    ".exo/memory/**",
+    ".exo/locks/**",
+    ".exo/tickets/**",
+    ".exo/logs/**",
+]
+
+
+def load_framework_paths(repo: Path) -> list[str]:
+    """Load framework_paths from .exo/config.yaml, falling back to defaults.
+
+    Framework paths are paths the framework's own lifecycle code
+    (session-start/finish, lock writes, memento persistence, queue mutations)
+    needs to write to regardless of a ticket's user-defined scope. They are
+    auto-unioned into scope.allow at ticket-create time and at runtime scope
+    checks so the closeout cannot fail because the user forgot to allow a
+    framework-internal path.
+    """
+    from exo.kernel.utils import load_yaml
+
+    config_path = Path(repo) / ".exo" / "config.yaml"
+    if not config_path.exists():
+        return list(DEFAULT_FRAMEWORK_PATHS)
+    try:
+        config = load_yaml(config_path) or {}
+    except Exception:  # noqa: BLE001
+        return list(DEFAULT_FRAMEWORK_PATHS)
+    paths = config.get("framework_paths")
+    if isinstance(paths, list) and all(isinstance(p, str) and p.strip() for p in paths):
+        return [p.strip() for p in paths]
+    return list(DEFAULT_FRAMEWORK_PATHS)
+
+
+def merge_framework_paths_into_scope(scope: dict[str, Any] | None, framework_paths: list[str]) -> dict[str, list[str]]:
+    """Union framework_paths into scope.allow, preserving order, deduping.
+
+    A framework path is appended only if not already present (literal
+    string match). scope.deny is preserved as-is.
+    """
+    raw = scope if isinstance(scope, dict) else {}
+    allow_raw = raw.get("allow") or []
+    deny_raw = raw.get("deny") or []
+    allow = [str(p) for p in allow_raw if isinstance(p, str) and p.strip()]
+    deny = [str(p) for p in deny_raw if isinstance(p, str) and p.strip()]
+    if not allow:
+        allow = ["**"]
+    seen = set(allow)
+    for fp in framework_paths:
+        if fp not in seen:
+            allow.append(fp)
+            seen.add(fp)
+    return {"allow": allow, "deny": deny}
+
 
 DEFAULT_CONSTITUTION = """# Project Constitution
 
@@ -106,6 +162,7 @@ DEFAULT_CONFIG = {
         ".exo",
         "docs",
     ],
+    "framework_paths": list(DEFAULT_FRAMEWORK_PATHS),
     "self_evolution": {
         "trusted_approvers": ["agent:trusted"],
         "governance_cooldown_hours": 24,

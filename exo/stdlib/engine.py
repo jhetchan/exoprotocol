@@ -1079,9 +1079,16 @@ class KernelEngine:
         return resolved
 
     def _check_ticket_scope(self, ticket: dict[str, Any], path: Path) -> None:
+        from exo.stdlib.defaults import load_framework_paths
+
         scope = ticket.get("scope") or {}
-        allow = scope.get("allow") or ["**"]
+        allow = list(scope.get("allow") or ["**"])
         deny = scope.get("deny") or []
+
+        framework_paths = load_framework_paths(self.repo)
+        for fp in framework_paths:
+            if fp not in allow:
+                allow.append(fp)
 
         if any_pattern_matches(path, deny, self.repo):
             raise ExoError(

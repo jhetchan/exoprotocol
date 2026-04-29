@@ -14,6 +14,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from exo.cli import main as cli_main
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets as tickets_mod
@@ -615,7 +617,10 @@ class TestIntentCreate:
         assert rc == 0
         intent_id = data["intent_id"]
         ticket = tickets_mod.load_ticket(repo, intent_id)
-        assert ticket["scope"]["allow"] == ["src/**"]
+        # User's explicit allow is preserved; framework_paths are unioned in
+        # so closeout writes to .exo/** never fail because of ticket scope.
+        assert "src/**" in ticket["scope"]["allow"]
+        assert ticket["scope"]["allow"][0] == "src/**"
         assert ticket["scope"]["deny"] == ["src/vendor/**"]
         assert ticket["budgets"]["max_files_changed"] == 5
         assert ticket["budgets"]["max_loc_changed"] == 200
@@ -1231,3 +1236,129 @@ class TestExoBanner:
             model="unknown",
         )
         assert "model:" not in banner
+
+
+# ──────────────────────────────────────────────
+# Phase: Framework Paths (closes feedback #5)
+# ──────────────────────────────────────────────
+
+
+class TestFrameworkPaths:
+    """Framework-mutated paths must be reachable regardless of ticket scope."""
+
+    def test_default_framework_paths_used_when_no_config(self, tmp_path: Path) -> None:
+        """No config.yaml → fall back to compile-time defaults."""
+        from exo.stdlib.defaults import DEFAULT_FRAMEWORK_PATHS, load_framework_paths
+
+        # tmp_path has no .exo/config.yaml
+        loaded = load_framework_paths(tmp_path)
+        assert loaded == list(DEFAULT_FRAMEWORK_PATHS)
+        # Must include the canonical lifecycle paths
+        assert ".exo/cache/**" in loaded
+        assert ".exo/memory/**" in loaded
+        assert ".exo/tickets/**" in loaded
+
+    def test_load_framework_paths_reads_config(self, tmp_path: Path) -> None:
+        """Custom framework_paths in config.yaml override defaults."""
+        from exo.kernel.utils import dump_yaml
+        from exo.stdlib.defaults import load_framework_paths
+
+        exo_dir = tmp_path / ".exo"
+        exo_dir.mkdir(parents=True, exist_ok=True)
+        dump_yaml(
+            exo_dir / "config.yaml",
+            {"framework_paths": ["custom/queue.json", ".exo/extra/**"]},
+        )
+        loaded = load_framework_paths(tmp_path)
+        assert loaded == ["custom/queue.json", ".exo/extra/**"]
+
+    def test_load_framework_paths_falls_back_on_garbage(self, tmp_path: Path) -> None:
+        """Non-list or non-string entries → fall back to defaults."""
+        from exo.kernel.utils import dump_yaml
+        from exo.stdlib.defaults import DEFAULT_FRAMEWORK_PATHS, load_framework_paths
+
+        exo_dir = tmp_path / ".exo"
+        exo_dir.mkdir(parents=True, exist_ok=True)
+        dump_yaml(exo_dir / "config.yaml", {"framework_paths": "not a list"})
+        assert load_framework_paths(tmp_path) == list(DEFAULT_FRAMEWORK_PATHS)
+
+    def test_merge_unions_without_duplicates(self) -> None:
+        """Existing entries are preserved, framework paths appended once."""
+        from exo.stdlib.defaults import merge_framework_paths_into_scope
+
+        scope = {"allow": ["src/foo.py", ".exo/cache/**"], "deny": ["secrets/**"]}
+        result = merge_framework_paths_into_scope(scope, [".exo/cache/**", ".exo/memory/**"])
+        assert result["allow"] == ["src/foo.py", ".exo/cache/**", ".exo/memory/**"]
+        assert result["deny"] == ["secrets/**"]
+
+    def test_merge_with_empty_scope_uses_glob_then_unions(self) -> None:
+        """Empty allow → defaults to ['**'] then unions framework paths."""
+        from exo.stdlib.defaults import merge_framework_paths_into_scope
+
+        result = merge_framework_paths_into_scope({}, [".exo/cache/**"])
+        assert result["allow"] == ["**", ".exo/cache/**"]
+        assert result["deny"] == []
+
+    def test_ticket_create_persists_framework_paths(self, tmp_path: Path, monkeypatch: Any) -> None:
+        """End-to-end: ticket-create CLI persists scope.allow with framework paths unioned."""
+        from exo.cli import main as cli_main_local
+        from exo.stdlib.defaults import DEFAULT_FRAMEWORK_PATHS
+
+        repo = _bootstrap_repo(tmp_path)
+        # Seed an intent to act as parent
+        _seed_intent(repo, intent_id="INTENT-901")
+
+        monkeypatch.chdir(repo)
+        # Create a task ticket via CLI with a single explicit allow glob.
+        rc = cli_main_local(
+            [
+                "ticket-create",
+                "Test ticket scope union",
+                "--parent",
+                "INTENT-901",
+                "--scope-allow",
+                "src/foo.py",
+            ]
+        )
+        assert rc == 0
+        # Find the newly created ticket file
+        created = sorted(
+            (repo / ".exo" / "tickets").glob("TKT-*.yaml"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        assert created, "ticket-create should have written a YAML file"
+        ticket = tickets_mod.load_ticket(repo, created[-1].stem)
+        allow = ticket["scope"]["allow"]
+        # User's explicit path is preserved
+        assert "src/foo.py" in allow
+        # All framework paths are unioned in
+        for fp in DEFAULT_FRAMEWORK_PATHS:
+            assert fp in allow, f"framework path {fp} missing from persisted scope.allow"
+
+    def test_runtime_scope_check_unions_framework_paths(self, tmp_path: Path) -> None:
+        """A ticket whose persisted scope omits framework paths still allows
+        framework writes at runtime via union in _check_ticket_scope."""
+        from exo.stdlib.engine import KernelEngine
+
+        repo = _bootstrap_repo(tmp_path)
+        # Construct a ticket with a deliberately narrow allow that omits .exo/**
+        ticket = {
+            "id": "TKT-RUNTIME-001",
+            "kind": "task",
+            "title": "Narrow scope",
+            "intent": "Narrow scope",
+            "scope": {"allow": ["src/foo.py"], "deny": []},
+            "budgets": {"max_files_changed": 1, "max_loc_changed": 10},
+            "status": "active",
+        }
+        engine = KernelEngine(repo, actor="agent:test")
+        # A path inside framework_paths must NOT raise SCOPE_ALLOW_REQUIRED
+        target = repo / ".exo" / "cache" / "sessions" / "x.bootstrap.md"
+        engine._check_ticket_scope(ticket, target)
+        # A path outside both ticket scope AND framework paths must raise
+        from exo.kernel.errors import ExoError
+
+        outside = repo / "elsewhere" / "bar.py"
+        with pytest.raises(ExoError) as exc_info:
+            engine._check_ticket_scope(ticket, outside)
+        assert exc_info.value.code == "SCOPE_ALLOW_REQUIRED"
