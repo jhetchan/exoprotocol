@@ -922,6 +922,19 @@ class TestAccTagPattern:
     def test_no_match_without_prefix(self) -> None:
         assert not ACC_TAG_PATTERN.search("@acc: ACC-001")
 
+    def test_no_match_when_marker_inside_string_literal(self) -> None:
+        """Marker must be the first non-whitespace token — not buried inside a string."""
+        # This is the false-positive shape that broke `exo trace-reqs --check-tests` for
+        # files (like the scanner's own test fixtures) that quote the marker as data.
+        assert not ACC_TAG_PATTERN.search('write_text("# @acc: ACC-001")')
+        assert not ACC_TAG_PATTERN.search("    val = '# @acc: ACC-001'")
+
+    def test_match_with_leading_whitespace(self) -> None:
+        """Indented comments still match (e.g. inside a function body)."""
+        m = ACC_TAG_PATTERN.search("    # @acc: ACC-001")
+        assert m
+        assert "ACC-001" in m.group(1)
+
 
 # ── Scan ACC Refs ───────────────────────────────────────────────────
 

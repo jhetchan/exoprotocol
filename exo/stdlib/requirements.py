@@ -25,15 +25,18 @@ REQUIREMENTS_PATH = Path(".exo/requirements.yaml")
 VALID_STATUSES = frozenset({"active", "deprecated", "deleted"})
 VALID_PRIORITIES = frozenset({"high", "medium", "low"})
 
-# Regex: matches requirement annotations (req or implements prefix, comma-separated IDs)
+# Regex: matches requirement annotations (req or implements prefix, comma-separated IDs).
+# Anchored to start-of-line so the comment marker must be the first non-whitespace
+# token — otherwise the same pattern inside a string literal would match (false positive).
 REQ_TAG_PATTERN = re.compile(
-    r"[#/]\s*@(?:req|implements):\s*(.+)",
+    r"^\s*[#/]+\s*@(?:req|implements):\s*(.+)",
     re.IGNORECASE,
 )
 
-# Regex: matches acceptance criteria annotations in test files
+# Regex: matches acceptance criteria annotations in test files. Same start-of-line
+# anchor as REQ_TAG_PATTERN to avoid matching strings that quote the marker.
 ACC_TAG_PATTERN = re.compile(
-    r"[#/]\s*@acc:\s*(.+)",
+    r"^\s*[#/]+\s*@acc:\s*(.+)",
     re.IGNORECASE,
 )
 
