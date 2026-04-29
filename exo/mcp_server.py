@@ -924,8 +924,11 @@ if FastMCP:
         max_loc: int = 400,
         priority: int = 3,
         labels: list[str] | None = None,
+        checks: list[str] | None = None,
     ) -> dict[str, Any]:
         try:
+            from exo.cli import _resolve_ticket_checks
+
             repo_path = Path(repo).resolve()
             intent_id = allocate_intent_id(repo_path)
             ticket_data = {
@@ -941,6 +944,7 @@ if FastMCP:
                 "labels": labels or [],
                 "scope": {"allow": scope_allow or ["**"], "deny": scope_deny or []},
                 "budgets": {"max_files_changed": max_files, "max_loc_changed": max_loc},
+                "checks": _resolve_ticket_checks(repo_path, checks or []),
             }
             saved_path = save_ticket(repo_path, ticket_data)
             saved_ticket = normalize_ticket(ticket_data)
@@ -985,8 +989,11 @@ if FastMCP:
         labels: list[str] | None = None,
         boundary: str = "",
         success_condition: str = "",
+        checks: list[str] | None = None,
     ) -> dict[str, Any]:
         try:
+            from exo.cli import _resolve_ticket_checks
+
             repo_path = Path(repo).resolve()
             parent = load_ticket(repo_path, parent_id)
             parent_kind = str(parent.get("kind", "task")).strip().lower()
@@ -1029,6 +1036,7 @@ if FastMCP:
                 "labels": labels or [],
                 "scope": {"allow": scope_allow or ["**"], "deny": scope_deny or []},
                 "budgets": {"max_files_changed": max_files, "max_loc_changed": max_loc},
+                "checks": _resolve_ticket_checks(repo_path, checks or []),
             }
             saved_path = save_ticket(repo_path, ticket_data)
             saved_ticket = normalize_ticket(ticket_data)

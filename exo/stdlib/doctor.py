@@ -205,6 +205,69 @@ def _check_scaffold(repo: Path) -> DoctorSection:
     )
 
 
+def _check_ticket_validity(repo: Path) -> DoctorSection:
+    """Flag persisted tickets that would silently bypass verification.
+
+    Closes feedback #4: a ticket with empty `checks` skips verify gates,
+    making session-finish a no-op for that ticket. We surface every such
+    active (non-archived) ticket so they can be fixed before they're worked.
+    """
+    try:
+        from exo.kernel import tickets as tickets_mod
+
+        tickets_dir = repo / ".exo" / "tickets"
+        if not tickets_dir.exists():
+            return DoctorSection(
+                name="ticket_validity",
+                status="skip",
+                summary="Tickets: no .exo/tickets directory",
+            )
+
+        empty_checks: list[str] = []
+        for path in tickets_mod.list_ticket_paths(repo):
+            try:
+                ticket = tickets_mod.load_ticket(repo, path.stem)
+            except Exception:  # noqa: BLE001
+                continue
+            status = str(ticket.get("status", "")).strip().lower()
+            if status in ("done", "archived"):
+                continue
+            kind = str(ticket.get("kind", "task")).strip().lower()
+            if kind in ("intent", "epic"):
+                # Intents and epics are containers; they don't run their own checks.
+                continue
+            checks_field = ticket.get("checks") or []
+            if not isinstance(checks_field, list):
+                checks_field = []
+            cleaned = [c for c in checks_field if isinstance(c, str) and c.strip()]
+            if not cleaned:
+                empty_checks.append(str(ticket.get("id", path.stem)))
+
+        if not empty_checks:
+            return DoctorSection(
+                name="ticket_validity",
+                status="pass",
+                summary="Tickets: every active task ticket has a verify list",
+            )
+        return DoctorSection(
+            name="ticket_validity",
+            status="fail",
+            summary=f"Tickets: {len(empty_checks)} active ticket(s) have empty checks (would skip verify)",
+            errors=len(empty_checks),
+            details={
+                "empty_checks_tickets": empty_checks,
+                "fix": "Edit each ticket YAML to add checks, or recreate via `exo ticket-create --checks ...`",
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return DoctorSection(
+            name="ticket_validity",
+            status="error",
+            summary=f"Ticket validity check failed: {exc}",
+            errors=1,
+        )
+
+
 def _check_governance_tracked(repo: Path) -> DoctorSection:
     """Check if .exo/ governance files are tracked by git."""
     try:
@@ -264,7 +327,10 @@ def doctor(
     # 4. Scan freshness
     sections.append(_check_scan_freshness(repo))
 
-    # 5. Governance tracked by git
+    # 5. Ticket validity (no empty-checks footguns)
+    sections.append(_check_ticket_validity(repo))
+
+    # 6. Governance tracked by git
     sections.append(_check_governance_tracked(repo))
 
     has_failure = any(s.status in ("fail", "error") for s in sections)
