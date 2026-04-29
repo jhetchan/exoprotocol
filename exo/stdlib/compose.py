@@ -161,6 +161,154 @@ def compose(repo: Path, *, dry_run: bool = False) -> dict[str, Any]:
     }
 
 
+def compose_brief(repo: Path, *, max_intents: int = 10, max_reflections: int = 5) -> dict[str, Any]:
+    """Read-only governance summary for `exo brief` (closes feedback #1).
+
+    Pure read-only: reads governance.lock.json, .exo/tickets/, and active
+    reflections. Does NOT acquire a ticket lock, write a memento, or
+    register a session — `exo brief` is a context primer, not a governed
+    write. Returns structured data; the CLI/MCP layer renders it.
+    """
+    repo = Path(repo).resolve()
+
+    rules: list[dict[str, Any]] = []
+    governance_loaded = False
+    lock_path = repo / GOVERNANCE_LOCK_PATH
+    if lock_path.exists():
+        try:
+            lock = load_json(lock_path)
+            rules = lock.get("rules", []) if isinstance(lock, dict) else []
+            governance_loaded = True
+        except Exception:  # noqa: BLE001
+            governance_loaded = False
+
+    config = _load_config(repo) if (repo / CONFIG_PATH).exists() else {}
+    budgets = config.get("defaults", {}).get("ticket_budgets", {})
+    checks = config.get("checks_allowlist", [])
+
+    intents: list[dict[str, Any]] = []
+    tickets_dir = repo / ".exo" / "tickets"
+    if tickets_dir.exists():
+        try:
+            from exo.kernel import tickets as tickets_mod
+
+            all_tickets = tickets_mod.load_all_tickets(repo)
+            for ticket in all_tickets:
+                if str(ticket.get("kind", "")).strip().lower() != "intent":
+                    continue
+                if str(ticket.get("status", "")).strip().lower() in ("done", "archived"):
+                    continue
+                intents.append(
+                    {
+                        "id": ticket.get("id"),
+                        "title": ticket.get("title") or ticket.get("intent"),
+                        "status": ticket.get("status"),
+                        "boundary": ticket.get("boundary", ""),
+                        "children_count": len(ticket.get("children") or []),
+                    }
+                )
+            intents = intents[:max_intents]
+        except Exception:  # noqa: BLE001
+            intents = []
+
+    reflections: list[dict[str, Any]] = []
+    try:
+        from exo.stdlib.reflect import reflections_for_bootstrap
+
+        for ref in reflections_for_bootstrap(repo, ticket_id=None)[:max_reflections]:
+            reflections.append(
+                {
+                    "id": getattr(ref, "id", None),
+                    "pattern": getattr(ref, "pattern", ""),
+                    "insight": getattr(ref, "insight", ""),
+                    "severity": getattr(ref, "severity", "medium"),
+                    "scope": getattr(ref, "scope", "global"),
+                }
+            )
+    except Exception:  # noqa: BLE001
+        reflections = []
+
+    return {
+        "repo": str(repo),
+        "governance_loaded": governance_loaded,
+        "rules": [
+            {
+                "id": rule.get("id"),
+                "type": rule.get("type"),
+                "patterns": rule.get("patterns", []),
+                "actions": rule.get("actions", []),
+                "message": rule.get("message", ""),
+            }
+            for rule in rules
+            if isinstance(rule, dict)
+        ],
+        "budgets": budgets,
+        "checks_allowlist": checks,
+        "active_intents": intents,
+        "reflections": reflections,
+    }
+
+
+def format_brief_human(brief: dict[str, Any]) -> str:
+    """Render compose_brief output as a human-readable governance brief."""
+    lines: list[str] = []
+    lines.append("ExoProtocol Governance Brief")
+    lines.append("=" * 32)
+    if not brief.get("governance_loaded", False):
+        lines.append("WARNING: governance.lock.json missing — run `exo build-governance`.")
+        return "\n".join(lines)
+
+    rules = brief.get("rules", [])
+    lines.append(f"Active rules: {len(rules)}")
+    for rule in rules:
+        rid = rule.get("id", "RULE-???")
+        rtype = rule.get("type", "")
+        patterns = rule.get("patterns") or []
+        actions = rule.get("actions") or []
+        if patterns:
+            lines.append(f"  - [{rid}] {rtype} on {patterns} ({', '.join(actions) or 'all'})")
+        else:
+            lines.append(f"  - [{rid}] {rtype}")
+
+    budgets = brief.get("budgets") or {}
+    if budgets:
+        lines.append("")
+        lines.append(
+            f"Default ticket budgets: max_files={budgets.get('max_files_changed')}, "
+            f"max_loc={budgets.get('max_loc_changed')}"
+        )
+
+    checks = brief.get("checks_allowlist") or []
+    if checks:
+        lines.append("")
+        lines.append(f"Checks allowlist ({len(checks)}):")
+        for chk in checks:
+            lines.append(f"  - {chk}")
+
+    intents = brief.get("active_intents") or []
+    lines.append("")
+    lines.append(f"Active intents ({len(intents)}):")
+    if not intents:
+        lines.append("  (none)")
+    for intent in intents:
+        title = intent.get("title") or "<untitled>"
+        lines.append(f"  - [{intent.get('id')}] {title} (status={intent.get('status', '?')})")
+        boundary = intent.get("boundary", "").strip()
+        if boundary:
+            lines.append(f"      boundary: {boundary[:120]}")
+
+    refs = brief.get("reflections") or []
+    if refs:
+        lines.append("")
+        lines.append(f"Operational learnings ({len(refs)}):")
+        for ref in refs:
+            severity = (ref.get("severity") or "").upper()
+            pattern = ref.get("pattern", "")
+            lines.append(f"  - [{severity}] {pattern}")
+
+    return "\n".join(lines)
+
+
 def load_sealed_policy(repo: Path) -> dict[str, Any] | None:
     """Load sealed policy from disk. Returns None if file is missing."""
     repo = Path(repo).resolve()
