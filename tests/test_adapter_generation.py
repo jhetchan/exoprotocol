@@ -741,7 +741,26 @@ class TestCIManifestConformance:
         content = result["files"]["ci"]["content"]
         assert "drift-threshold 0.7" in content
         assert '"3.11"' in content
-        assert "pip install -e ." in content
+        # Default install must NOT use editable-dot, which would install the
+        # application package in governed app repos and break `python -m exo.cli`.
+        assert "pip install -e ." not in content
+        assert "pip install exoprotocol" in content
+
+    def test_default_install_pins_exoprotocol_version(self, tmp_path: Path) -> None:
+        """Default install command pins the generating exoprotocol version."""
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            expected_version = version("exoprotocol")
+        except PackageNotFoundError:
+            expected_version = None
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        if expected_version is not None:
+            assert f"pip install exoprotocol=={expected_version}" in content
+        else:
+            assert "pip install exoprotocol" in content
 
     def test_checks_allowlist_appears_in_ci(self, tmp_path: Path) -> None:
         """Governed checks from config appear as a workflow step."""

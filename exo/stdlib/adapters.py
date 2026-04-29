@@ -509,6 +509,22 @@ exo check && git push         # manual equivalent
 """
 
 
+def _default_ci_install_command() -> str:
+    """Pin the generated workflow to the exoprotocol version that produced it.
+
+    Application repos cannot use ``pip install -e .`` because that installs
+    the application package, not exoprotocol — the next workflow step then
+    fails with ``ModuleNotFoundError: No module named 'exo'``. Pinning to the
+    generating version also keeps governance reproducible across runs.
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        return f"pip install exoprotocol=={version('exoprotocol')}"
+    except (ImportError, PackageNotFoundError):
+        return "pip install exoprotocol"
+
+
 def generate_ci(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str:
     """Generate GitHub Action workflow for PR governance checks.
 
@@ -517,7 +533,7 @@ def generate_ci(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str
     ci_config = config.get("ci", {})
     drift_threshold = ci_config.get("drift_threshold", 0.7)
     python_version = str(ci_config.get("python_version", "3.11"))
-    install_cmd = ci_config.get("install_command", "pip install -e .")
+    install_cmd = ci_config.get("install_command") or _default_ci_install_command()
     governance_hash = lock.get("source_hash", "unknown")
 
     checks_allowlist = config.get("checks_allowlist", [])

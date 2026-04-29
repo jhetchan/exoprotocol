@@ -183,8 +183,15 @@ Configure thresholds in `.exo/config.yaml`:
 ci:
   drift_threshold: 0.7
   python_version: "3.11"
-  install_command: "pip install -e ."
+  # Default pins exoprotocol to the version that generated the workflow.
+  # Override only if your repo IS exoprotocol or you vendor it locally
+  # (e.g. install_command: "pip install -e .").
+  install_command: "pip install exoprotocol==<version>"
 ```
+
+> Why a pin and not `pip install -e .`? In a governed application repo, `pip install -e .`
+> installs the application package, not exoprotocol — the next workflow step then fails
+> with `ModuleNotFoundError: No module named 'exo'`.
 
 You can also run `exo pr-check` locally before pushing:
 

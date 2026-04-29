@@ -129,7 +129,7 @@ Detection rules trigger follow-ups for: uncovered code, unbound features, high d
 |-----|------|---------|-------------|
 | `ci.drift_threshold` | float | 0.7 | Drift score threshold for PR governance checks |
 | `ci.python_version` | str | "3.11" | Python version for CI workflow |
-| `ci.install_command` | str | "pip install -e ." | Command to install ExoProtocol in CI |
+| `ci.install_command` | str | "pip install exoprotocol==&lt;generating version&gt;" | Command to install ExoProtocol in CI. Default pins to the version that generated the workflow; override (e.g. `pip install -e .`) only if your repo IS exoprotocol or you vendor it locally. |
 
 Used by `exo adapter-generate --target ci` to generate `.github/workflows/exo-governance.yml`.
 
