@@ -403,6 +403,14 @@ def _build_parser() -> argparse.ArgumentParser:
     archive_cmd = sub.add_parser("ticket-archive", help="Archive done tickets to ARCHIVE/ subdirectory")
     archive_cmd.add_argument("ticket_id", nargs="?", default="", help="Ticket ID to archive (omit to archive all done)")
 
+    fs_archive_cmd = sub.add_parser(
+        "archive",
+        help="Move source paths under archive/ with audit trail (closes feedback #7b/c)",
+    )
+    fs_archive_cmd.add_argument("paths", nargs="+", help="Repo-relative paths to archive")
+    fs_archive_cmd.add_argument("--reason", required=True, help="Reason recorded in archive/INDEX.md")
+    fs_archive_cmd.add_argument("--dry-run", action="store_true", help="Preview moves without writing")
+
     pr_check_cmd = sub.add_parser("pr-check", help="Check governance compliance for all commits in a PR range")
     pr_check_cmd.add_argument("--base", default="main", help="Base branch/ref (default: main)")
     pr_check_cmd.add_argument("--head", default="HEAD", help="Head ref (default: HEAD)")
@@ -1197,6 +1205,14 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 archived = archive_done_tickets(repo_path)
                 response = _ok({"archived": archived, "count": len(archived)})
+        elif cmd == "archive":
+            from exo.stdlib.archive import archive_paths, archive_to_dict, format_archive_human
+
+            repo_path = Path(args.repo).resolve()
+            result = archive_paths(repo_path, args.paths, reason=args.reason, dry_run=bool(args.dry_run))
+            data = archive_to_dict(result)
+            data["_human_summary"] = format_archive_human(result)
+            response = _ok(data)
         elif cmd == "pr-check":
             repo_path = Path(args.repo).resolve()
             report = pr_check(

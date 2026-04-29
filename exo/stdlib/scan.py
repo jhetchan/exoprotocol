@@ -73,6 +73,7 @@ class ScanReport:
     ci_systems: list[CIDetection] = field(default_factory=list)
     source_dirs: list[str] = field(default_factory=list)
     agent_memory_paths: list[AgentMemoryPath] = field(default_factory=list)
+    archive_present: bool = False  # True iff repo-root archive/ directory exists
     scanned_at: str = ""
 
     @property
@@ -353,6 +354,7 @@ def scan_repo(repo: Path) -> ScanReport:
         ci_systems=_detect_ci(repo),
         source_dirs=_detect_source_dirs(repo, languages),
         agent_memory_paths=_detect_agent_memory_paths(repo),
+        archive_present=(repo / "archive").is_dir(),
         scanned_at=now_iso(),
     )
 
@@ -408,6 +410,16 @@ def _constitution_rules(report: ScanReport) -> list[dict[str, Any]]:
             }
         )
 
+    # RULE-ARC-001: archive/ is immutable when an archive directory exists
+    # (closes feedback #7c). Restoration goes through `git mv`, not silent edits.
+    if getattr(report, "archive_present", False) or getattr(report, "archive_dir", None) is not None:
+        try:
+            from exo.stdlib.archive import archive_constitution_rule
+
+            rules.append(archive_constitution_rule())
+        except Exception:  # noqa: BLE001
+            pass
+
     return rules
 
 
@@ -424,6 +436,7 @@ def _rules_to_constitution(rules: list[dict[str, Any]]) -> str:
         "RULE-CHECK-001": "Checks before done",
         "RULE-EVO-001": "Practice is mutable, governance is sacred",
         "RULE-EVO-002": "Patch-first evolution",
+        "RULE-ARC-001": "Archive immutability (scan-detected)",
     }
 
     # Map rule IDs to article descriptions
@@ -437,6 +450,7 @@ def _rules_to_constitution(rules: list[dict[str, Any]]) -> str:
         "RULE-CHECK-001": "A ticket must pass checks before status can move to done.",
         "RULE-EVO-001": "Practice changes may use lightweight approval; governance changes require human approval.",
         "RULE-EVO-002": "No self-evolution applies without proposal + patch + approval + audit trail.",
+        "RULE-ARC-001": "archive/ tree is immutable; restore via `git mv` to edit.",
     }
 
     lines = ["# Project Constitution", ""]
