@@ -409,3 +409,176 @@ def init_sidecar_worktree(
         "migration_commit": commit_result,
         **branch_meta,
     }
+
+
+# ── Session worktrees (closes feedback #2) ─────────────────────────
+
+
+def _session_worktree_branch(ticket_id: str) -> str:
+    """Branch convention for a per-ticket session worktree.
+
+    Mirrors session-start auto-branch ('exo/<ticket-id>') so a worktree
+    session lands on the same branch a cwd-mode session would.
+    """
+    return f"exo/{ticket_id.strip()}"
+
+
+def _session_worktree_path(repo: Path, ticket_id: str) -> Path:
+    """Default sibling-directory path for a per-ticket worktree."""
+    repo = Path(repo).resolve()
+    short = ticket_id.strip().replace("/", "-")
+    return repo.parent / f"{repo.name}-{short}"
+
+
+def create_session_worktree(
+    repo: Path | str,
+    ticket_id: str,
+    *,
+    base: str = "main",
+    path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Create a per-ticket git worktree for parallel/dirty-checkout work.
+
+    Closes feedback #2: dirty live checkouts are common and dirty agents
+    fighting over the same workspace is the #1 reason multi-ticket
+    parallelism is painful. A worktree gives each ticket its own
+    isolated checkout while still sharing .git internals.
+
+    Idempotent: if a worktree already exists at the target path with
+    the right branch, returns it without re-creating.
+    """
+    repo = Path(repo).resolve()
+    if not _is_git_repo(repo):
+        raise ExoError(
+            code="GIT_REPO_REQUIRED",
+            message=f"Cannot create worktree: {repo} is not a git repository",
+            blocked=True,
+        )
+
+    branch = _session_worktree_branch(ticket_id)
+    target = Path(path).resolve() if path else _session_worktree_path(repo, ticket_id)
+
+    existing_branch = _existing_worktree_branch(target)
+    if existing_branch == branch:
+        return {
+            "ticket_id": ticket_id,
+            "path": target.as_posix(),
+            "branch": branch,
+            "base": base,
+            "created": False,
+        }
+    if existing_branch is not None and existing_branch != branch:
+        raise ExoError(
+            code="WORKTREE_PATH_BUSY",
+            message=f"Path {target} is already a worktree on branch {existing_branch}",
+            details={
+                "path": target.as_posix(),
+                "existing_branch": existing_branch,
+                "wanted": branch,
+            },
+            blocked=True,
+        )
+    if target.exists():
+        raise ExoError(
+            code="WORKTREE_PATH_EXISTS",
+            message=f"Cannot create worktree at {target}: path exists and is not a worktree",
+            details={"path": target.as_posix()},
+            blocked=True,
+        )
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    args = ["worktree", "add", target.as_posix()]
+    if _local_branch_exists(repo, branch):
+        args.append(branch)
+    else:
+        args.extend(["-b", branch])
+        if _local_branch_exists(repo, base):
+            args.append(base)
+    proc = _run_git(repo, args, check=False)
+    if proc.returncode != 0:
+        raise ExoError(
+            code="WORKTREE_CREATE_FAILED",
+            message=f"git worktree add failed: {proc.stderr.strip() or proc.stdout.strip()}",
+            details={"target": target.as_posix(), "branch": branch, "base": base},
+            blocked=True,
+        )
+    return {
+        "ticket_id": ticket_id,
+        "path": target.as_posix(),
+        "branch": branch,
+        "base": base,
+        "created": True,
+    }
+
+
+def remove_session_worktree(repo: Path | str, path: Path | str, *, force: bool = False) -> dict[str, Any]:
+    """Remove a per-ticket worktree previously created by create_session_worktree.
+
+    Refuses to remove a worktree with uncommitted changes unless ``force``
+    is set, mirroring git's own safety net.
+    """
+    repo = Path(repo).resolve()
+    target = Path(path).resolve()
+    if _existing_worktree_branch(target) is None:
+        return {"path": target.as_posix(), "removed": False, "reason": "not_a_worktree"}
+
+    args = ["worktree", "remove", target.as_posix()]
+    if force:
+        args.append("--force")
+    proc = _run_git(repo, args, check=False)
+    if proc.returncode != 0:
+        raise ExoError(
+            code="WORKTREE_REMOVE_FAILED",
+            message=f"git worktree remove failed: {proc.stderr.strip() or proc.stdout.strip()}",
+            details={"path": target.as_posix(), "force": force},
+            blocked=True,
+        )
+    return {"path": target.as_posix(), "removed": True}
+
+
+def list_session_worktrees(repo: Path | str) -> list[dict[str, Any]]:
+    """List worktrees that look like session worktrees (branch starts 'exo/').
+
+    The sidecar governance worktree (branch 'exo-governance') is intentionally
+    excluded — it is a different concept and lives at a fixed sibling path,
+    not a per-ticket clone.
+    """
+    repo = Path(repo).resolve()
+    if not _is_git_repo(repo):
+        return []
+    proc = _run_git(repo, ["worktree", "list", "--porcelain"], check=False)
+    if proc.returncode != 0:
+        return []
+    entries: list[dict[str, Any]] = []
+    current: dict[str, Any] = {}
+    for line in proc.stdout.splitlines():
+        if not line.strip():
+            if current:
+                entries.append(current)
+                current = {}
+            continue
+        if line.startswith("worktree "):
+            current["path"] = line[len("worktree ") :].strip()
+        elif line.startswith("branch "):
+            current["branch"] = line[len("branch ") :].strip().replace("refs/heads/", "")
+        elif line.startswith("HEAD "):
+            current["head"] = line[len("HEAD ") :].strip()
+    if current:
+        entries.append(current)
+
+    session_entries: list[dict[str, Any]] = []
+    for entry in entries:
+        branch = entry.get("branch", "")
+        if not branch.startswith("exo/"):
+            continue
+        ticket_id = branch[len("exo/") :]
+        session_entries.append(
+            {
+                "ticket_id": ticket_id,
+                "path": entry.get("path", ""),
+                "branch": branch,
+                "head": entry.get("head", ""),
+            }
+        )
+    return session_entries

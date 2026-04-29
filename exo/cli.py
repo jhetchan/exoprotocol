@@ -445,6 +445,23 @@ def _build_parser() -> argparse.ArgumentParser:
     brief_cmd.add_argument("--max-intents", type=int, default=10, help="Max active intents to show")
     brief_cmd.add_argument("--max-reflections", type=int, default=5, help="Max reflections to show")
 
+    wt_create_cmd = sub.add_parser(
+        "worktree-create",
+        help="Create a per-ticket git worktree for isolated work (closes feedback #2)",
+    )
+    wt_create_cmd.add_argument("--ticket-id", required=True, dest="ticket_id")
+    wt_create_cmd.add_argument("--base", default="main", help="Base branch for new branch (if needed)")
+    wt_create_cmd.add_argument("--path", default=None, help="Override worktree path (default: ../<repo>-<ticket>)")
+
+    wt_remove_cmd = sub.add_parser(
+        "worktree-remove",
+        help="Remove a per-ticket session worktree",
+    )
+    wt_remove_cmd.add_argument("--path", required=True, help="Worktree path to remove")
+    wt_remove_cmd.add_argument("--force", action="store_true", help="Force-remove even with uncommitted changes")
+
+    sub.add_parser("worktrees", help="List session worktrees on branches matching exo/<ticket-id>")
+
     sub.add_parser(
         "sandbox-policy",
         help="Preview sandbox permissions derived from constitution deny rules",
@@ -1305,6 +1322,29 @@ def main(argv: list[str] | None = None) -> int:
             )
             data["_human_summary"] = format_brief_human(data)
             response = _ok(data)
+        elif cmd == "worktree-create":
+            from exo.stdlib.sidecar import create_session_worktree
+
+            repo_path = Path(args.repo).resolve()
+            data = create_session_worktree(
+                repo_path,
+                ticket_id=args.ticket_id,
+                base=args.base,
+                path=args.path,
+            )
+            response = _ok(data)
+        elif cmd == "worktree-remove":
+            from exo.stdlib.sidecar import remove_session_worktree
+
+            repo_path = Path(args.repo).resolve()
+            data = remove_session_worktree(repo_path, path=args.path, force=bool(args.force))
+            response = _ok(data)
+        elif cmd == "worktrees":
+            from exo.stdlib.sidecar import list_session_worktrees
+
+            repo_path = Path(args.repo).resolve()
+            entries = list_session_worktrees(repo_path)
+            response = _ok({"worktrees": entries, "count": len(entries)})
         elif cmd == "sandbox-policy":
             repo_path = Path(args.repo).resolve()
             data = derive_sandbox_policy(repo_path)

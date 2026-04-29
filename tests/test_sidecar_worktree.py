@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from exo.kernel import governance as governance_mod
 from exo.kernel import tickets as tickets_mod
 from exo.orchestrator import AgentSessionManager
@@ -452,3 +454,126 @@ class TestTicketCreationSidecarAutoCommit:
         commit_sidecar(repo, message=f"chore(exo): intent-create {intent_id}")
         messages = _sidecar_log(repo, n=3)
         assert any(intent_id in m for m in messages), f"Intent ID {intent_id} not in sidecar log: {messages}"
+
+
+# ════════════════════════════════════════════════════════════════════
+# Session worktrees (closes feedback #2)
+# ════════════════════════════════════════════════════════════════════
+
+
+def _init_plain_git_repo(tmp_path: Path, name: str = "repo") -> Path:
+    """Set up a plain git repo (no sidecar) with a baseline commit on main."""
+    repo = tmp_path / name
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, "init", "--initial-branch=main")
+    (repo / "README.md").write_text("# repo\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "chore: baseline")
+    return repo
+
+
+class TestSessionWorktreeCreate:
+    def test_create_returns_path_and_branch(self, tmp_path: Path) -> None:
+        from exo.stdlib.sidecar import create_session_worktree
+
+        repo = _init_plain_git_repo(tmp_path)
+        result = create_session_worktree(repo, "TKT-20260101-000000-AAAA", base="main")
+        assert result["created"] is True
+        assert result["branch"] == "exo/TKT-20260101-000000-AAAA"
+        wt_path = Path(result["path"])
+        assert wt_path.is_dir()
+        assert (wt_path / "README.md").exists()
+
+    def test_create_idempotent_for_same_ticket(self, tmp_path: Path) -> None:
+        from exo.stdlib.sidecar import create_session_worktree
+
+        repo = _init_plain_git_repo(tmp_path)
+        first = create_session_worktree(repo, "TKT-20260101-000000-IDEM")
+        second = create_session_worktree(repo, "TKT-20260101-000000-IDEM")
+        assert first["path"] == second["path"]
+        assert second["created"] is False
+
+    def test_create_at_explicit_path(self, tmp_path: Path) -> None:
+        from exo.stdlib.sidecar import create_session_worktree
+
+        repo = _init_plain_git_repo(tmp_path)
+        custom = tmp_path / "explicit-wt"
+        result = create_session_worktree(repo, "TKT-20260101-000000-PATH", path=str(custom))
+        assert Path(result["path"]).resolve() == custom.resolve()
+        assert custom.is_dir()
+
+    def test_create_refuses_busy_path(self, tmp_path: Path) -> None:
+        from exo.stdlib.sidecar import create_session_worktree
+
+        repo = _init_plain_git_repo(tmp_path)
+        target = tmp_path / "busy"
+        target.mkdir()
+        (target / "stuff.txt").write_text("not a worktree", encoding="utf-8")
+
+        from exo.kernel.errors import ExoError
+
+        with pytest.raises(ExoError) as exc_info:
+            create_session_worktree(repo, "TKT-20260101-000000-BUSY", path=str(target))
+        assert exc_info.value.code == "WORKTREE_PATH_EXISTS"
+
+    def test_create_refuses_non_git(self, tmp_path: Path) -> None:
+        from exo.stdlib.sidecar import create_session_worktree
+
+        # Plain dir without git init
+        not_repo = tmp_path / "not-a-repo"
+        not_repo.mkdir()
+
+        from exo.kernel.errors import ExoError
+
+        with pytest.raises(ExoError) as exc_info:
+            create_session_worktree(not_repo, "TKT-20260101-000000-NOGT")
+        assert exc_info.value.code == "GIT_REPO_REQUIRED"
+
+
+class TestSessionWorktreeListAndRemove:
+    def test_list_finds_session_worktrees(self, tmp_path: Path) -> None:
+        from exo.stdlib.sidecar import create_session_worktree, list_session_worktrees
+
+        repo = _init_plain_git_repo(tmp_path)
+        create_session_worktree(repo, "TKT-20260101-000000-LST1")
+        create_session_worktree(repo, "TKT-20260101-000000-LST2")
+
+        worktrees = list_session_worktrees(repo)
+        ticket_ids = {wt["ticket_id"] for wt in worktrees}
+        assert "TKT-20260101-000000-LST1" in ticket_ids
+        assert "TKT-20260101-000000-LST2" in ticket_ids
+
+    def test_list_excludes_main_checkout(self, tmp_path: Path) -> None:
+        """The primary repo checkout (branch=main) is not a session worktree."""
+        from exo.stdlib.sidecar import list_session_worktrees
+
+        repo = _init_plain_git_repo(tmp_path)
+        worktrees = list_session_worktrees(repo)
+        # Primary checkout is on main, not exo/<ticket>; expect zero entries
+        assert worktrees == []
+
+    def test_remove_takes_down_worktree(self, tmp_path: Path) -> None:
+        from exo.stdlib.sidecar import (
+            create_session_worktree,
+            list_session_worktrees,
+            remove_session_worktree,
+        )
+
+        repo = _init_plain_git_repo(tmp_path)
+        result = create_session_worktree(repo, "TKT-20260101-000000-REMV")
+        wt_path = result["path"]
+
+        out = remove_session_worktree(repo, wt_path)
+        assert out["removed"] is True
+        assert not Path(wt_path).exists()
+        assert all(wt["ticket_id"] != "TKT-20260101-000000-REMV" for wt in list_session_worktrees(repo))
+
+    def test_remove_non_worktree_returns_no_op(self, tmp_path: Path) -> None:
+        from exo.stdlib.sidecar import remove_session_worktree
+
+        repo = _init_plain_git_repo(tmp_path)
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        out = remove_session_worktree(repo, plain)
+        assert out["removed"] is False
+        assert out["reason"] == "not_a_worktree"

@@ -1179,6 +1179,68 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_worktree_create(
+        ticket_id: str,
+        repo: str = ".",
+        base: str = "main",
+        path: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a per-ticket git worktree for isolated session work (closes feedback #2)."""
+        try:
+            from exo.stdlib.sidecar import create_session_worktree
+
+            data = create_session_worktree(Path(repo).resolve(), ticket_id=ticket_id, base=base, path=path)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_worktree_remove(path: str, repo: str = ".", force: bool = False) -> dict[str, Any]:
+        """Remove a per-ticket session worktree."""
+        try:
+            from exo.stdlib.sidecar import remove_session_worktree
+
+            data = remove_session_worktree(Path(repo).resolve(), path=path, force=force)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
+    def exo_worktrees(repo: str = ".") -> dict[str, Any]:
+        """List session worktrees (branches matching exo/<ticket-id>)."""
+        try:
+            from exo.stdlib.sidecar import list_session_worktrees
+
+            entries = list_session_worktrees(Path(repo).resolve())
+            return {
+                "ok": True,
+                "data": {"worktrees": entries, "count": len(entries)},
+                "events": [],
+                "blocked": False,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_features(
         repo: str = ".",
         status: str | None = None,
