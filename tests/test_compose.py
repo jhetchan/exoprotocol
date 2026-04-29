@@ -896,3 +896,135 @@ class TestSessionFinishComposedPolicy:
         # After finish, sealed policy should exist (auto-recomposed)
         sealed_path = repo / ".exo" / "policy.sealed.json"
         assert sealed_path.exists()
+
+
+# ════════════════════════════════════════════════════════════════════
+# exo brief (closes feedback #1)
+# ════════════════════════════════════════════════════════════════════
+
+
+class TestComposeBrief:
+    """compose_brief is read-only: never acquires lock, never writes mementos."""
+
+    def test_brief_returns_rules_from_governance_lock(self, tmp_path: Path) -> None:
+        from exo.stdlib.compose import compose_brief
+
+        repo = _bootstrap_repo(tmp_path)
+        brief = compose_brief(repo)
+        assert brief["governance_loaded"] is True
+        rule_ids = [r["id"] for r in brief["rules"]]
+        assert "RULE-SEC-001" in rule_ids
+        assert "RULE-LOCK-001" in rule_ids
+
+    def test_brief_handles_missing_governance(self, tmp_path: Path) -> None:
+        from exo.stdlib.compose import compose_brief
+
+        # No governance.lock.json
+        brief = compose_brief(tmp_path)
+        assert brief["governance_loaded"] is False
+        assert brief["rules"] == []
+
+    def test_brief_lists_active_intents(self, tmp_path: Path) -> None:
+        from exo.kernel import tickets as tickets_mod
+        from exo.stdlib.compose import compose_brief
+
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "INTENT-001",
+                "kind": "intent",
+                "title": "Active intent",
+                "intent": "Active intent",
+                "brain_dump": "x",
+                "boundary": "do not touch tests/",
+                "status": "todo",
+            },
+        )
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "INTENT-002",
+                "kind": "intent",
+                "title": "Done intent",
+                "intent": "Done intent",
+                "brain_dump": "y",
+                "status": "done",
+            },
+        )
+        brief = compose_brief(repo)
+        intent_ids = [i["id"] for i in brief["active_intents"]]
+        assert "INTENT-001" in intent_ids
+        assert "INTENT-002" not in intent_ids
+
+    def test_brief_max_intents_caps_list(self, tmp_path: Path) -> None:
+        from exo.kernel import tickets as tickets_mod
+        from exo.stdlib.compose import compose_brief
+
+        repo = _bootstrap_repo(tmp_path)
+        for n in range(5):
+            tickets_mod.save_ticket(
+                repo,
+                {
+                    "id": f"INTENT-{n:03d}",
+                    "kind": "intent",
+                    "title": f"intent {n}",
+                    "intent": f"intent {n}",
+                    "brain_dump": "x",
+                    "status": "todo",
+                },
+            )
+        brief = compose_brief(repo, max_intents=2)
+        assert len(brief["active_intents"]) == 2
+
+    def test_brief_does_not_acquire_lock(self, tmp_path: Path) -> None:
+        """Critical contract: exo brief is read-only — no ticket lock written."""
+        from exo.stdlib.compose import compose_brief
+
+        repo = _bootstrap_repo(tmp_path)
+        compose_brief(repo)
+        lock_file = repo / ".exo" / "locks" / "ticket.lock.json"
+        assert not lock_file.exists(), "compose_brief must not acquire a ticket lock"
+
+    def test_brief_does_not_create_memento(self, tmp_path: Path) -> None:
+        """Critical contract: exo brief writes nothing to memory/sessions."""
+        from exo.stdlib.compose import compose_brief
+
+        repo = _bootstrap_repo(tmp_path)
+        compose_brief(repo)
+        mementos_dir = repo / ".exo" / "memory" / "sessions"
+        # Either dir doesn't exist OR is empty after a brief call
+        if mementos_dir.exists():
+            assert not list(mementos_dir.iterdir()), "compose_brief must not write mementos"
+
+    def test_format_brief_human_includes_rules_and_intents(self, tmp_path: Path) -> None:
+        from exo.kernel import tickets as tickets_mod
+        from exo.stdlib.compose import compose_brief, format_brief_human
+
+        repo = _bootstrap_repo(tmp_path)
+        tickets_mod.save_ticket(
+            repo,
+            {
+                "id": "INTENT-001",
+                "kind": "intent",
+                "title": "Build the thing",
+                "intent": "Build the thing",
+                "brain_dump": "x",
+                "status": "todo",
+            },
+        )
+        text = format_brief_human(compose_brief(repo))
+        assert "ExoProtocol Governance Brief" in text
+        assert "RULE-SEC-001" in text
+        assert "INTENT-001" in text
+        assert "Build the thing" in text
+
+    def test_brief_via_cli_no_session_artifacts(self, tmp_path: Path, monkeypatch: Any) -> None:
+        from exo.cli import main as cli_main_local
+
+        repo = _bootstrap_repo(tmp_path)
+        monkeypatch.chdir(repo)
+        rc = cli_main_local(["brief"])
+        assert rc == 0
+        # No lock, no memento — same contract enforced through CLI
+        assert not (repo / ".exo" / "locks" / "ticket.lock.json").exists()

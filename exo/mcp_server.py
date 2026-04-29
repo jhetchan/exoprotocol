@@ -1146,6 +1146,39 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_brief(
+        repo: str = ".",
+        max_intents: int = 10,
+        max_reflections: int = 5,
+    ) -> dict[str, Any]:
+        """Read-only governance summary (closes feedback #1).
+
+        Returns active rules, default budgets, checks allowlist, active
+        intents, and recent operational learnings. Does NOT acquire a
+        ticket lock, write a memento, or register a session — this is
+        a context primer for read-only work, not a governed write.
+        """
+        try:
+            from exo.stdlib.compose import compose_brief, format_brief_human
+
+            data = compose_brief(
+                Path(repo).resolve(),
+                max_intents=max_intents,
+                max_reflections=max_reflections,
+            )
+            data["_human_summary"] = format_brief_human(data)
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_features(
         repo: str = ".",
         status: str | None = None,

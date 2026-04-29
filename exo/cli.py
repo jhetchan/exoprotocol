@@ -438,6 +438,13 @@ def _build_parser() -> argparse.ArgumentParser:
     compose_cmd = sub.add_parser("compose", help="Compile all governance subsystems into sealed policy artifact")
     compose_cmd.add_argument("--dry-run", action="store_true", help="Preview policy without writing file")
 
+    brief_cmd = sub.add_parser(
+        "brief",
+        help="Read-only governance summary (no session, no lock, no memento). Closes feedback #1.",
+    )
+    brief_cmd.add_argument("--max-intents", type=int, default=10, help="Max active intents to show")
+    brief_cmd.add_argument("--max-reflections", type=int, default=5, help="Max reflections to show")
+
     sub.add_parser(
         "sandbox-policy",
         help="Preview sandbox permissions derived from constitution deny rules",
@@ -1286,6 +1293,17 @@ def main(argv: list[str] | None = None) -> int:
         elif cmd == "compose":
             repo_path = Path(args.repo).resolve()
             data = compose_policy(repo_path, dry_run=bool(args.dry_run))
+            response = _ok(data)
+        elif cmd == "brief":
+            from exo.stdlib.compose import compose_brief, format_brief_human
+
+            repo_path = Path(args.repo).resolve()
+            data = compose_brief(
+                repo_path,
+                max_intents=args.max_intents,
+                max_reflections=args.max_reflections,
+            )
+            data["_human_summary"] = format_brief_human(data)
             response = _ok(data)
         elif cmd == "sandbox-policy":
             repo_path = Path(args.repo).resolve()
