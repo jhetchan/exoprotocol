@@ -1097,6 +1097,44 @@ if FastMCP:
             }
 
     @mcp.tool()
+    def exo_pr_merge(
+        pr_number: int,
+        repo: str = ".",
+        method: str = "squash",
+        base: str = "main",
+        head: str = "HEAD",
+        drift_threshold: float = 0.7,
+        break_glass_reason: str = "",
+    ) -> dict[str, Any]:
+        """Merge a PR via GitHub API after passing pr-check (closes feedback #3).
+
+        NEVER touches the local checkout. Refuses to merge if pr-check
+        verdict is not 'pass' unless break_glass_reason is provided.
+        """
+        try:
+            from exo.stdlib.pr_check import pr_merge
+
+            data = pr_merge(
+                Path(repo).resolve(),
+                pr_number=pr_number,
+                method=method,
+                base=base,
+                head=head,
+                drift_threshold=drift_threshold,
+                break_glass_reason=break_glass_reason,
+            )
+            return {"ok": True, "data": data, "events": [], "blocked": False}
+        except ExoError as err:
+            return {"ok": False, "error": err.to_dict(), "events": [], "blocked": err.blocked}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "error": {"code": "UNHANDLED_EXCEPTION", "message": str(exc)},
+                "events": [],
+                "blocked": False,
+            }
+
+    @mcp.tool()
     def exo_adapter_generate(
         repo: str = ".",
         targets: list[str] | None = None,

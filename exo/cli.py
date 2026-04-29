@@ -40,7 +40,7 @@ from exo.stdlib.features import (
 from exo.stdlib.gc import format_gc_human, gc_to_dict
 from exo.stdlib.gc import gc as run_gc
 from exo.stdlib.metrics import compute_metrics, format_metrics_human
-from exo.stdlib.pr_check import format_pr_check_human, pr_check, pr_check_to_dict
+from exo.stdlib.pr_check import format_pr_check_human, pr_check, pr_check_to_dict, pr_merge
 from exo.stdlib.reflect import (
     dismiss_reflection,
     format_reflections_human,
@@ -407,6 +407,22 @@ def _build_parser() -> argparse.ArgumentParser:
     pr_check_cmd.add_argument("--base", default="main", help="Base branch/ref (default: main)")
     pr_check_cmd.add_argument("--head", default="HEAD", help="Head ref (default: HEAD)")
     pr_check_cmd.add_argument("--drift-threshold", type=float, default=0.7, help="Drift score threshold for warnings")
+
+    pr_merge_cmd = sub.add_parser(
+        "pr-merge",
+        help="Merge a PR via GitHub API after passing pr-check (closes feedback #3)",
+    )
+    pr_merge_cmd.add_argument("pr_number", type=int, help="PR number to merge")
+    pr_merge_cmd.add_argument("--method", default="squash", choices=["merge", "squash", "rebase"])
+    pr_merge_cmd.add_argument("--base", default="main")
+    pr_merge_cmd.add_argument("--head", default="HEAD")
+    pr_merge_cmd.add_argument("--drift-threshold", type=float, default=0.7)
+    pr_merge_cmd.add_argument(
+        "--break-glass-reason",
+        default="",
+        dest="break_glass_reason",
+        help="Reason to override a non-pass pr-check verdict (audit trail).",
+    )
 
     adapter_cmd = sub.add_parser(
         "adapter-generate",
@@ -1207,6 +1223,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             data = pr_check_to_dict(report)
             data["_human_summary"] = format_pr_check_human(report)
+            response = _ok(data)
+        elif cmd == "pr-merge":
+            repo_path = Path(args.repo).resolve()
+            data = pr_merge(
+                repo_path,
+                pr_number=args.pr_number,
+                method=args.method,
+                base=args.base,
+                head=args.head,
+                drift_threshold=args.drift_threshold,
+                break_glass_reason=args.break_glass_reason,
+            )
             response = _ok(data)
         elif cmd == "adapter-generate":
             repo_path = Path(args.repo).resolve()

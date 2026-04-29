@@ -478,3 +478,136 @@ def format_pr_check_human(report: PRCheckReport) -> str:
             lines.append(f"    - {r}")
 
     return "\n".join(lines)
+
+
+# ── PR Merge via GitHub API (closes feedback #3) ──────────────────
+
+
+_VALID_MERGE_METHODS = {"merge", "squash", "rebase"}
+
+
+def pr_merge(
+    repo: Path,
+    pr_number: int,
+    *,
+    method: str = "squash",
+    base: str = "main",
+    head: str = "HEAD",
+    drift_threshold: float = 0.7,
+    break_glass_reason: str = "",
+    runner: Any = None,
+) -> dict[str, Any]:
+    """Merge a PR via GitHub API after passing exo pr-check.
+
+    Closes feedback #3: PR automation should merge via GitHub API by
+    default — never via local checkout of main, which trips on worktree
+    ownership and partial state. This function:
+
+      1. Runs `pr_check()` (governance integrity, governed sessions,
+         scope violations, drift) on the local commits between base..head.
+      2. Refuses to merge if verdict != "pass" unless ``break_glass_reason``
+         is non-empty.
+      3. Calls `gh api repos/:o/:r/pulls/:n/merge` with the requested
+         merge method. NEVER touches the local checkout — no fetch, no
+         switch, no pull.
+
+    The ``runner`` parameter exists for tests: a callable taking a list
+    of CLI args and returning (returncode, stdout, stderr). Defaults to
+    a real subprocess.run wrapper around `gh`.
+    """
+    method = method.strip().lower()
+    if method not in _VALID_MERGE_METHODS:
+        raise ExoError(
+            code="INVALID_MERGE_METHOD",
+            message=f"merge method must be one of {sorted(_VALID_MERGE_METHODS)}, got {method!r}",
+            blocked=True,
+        )
+    if pr_number <= 0:
+        raise ExoError(
+            code="INVALID_PR_NUMBER",
+            message=f"pr_number must be a positive integer, got {pr_number}",
+            blocked=True,
+        )
+
+    report = pr_check(repo, base_ref=base, head_ref=head, drift_threshold=drift_threshold)
+
+    gating: dict[str, Any] = {
+        "verdict": report.verdict,
+        "ungoverned_count": int(report.ungoverned_commits),
+        "scope_violations": report.scope_violations,
+        "reasons": list(report.reasons),
+    }
+
+    if report.verdict != "pass" and not break_glass_reason.strip():
+        return {
+            "ok": False,
+            "merged": False,
+            "verdict": report.verdict,
+            "pr_number": pr_number,
+            "method": method,
+            "gating": gating,
+            "reason": "PR governance check did not pass; pass --break-glass-reason to override.",
+        }
+
+    if runner is None:
+
+        def runner(args: list[str]) -> tuple[int, str, str]:
+            proc = subprocess.run(
+                args,
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return proc.returncode, proc.stdout, proc.stderr
+
+    # Resolve owner/repo via gh CLI without touching local checkout.
+    code_repo, out_repo, err_repo = runner(["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+    if code_repo != 0:
+        return {
+            "ok": False,
+            "merged": False,
+            "verdict": report.verdict,
+            "pr_number": pr_number,
+            "method": method,
+            "gating": gating,
+            "reason": f"gh repo view failed: {err_repo.strip() or out_repo.strip() or 'unknown error'}",
+        }
+    repo_slug = out_repo.strip()
+
+    # Issue API merge: no local checkout, no fetch, no switch.
+    api_args = [
+        "gh",
+        "api",
+        "-X",
+        "PUT",
+        f"repos/{repo_slug}/pulls/{pr_number}/merge",
+        "-f",
+        f"merge_method={method}",
+    ]
+    code, stdout, stderr = runner(api_args)
+    if code != 0:
+        return {
+            "ok": False,
+            "merged": False,
+            "verdict": report.verdict,
+            "pr_number": pr_number,
+            "method": method,
+            "repo": repo_slug,
+            "gating": gating,
+            "reason": f"gh api merge failed: {stderr.strip() or stdout.strip() or 'unknown error'}",
+            "stderr": stderr,
+            "stdout": stdout,
+        }
+
+    return {
+        "ok": True,
+        "merged": True,
+        "verdict": report.verdict,
+        "pr_number": pr_number,
+        "method": method,
+        "repo": repo_slug,
+        "gating": gating,
+        "break_glass_reason": break_glass_reason.strip() or None,
+        "api_response": stdout,
+    }
