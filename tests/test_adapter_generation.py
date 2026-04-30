@@ -801,6 +801,70 @@ class TestCIManifestConformance:
         app_idx = content.index("Install application dependencies")
         assert exo_idx < app_idx
 
+    def test_app_install_autodetects_test_extras_from_pyproject(self, tmp_path: Path) -> None:
+        """Python repo with [test] extras gets `pip install -e \".[test]\"` by default."""
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.0.1"\n\n[project.optional-dependencies]\ntest = ["pytest>=8"]\n',
+            encoding="utf-8",
+        )
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert "Install application dependencies" in content
+        assert 'pip install -e ".[test]"' in content
+
+    def test_app_install_autodetects_dev_extras_when_no_test(self, tmp_path: Path) -> None:
+        """Falls through to [dev] extras when [test] is absent."""
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.0.1"\n\n[project.optional-dependencies]\ndev = ["pytest>=8"]\n',
+            encoding="utf-8",
+        )
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert 'pip install -e ".[dev]"' in content
+
+    def test_app_install_autodetects_plain_when_no_extras(self, tmp_path: Path) -> None:
+        """A bare Python project still gets `pip install -e .` so checks have the package."""
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "pyproject.toml").write_text('[project]\nname = "demo"\nversion = "0.0.1"\n', encoding="utf-8")
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert "Install application dependencies" in content
+        assert "pip install -e ." in content
+        # And NOT one of the extras forms (would be wrong if no extras defined).
+        assert 'pip install -e ".[' not in content
+
+    def test_app_install_no_pyproject_no_step(self, tmp_path: Path) -> None:
+        """Repo without pyproject.toml renders no app install step (non-Python case)."""
+        repo = _bootstrap_repo(tmp_path)
+        assert not (repo / "pyproject.toml").exists()
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert "Install application dependencies" not in content
+
+    def test_app_install_explicit_empty_string_opts_out(self, tmp_path: Path) -> None:
+        """Setting `app_install_command: ""` suppresses the auto-detected default."""
+        repo = _bootstrap_repo(tmp_path, ci_config={"app_install_command": ""})
+        # Pyproject present — without the opt-out, auto-detect would render a step.
+        (repo / "pyproject.toml").write_text('[project]\nname = "demo"\nversion = "0.0.1"\n', encoding="utf-8")
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert "Install application dependencies" not in content
+
+    def test_app_install_explicit_value_overrides_autodetect(self, tmp_path: Path) -> None:
+        """Explicit ci.app_install_command wins over the pyproject auto-detection."""
+        repo = _bootstrap_repo(tmp_path, ci_config={"app_install_command": "poetry install --no-root --with test"})
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.0.1"\n\n[project.optional-dependencies]\ntest = ["pytest>=8"]\n',
+            encoding="utf-8",
+        )
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert "poetry install --no-root --with test" in content
+        # Auto-detected form must NOT also appear (only the explicit one).
+        assert 'pip install -e ".[test]"' not in content
+
     def test_checks_allowlist_appears_in_ci(self, tmp_path: Path) -> None:
         """Governed checks from config appear as a workflow step."""
         repo = _bootstrap_repo(tmp_path, checks=["pytest tests/", "mypy src/"])

@@ -130,7 +130,7 @@ Detection rules trigger follow-ups for: uncovered code, unbound features, high d
 | `ci.drift_threshold` | float | 0.7 | Drift score threshold for PR governance checks |
 | `ci.python_version` | str | "3.11" | Python version for CI workflow |
 | `ci.install_command` | str | "pip install exoprotocol==&lt;generating version&gt;" | Command to install ExoProtocol in CI. Default pins to the version that generated the workflow; override (e.g. `pip install -e .`) only if your repo IS exoprotocol or you vendor it locally. |
-| `ci.app_install_command` | str | "" (skipped) | Optional second install step that runs after ExoProtocol install and before `Run governed checks`. Set this when commands in `checks_allowlist` (pytest, mypy, etc.) need your application installed or its test/dev extras. Examples: `pip install -e ".[test]"`, `pip install -r requirements-dev.txt`, `poetry install --no-root --with test`. |
+| `ci.app_install_command` | str | auto-detected (see below) | Optional second install step that runs after ExoProtocol install and before `Run governed checks`. Use it so commands in `checks_allowlist` (pytest, mypy, etc.) find the application's package and test/dev extras. **When the key is omitted**, the generator auto-detects from `pyproject.toml`: prefers `pip install -e ".[test]"` if `[project.optional-dependencies].test` is defined, falls back to `[dev]`, then plain `pip install -e .`; if no `pyproject.toml`/`[project]` table exists, the step is skipped. **Set the key explicitly** to override (e.g. `pip install -r requirements-dev.txt`, `poetry install --no-root --with test`); set it to `""` to opt out (non-Python repos, governance-only repos). |
 
 Used by `exo adapter-generate --target ci` to generate `.github/workflows/exo-governance.yml`.
 

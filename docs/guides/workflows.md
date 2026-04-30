@@ -187,14 +187,22 @@ ci:
   # version that generated the workflow. Override only if your repo IS exoprotocol
   # or you vendor it locally (e.g. install_command: "pip install -e .").
   install_command: "pip install exoprotocol==<version>"
-  # app_install_command (optional) runs as a SECOND install step, before
-  # `Run governed checks`. Set it when commands in checks_allowlist (pytest,
-  # mypy, ruff, …) need your application installed or its test/dev extras —
-  # `pip install exoprotocol` does not provide those. Examples:
-  #   app_install_command: "pip install -e \".[test]\""
+  # app_install_command runs as a SECOND install step, before `Run governed
+  # checks`, so commands in checks_allowlist (pytest, mypy, ruff, …) find the
+  # application's deps — `pip install exoprotocol` does not provide those.
+  #
+  # OMIT THIS KEY for auto-detection from pyproject.toml:
+  #   [project.optional-dependencies].test  ->  pip install -e ".[test]"
+  #   [project.optional-dependencies].dev   ->  pip install -e ".[dev]"
+  #   bare [project]                        ->  pip install -e .
+  #   no pyproject / no [project]           ->  step skipped
+  #
+  # Override with an explicit string:
   #   app_install_command: "pip install -r requirements-dev.txt"
   #   app_install_command: "poetry install --no-root --with test"
-  app_install_command: ""
+  #
+  # Opt out (non-Python repo, governance-only repo) with empty string:
+  #   app_install_command: ""
 ```
 
 > Why a pin and not `pip install -e .`? In a governed application repo, `pip install -e .`

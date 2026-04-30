@@ -525,6 +525,42 @@ def _default_ci_install_command() -> str:
         return "pip install exoprotocol"
 
 
+def _default_app_install_command(repo: Path) -> str:
+    """Auto-detect a sensible app install command from ``pyproject.toml``.
+
+    Without this, an opt-in ``ci.app_install_command`` left every governed
+    Python repo with broken ``pytest``/``mypy``/``ruff`` checks until the
+    maintainer realised they had to add new config and regenerate. Picking
+    the obvious default here makes the common case work after a plain
+    ``exo adapter-generate --target ci``.
+
+    Returns ``""`` (skip step) when no ``pyproject.toml`` is present or the
+    file has no ``[project]`` table — non-Python repos and bare governance
+    repos opt themselves out.
+    """
+    pyproject = repo / "pyproject.toml"
+    if not pyproject.exists():
+        return ""
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:
+        return ""
+    try:
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return ""
+    project = data.get("project") or {}
+    if not project:
+        return ""
+    extras = project.get("optional-dependencies") or {}
+    if "test" in extras:
+        return 'pip install -e ".[test]"'
+    if "dev" in extras:
+        return 'pip install -e ".[dev]"'
+    return "pip install -e ."
+
+
 def generate_ci(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str:
     """Generate GitHub Action workflow for PR governance checks.
 
@@ -534,7 +570,13 @@ def generate_ci(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str
     drift_threshold = ci_config.get("drift_threshold", 0.7)
     python_version = str(ci_config.get("python_version", "3.11"))
     install_cmd = ci_config.get("install_command") or _default_ci_install_command()
-    app_install_cmd = str(ci_config.get("app_install_command", "")).strip()
+    # Distinguish "key absent" (auto-detect) from "explicit empty string"
+    # (opt out). YAML/JSON `app_install_command: ""` is a valid way for a
+    # non-Python repo to suppress the auto-detected default.
+    if "app_install_command" in ci_config:
+        app_install_cmd = str(ci_config.get("app_install_command") or "").strip()
+    else:
+        app_install_cmd = _default_app_install_command(repo).strip()
     governance_hash = lock.get("source_hash", "unknown")
 
     # Optional second install step for the application's own dependencies.
