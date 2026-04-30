@@ -762,6 +762,45 @@ class TestCIManifestConformance:
         else:
             assert "pip install exoprotocol" in content
 
+    def test_app_install_command_omitted_by_default(self, tmp_path: Path) -> None:
+        """Without ci.app_install_command, no application-install step is rendered."""
+        repo = _bootstrap_repo(tmp_path)
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert "Install application dependencies" not in content
+
+    def test_app_install_command_renders_step(self, tmp_path: Path) -> None:
+        """ci.app_install_command produces a separate step that runs verbatim."""
+        cmd = 'pip install -e ".[test]"'
+        repo = _bootstrap_repo(tmp_path, ci_config={"app_install_command": cmd})
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        assert "Install application dependencies" in content
+        assert cmd in content
+
+    def test_app_install_command_runs_before_checks(self, tmp_path: Path) -> None:
+        """App install must happen before `Run governed checks` so pytest et al. see deps."""
+        repo = _bootstrap_repo(
+            tmp_path,
+            ci_config={"app_install_command": "pip install -r requirements-dev.txt"},
+            checks=["pytest tests/"],
+        )
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        app_idx = content.index("Install application dependencies")
+        checks_idx = content.index("Run governed checks")
+        assert app_idx < checks_idx
+
+    def test_app_install_command_runs_after_exoprotocol(self, tmp_path: Path) -> None:
+        """ExoProtocol installs first; app install second. Order matters if app pulls
+        a different exoprotocol via a transitive dep — the explicit pin wins."""
+        repo = _bootstrap_repo(tmp_path, ci_config={"app_install_command": "pip install -e ."})
+        result = generate_adapters(repo, targets=["ci"], dry_run=True)
+        content = result["files"]["ci"]["content"]
+        exo_idx = content.index("Install ExoProtocol")
+        app_idx = content.index("Install application dependencies")
+        assert exo_idx < app_idx
+
     def test_checks_allowlist_appears_in_ci(self, tmp_path: Path) -> None:
         """Governed checks from config appear as a workflow step."""
         repo = _bootstrap_repo(tmp_path, checks=["pytest tests/", "mypy src/"])

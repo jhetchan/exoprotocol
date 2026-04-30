@@ -183,15 +183,24 @@ Configure thresholds in `.exo/config.yaml`:
 ci:
   drift_threshold: 0.7
   python_version: "3.11"
-  # Default pins exoprotocol to the version that generated the workflow.
-  # Override only if your repo IS exoprotocol or you vendor it locally
-  # (e.g. install_command: "pip install -e .").
+  # install_command installs ExoProtocol on the runner. Default pins it to the
+  # version that generated the workflow. Override only if your repo IS exoprotocol
+  # or you vendor it locally (e.g. install_command: "pip install -e .").
   install_command: "pip install exoprotocol==<version>"
+  # app_install_command (optional) runs as a SECOND install step, before
+  # `Run governed checks`. Set it when commands in checks_allowlist (pytest,
+  # mypy, ruff, …) need your application installed or its test/dev extras —
+  # `pip install exoprotocol` does not provide those. Examples:
+  #   app_install_command: "pip install -e \".[test]\""
+  #   app_install_command: "pip install -r requirements-dev.txt"
+  #   app_install_command: "poetry install --no-root --with test"
+  app_install_command: ""
 ```
 
 > Why a pin and not `pip install -e .`? In a governed application repo, `pip install -e .`
 > installs the application package, not exoprotocol — the next workflow step then fails
-> with `ModuleNotFoundError: No module named 'exo'`.
+> with `ModuleNotFoundError: No module named 'exo'`. Use `app_install_command` to install
+> the application separately so checks like `pytest` find their deps.
 
 You can also run `exo pr-check` locally before pushing:
 

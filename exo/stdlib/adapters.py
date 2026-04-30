@@ -534,7 +534,19 @@ def generate_ci(repo: Path, lock: dict[str, Any], config: dict[str, Any]) -> str
     drift_threshold = ci_config.get("drift_threshold", 0.7)
     python_version = str(ci_config.get("python_version", "3.11"))
     install_cmd = ci_config.get("install_command") or _default_ci_install_command()
+    app_install_cmd = str(ci_config.get("app_install_command", "")).strip()
     governance_hash = lock.get("source_hash", "unknown")
+
+    # Optional second install step for the application's own dependencies.
+    # The ExoProtocol install step only puts `exo` on the runner; commands in
+    # `checks_allowlist` (pytest, mypy, ruff, …) usually need the application's
+    # test/dev extras too, which `pip install exoprotocol==X.Y.Z` cannot provide.
+    app_install_step = ""
+    if app_install_cmd:
+        app_install_step = f"""
+      - name: Install application dependencies
+        run: {app_install_cmd}
+"""
 
     checks_allowlist = config.get("checks_allowlist", [])
     checks_step = ""
@@ -579,7 +591,7 @@ jobs:
 
       - name: Install ExoProtocol
         run: {install_cmd}
-
+{app_install_step}
       - name: Requirement + acceptance criteria traceability
         if: hashFiles('.exo/requirements.yaml') != ''
         run: python3 -m exo.cli trace-reqs --check-tests
