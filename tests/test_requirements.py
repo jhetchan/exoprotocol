@@ -23,6 +23,7 @@ from exo.stdlib.requirements import (
     REQ_TAG_PATTERN,
     VALID_PRIORITIES,
     VALID_STATUSES,
+    _scan_acc_in_python,
     format_req_trace_human,
     load_requirements,
     req_trace_to_dict,
@@ -1409,3 +1410,48 @@ class TestCLICheckTests:
         data = json.loads(result.stdout)
         assert data["data"]["passed"]
         assert data["data"]["acc_total"] == 0
+
+
+# ── ACC Scanner String-Literal Immunity ─────────────────────────────
+
+
+class TestAccScannerStringLiteralImmunity:
+    """Tokenize-based scanner must not match @acc: inside Python string literals."""
+
+    def test_string_literal_yields_no_refs(self, tmp_path: Path) -> None:
+        """A @acc: marker embedded in a string literal must not be flagged."""
+        src = 'f = "# @acc: ACC-001"\n'
+        refs = _scan_acc_in_python(tmp_path / "test_fake.py", src)
+        assert refs == []
+
+    def test_real_comment_yields_one_ref(self, tmp_path: Path) -> None:
+        """A genuine @acc: comment must produce exactly one ref."""
+        src = "# @acc: ACC-002\ndef test_something(): pass\n"
+        refs = _scan_acc_in_python(tmp_path / "test_real.py", src)
+        assert len(refs) == 1
+        assert refs[0].acc_id == "ACC-002"
+
+    def test_mixed_source_yields_only_comment_ref(self, tmp_path: Path) -> None:
+        """Only the comment annotation counts; the string-literal one must be ignored."""
+        src = 'f = "# @acc: ACC-001"\n# @acc: ACC-002\ndef test_something(): pass\n'
+        refs = _scan_acc_in_python(tmp_path / "test_mixed.py", src)
+        assert len(refs) == 1
+        assert refs[0].acc_id == "ACC-002"
+
+    def test_tokenize_error_returns_empty(self, tmp_path: Path) -> None:
+        """Syntactically broken Python must not raise; scanner returns empty list."""
+        src = '"""\n'  # unterminated triple-quote forces tokenize.TokenError
+        refs = _scan_acc_in_python(tmp_path / "test_broken.py", src)
+        assert refs == []
+
+    def test_non_python_file_line_regex_preserved(self, tmp_path: Path) -> None:
+        """Non-Python files (.ts) must still be scanned via the line-regex path."""
+        repo = _bootstrap_repo(tmp_path)
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        (repo / "tests" / "test_real.ts").write_text(
+            "// @acc: ACC-003\ntest('login', () => {});\n",
+            encoding="utf-8",
+        )
+        refs = scan_acc_refs(repo)
+        assert len(refs) == 1
+        assert refs[0].acc_id == "ACC-003"

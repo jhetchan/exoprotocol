@@ -12,7 +12,9 @@ check at session-finish or in CI.
 
 from __future__ import annotations
 
+import io
 import re
+import tokenize
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -321,6 +323,31 @@ def _scan_test_files(repo: Path, globs: list[str] | None = None) -> list[Path]:
     return sorted(found)
 
 
+def _scan_acc_in_python(file_path: Path, source: str) -> list[AccTestRef]:
+    """Scan a Python source for @acc: annotations using the tokenizer.
+
+    Only COMMENT tokens are checked so occurrences inside string literals
+    (e.g. test fixtures that quote the marker as data) are ignored.
+    TokenizeError is swallowed — the caller gets an empty list for that file.
+    """
+    refs: list[AccTestRef] = []
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    except tokenize.TokenError:
+        return refs
+    for tok in tokens:
+        if tok.type != tokenize.COMMENT:
+            continue
+        m = ACC_TAG_PATTERN.search(tok.string)
+        if m:
+            raw_ids = m.group(1)
+            for aid in raw_ids.split(","):
+                aid = aid.strip()
+                if aid:
+                    refs.append(AccTestRef(acc_id=aid, file=str(file_path), line=tok.start[0]))
+    return refs
+
+
 def scan_acc_refs(repo: Path, *, globs: list[str] | None = None) -> list[AccTestRef]:
     """Scan test files for @acc: annotations."""
     repo = Path(repo).resolve()
@@ -329,26 +356,24 @@ def scan_acc_refs(repo: Path, *, globs: list[str] | None = None) -> list[AccTest
 
     for filepath in files:
         try:
-            lines = filepath.read_text(encoding="utf-8", errors="replace").splitlines()
+            source = filepath.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
 
         rel = str(filepath.relative_to(repo))
 
-        for line_num, line in enumerate(lines, start=1):
-            match = ACC_TAG_PATTERN.search(line)
-            if match:
-                raw_ids = match.group(1)
-                for aid in raw_ids.split(","):
-                    aid = aid.strip()
-                    if aid:
-                        refs.append(
-                            AccTestRef(
-                                acc_id=aid,
-                                file=rel,
-                                line=line_num,
-                            )
-                        )
+        if filepath.suffix == ".py":
+            for ref in _scan_acc_in_python(filepath, source):
+                refs.append(AccTestRef(acc_id=ref.acc_id, file=rel, line=ref.line))
+        else:
+            for line_num, line in enumerate(source.splitlines(), start=1):
+                match = ACC_TAG_PATTERN.search(line)
+                if match:
+                    raw_ids = match.group(1)
+                    for aid in raw_ids.split(","):
+                        aid = aid.strip()
+                        if aid:
+                            refs.append(AccTestRef(acc_id=aid, file=rel, line=line_num))
 
     return refs
 
