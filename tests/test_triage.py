@@ -51,6 +51,11 @@ def _init_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-b", "main")
+    # Disable commit signing for isolated test repos so commits succeed
+    # regardless of the global gpg/ssh signing configuration.
+    _git(repo, "config", "commit.gpgsign", "false")
+    _git(repo, "config", "user.email", "test@exo.test")
+    _git(repo, "config", "user.name", "Exo Test")
     return repo
 
 
@@ -110,7 +115,13 @@ class TestTriageClassification:
         assert report.recommended_owner == "Author Two"
 
     def test_stale_when_test_predates_window_with_no_recent_behavior(self, tmp_path: Path) -> None:
-        """Test was last edited far in the past, no recent behavior change → stale."""
+        """Test was last edited far in the past; there are recent non-behavior commits → stale.
+
+        The repo has activity in the window (a governance or test-only commit), but no
+        non-test behavior change was found — so the test is stale, not ambiguous.
+        A quiet repo (zero commits in window) now returns ambiguous instead; see
+        TestTriageNestedAndRuntime.test_quiet_repo_returns_ambiguous_not_stale.
+        """
         repo = _init_repo(tmp_path)
         now = datetime.now(timezone.utc)
 
@@ -120,7 +131,14 @@ class TestTriageClassification:
             message="initial — long ago",
             when=now - timedelta(days=180),
         )
-        # No recent (within window) behavior changes
+        # Add a recent governance commit so the repo is NOT quiet in the window.
+        # This is a non-behavior commit, so the test still ends up stale.
+        _commit_at(
+            repo,
+            files={".exo/config.yaml": "version: 1\n"},
+            message="governance bump",
+            when=now - timedelta(days=2),
+        )
         report = triage_test(repo, "tests/test_foo.py", window_days=30, now=now)
         assert report.classification == "stale"
         assert "obsolete" in report.rationale.lower() or "stale" in report.rationale.lower()
@@ -265,3 +283,105 @@ class TestTriageCLI:
         monkeypatch.chdir(repo)
         rc = cli_main_local(["test-triage", "tests/test_foo.py", "--window-days", "30"])
         assert rc == 0
+
+
+class TestTriageNestedAndRuntime:
+    """Bug-fix tests: submodule / untracked / quiet-repo / regression-guard."""
+
+    def test_submodule_path_returns_unknown(self, tmp_path: Path) -> None:
+        """A test file inside a nested .git (simulated submodule) → unknown."""
+        repo = _init_repo(tmp_path)
+        now = datetime.now(timezone.utc)
+        # Create an initial commit so HEAD exists
+        _commit_at(
+            repo,
+            files={"src/app.py": "x\n"},
+            message="initial",
+            when=now - timedelta(days=5),
+        )
+        # Simulate a submodule by creating a nested .git directory and registering
+        # it via git submodule add equivalent: write .gitmodules and nested .git
+        sub_dir = repo / "vendor" / "lib"
+        sub_dir.mkdir(parents=True)
+        nested_git = sub_dir / ".git"
+        nested_git.mkdir()
+        # Write a minimal .gitmodules so `git submodule status vendor/lib` returns output
+        gitmodules = repo / ".gitmodules"
+        gitmodules.write_text('[submodule "vendor/lib"]\n\tpath = vendor/lib\n\turl = https://example.com/lib\n')
+        _git(repo, "add", ".gitmodules")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "add submodule entry",
+            env_override={
+                "GIT_AUTHOR_DATE": (now - timedelta(days=4)).astimezone(timezone.utc).isoformat(),
+                "GIT_COMMITTER_DATE": (now - timedelta(days=4)).astimezone(timezone.utc).isoformat(),
+            },
+        )
+        # Create a test file inside the faked submodule (not tracked by outer repo)
+        test_file = sub_dir / "test_lib.py"
+        test_file.write_text("def test_x(): pass\n")
+        report = triage_test(repo, "vendor/lib/test_lib.py", window_days=30, now=now)
+        assert report.classification == "unknown"
+        assert any("submodule" in ev or "untracked" in ev or "visibility" in ev for ev in report.evidence)
+
+    def test_untracked_file_returns_unknown(self, tmp_path: Path) -> None:
+        """A test file that exists on disk but is not committed → unknown."""
+        repo = _init_repo(tmp_path)
+        now = datetime.now(timezone.utc)
+        _commit_at(
+            repo,
+            files={"src/app.py": "x\n"},
+            message="initial",
+            when=now - timedelta(days=5),
+        )
+        # Create the test file without committing it
+        untracked = repo / "tests" / "test_generated.py"
+        untracked.parent.mkdir(parents=True, exist_ok=True)
+        untracked.write_text("def test_gen(): pass\n")
+        report = triage_test(repo, "tests/test_generated.py", window_days=30, now=now)
+        assert report.classification == "unknown"
+        rationale_lower = (report.rationale + " ".join(report.evidence)).lower()
+        assert "untracked" in rationale_lower or "visibility" in rationale_lower or "submodule" in rationale_lower
+
+    def test_quiet_repo_returns_ambiguous_not_stale(self, tmp_path: Path) -> None:
+        """Test predates window AND zero commits in the window → ambiguous (repo is quiet)."""
+        repo = _init_repo(tmp_path)
+        now = datetime.now(timezone.utc)
+        # Single old commit, nothing recent
+        _commit_at(
+            repo,
+            files={"src/app.py": "x\n", "tests/test_app.py": "y\n"},
+            message="initial — long ago",
+            when=now - timedelta(days=180),
+        )
+        report = triage_test(repo, "tests/test_app.py", window_days=30, now=now)
+        assert report.classification == "ambiguous"
+        assert "quiet" in report.rationale.lower() or "zero" in report.rationale.lower()
+
+    def test_truly_stale_still_classified_stale(self, tmp_path: Path) -> None:
+        """Test predates window; recent commits exist but are ALL test/governance → stale (regression guard).
+
+        This guards against regressing the stale classification when a repo is
+        active (commits in window) but none of them touched behaviour code.
+        """
+        repo = _init_repo(tmp_path)
+        now = datetime.now(timezone.utc)
+        _commit_at(
+            repo,
+            files={"src/app.py": "v1\n", "tests/test_app.py": "old test\n"},
+            message="initial — long ago",
+            when=now - timedelta(days=180),
+        )
+        # Recent commits within the window but they only touch test/governance files,
+        # not behaviour code — so the stale classification must survive.
+        _commit_at(
+            repo,
+            files={"tests/test_other.py": "z\n"},
+            message="add another test",
+            when=now - timedelta(days=5),
+        )
+        report = triage_test(repo, "tests/test_app.py", window_days=30, now=now)
+        assert report.classification == "stale"
+        assert "obsolete" in report.rationale.lower() or "stale" in report.rationale.lower()
