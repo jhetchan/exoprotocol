@@ -13,6 +13,7 @@ The agent (or human) reads the report and decides.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -58,6 +59,22 @@ def _git(repo: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def _path_visible_to_outer_repo(repo: Path, path: Path) -> bool:
+    """Return False when path lives outside outer-repo blame visibility.
+
+    A path is invisible if it is inside a registered submodule or not tracked
+    by the outer repo at all (untracked / runtime-generated / vendored).
+    """
+    rel = str(path)
+    # Check submodule membership
+    sub = _git(repo, ["submodule", "status", rel])
+    if sub.returncode == 0 and sub.stdout.strip():
+        return False
+    # Check whether git tracks the file at all
+    ls = _git(repo, ["ls-files", "--error-unmatch", rel])
+    return ls.returncode == 0
 
 
 def _last_commit_for(repo: Path, path: Path) -> tuple[str, str, str]:
@@ -161,6 +178,16 @@ def triage_test(
         )
 
     rel = Path(rel_test_path)
+
+    if not _path_visible_to_outer_repo(repo, rel):
+        return TriageReport(
+            test_path=rel_test_path,
+            classification="unknown",
+            recommended_owner="",
+            evidence=["test lives outside outer-repo blame visibility (submodule / untracked / runtime-generated)"],
+            rationale="Cannot classify: test file is not visible to the outer repo's git history.",
+        )
+
     test_sha, test_iso, test_author = _last_commit_for(repo, rel)
     test_dt = _parse_iso(test_iso)
     now_dt = now or datetime.now(timezone.utc)
@@ -197,11 +224,26 @@ def triage_test(
         )
         recommended_owner = behavior_author or test_author
     elif test_dt and not behavior_dt and test_dt < window_start:
-        classification = "stale"
-        rationale = (
-            f"Test predates the {window_days}-day window and no recent behavior "
-            f"changes were found — likely encoding obsolete behavior."
+        # Distinguish a quiet repo (no commits at all in the window) from a truly
+        # stale test (commits exist but none touched behaviour code).
+        rev_count = _git(
+            repo, ["rev-list", "--count", f"--since={window_start.astimezone(timezone.utc).isoformat()}", "HEAD"]
         )
+        total_in_window = 0
+        with contextlib.suppress(ValueError, AttributeError):
+            total_in_window = int(rev_count.stdout.strip())
+        if total_in_window == 0:
+            classification = "ambiguous"
+            rationale = (
+                f"Test predates the {window_days}-day window but the repo has zero commits "
+                f"in that period — repo is simply quiet, not the test stale."
+            )
+        else:
+            classification = "stale"
+            rationale = (
+                f"Test predates the {window_days}-day window and no recent behavior "
+                f"changes were found — likely encoding obsolete behavior."
+            )
     elif test_dt and behavior_dt:
         delta = abs((test_dt - behavior_dt).total_seconds())
         if delta < 24 * 3600:
