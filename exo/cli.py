@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -838,6 +840,10 @@ def _resolve_ticket_checks(repo: Path, user_checks: list[str]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for _stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, OSError):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = _build_parser()
     args = parser.parse_args(argv)
 

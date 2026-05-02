@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -2248,6 +2250,10 @@ if FastMCP:
 
 
 def main() -> int:
+    for _stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, OSError):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+
     if not FastMCP:
         raise SystemExit("MCP dependencies missing. Install with: pip install -e .[mcp]")
 
