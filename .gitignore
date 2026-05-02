@@ -5,3 +5,5 @@
 *.egg-info/
 dist/
 *.pre-exo
+# ExoProtocol: audit logs excluded (privacy.commit_logs=false)
+.exo/logs/
